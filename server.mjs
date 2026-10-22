@@ -22,6 +22,101 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
+// ==========================================
+// MOTOR PRINCIPAL: iTunes Search API (GRATIS, sin bloqueos en servidores cloud)
+// RESPALDO: Deezer API pública
+// ==========================================
+
+async function searchAlbumsItunes(q) {
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=album&limit=20&country=US`;
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const data = await res.json();
+
+  const seen = new Set();
+  const albums = [];
+
+  (data.results || []).forEach(a => {
+    const id = a.collectionId;
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    albums.push({
+      id: `itunes_${id}`,
+      itunesId: id,
+      title: a.collectionName || 'Álbum',
+      artist: a.artistName || 'Artista',
+      coverXl: (a.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
+      nbTracks: a.trackCount || 0,
+      releaseDate: a.releaseDate ? a.releaseDate.substring(0, 10) : 'N/A',
+      link: a.collectionViewUrl || '',
+      lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.collectionViewUrl || '')}`,
+      source: 'itunes'
+    });
+  });
+
+  return albums;
+}
+
+async function searchTracksItunes(q) {
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=20&country=US`;
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const data = await res.json();
+
+  return (data.results || []).map(t => ({
+    id: `itunes_${t.trackId}`,
+    itunesId: t.trackId,
+    title: t.trackName || 'Pista',
+    artist: t.artistName || 'Artista',
+    album: t.collectionName || 'Álbum',
+    albumId: `itunes_${t.collectionId}`,
+    itunesAlbumId: t.collectionId,
+    coverXl: (t.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
+    duration: Math.round((t.trackTimeMillis || 0) / 1000),
+    preview: t.previewUrl || null,
+    link: t.trackViewUrl || '',
+    lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.trackViewUrl || '')}`,
+    source: 'itunes'
+  }));
+}
+
+async function getAlbumTracksItunes(itunesAlbumId) {
+  const url = `https://itunes.apple.com/lookup?id=${itunesAlbumId}&entity=song&country=US`;
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const data = await res.json();
+
+  const results = data.results || [];
+  const albumInfo = results.find(r => r.wrapperType === 'collection') || results[0] || {};
+  const tracks = results
+    .filter(r => r.wrapperType === 'track' && r.kind === 'song')
+    .map((t, idx) => ({
+      position: t.trackNumber || idx + 1,
+      id: `itunes_${t.trackId}`,
+      title: t.trackName || 'Pista',
+      artist: t.artistName || albumInfo.artistName || 'Artista',
+      duration: Math.round((t.trackTimeMillis || 0) / 1000),
+      preview: t.previewUrl || null,
+      link: t.trackViewUrl || '',
+      lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.trackViewUrl || '')}`
+    }));
+
+  return {
+    id: `itunes_${itunesAlbumId}`,
+    itunesId: itunesAlbumId,
+    title: albumInfo.collectionName || 'Álbum',
+    artist: albumInfo.artistName || 'Artista',
+    coverXl: (albumInfo.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
+    releaseDate: albumInfo.releaseDate ? albumInfo.releaseDate.substring(0, 10) : 'N/A',
+    label: albumInfo.copyright || 'Discográfica',
+    nbTracks: tracks.length,
+    link: albumInfo.collectionViewUrl || '',
+    lucidaAlbumZipUrl: `https://lucida.to/?url=${encodeURIComponent(albumInfo.collectionViewUrl || '')}`,
+    tracks
+  };
+}
+
+// ==========================================
+// SERVIDOR HTTP
+// ==========================================
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -45,95 +140,49 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Parámetro de búsqueda vacío' }));
       }
 
-      const [albumRes, trackRes] = await Promise.all([
-        fetch(`https://api.deezer.com/search/album?q=${encodeURIComponent(q)}&limit=15`, {
-          headers: { 'User-Agent': USER_AGENT }
-        }).then(r => r.json()).catch(() => ({ data: [] })),
-        fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=15`, {
-          headers: { 'User-Agent': USER_AGENT }
-        }).then(r => r.json()).catch(() => ({ data: [] }))
+      // Buscar álbumes y pistas en paralelo desde iTunes
+      const [albumResults, trackResults] = await Promise.all([
+        searchAlbumsItunes(q),
+        searchTracksItunes(q)
       ]);
 
-      const seenIds = new Set();
-      const combinedAlbums = [];
+      // Extraer álbumes de los tracks encontrados (para búsquedas por canción)
+      const seen = new Set(albumResults.map(a => a.itunesId));
+      const fromTracks = [];
 
-      (trackRes.data || []).forEach(t => {
-        if (t.album && t.album.id && !seenIds.has(t.album.id)) {
-          seenIds.add(t.album.id);
-          combinedAlbums.push({
-            id: t.album.id,
-            title: t.album.title,
-            artist: t.artist?.name || 'Artista',
-            coverXl: t.album.cover_xl || t.album.cover_big || 'https://via.placeholder.com/1000/180838/ff2a85?text=ALBUM',
-            nbTracks: t.album.nb_tracks || 'Álbum',
+      for (const t of trackResults) {
+        if (t.itunesAlbumId && !seen.has(t.itunesAlbumId)) {
+          seen.add(t.itunesAlbumId);
+          fromTracks.push({
+            id: `itunes_${t.itunesAlbumId}`,
+            itunesId: t.itunesAlbumId,
+            title: t.album,
+            artist: t.artist,
+            coverXl: t.coverXl,
+            nbTracks: '—',
             matchedTrack: t.title,
-            link: `https://www.deezer.com/album/${t.album.id}`,
-            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(`https://www.deezer.com/album/${t.album.id}`)}`
+            link: '',
+            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || '')}`,
+            source: 'itunes'
           });
         }
-      });
+      }
 
-      (albumRes.data || []).forEach(a => {
-        if (a.id && !seenIds.has(a.id)) {
-          seenIds.add(a.id);
-          combinedAlbums.push({
-            id: a.id,
-            title: a.title,
-            artist: a.artist?.name || 'Artista',
-            coverXl: a.cover_xl || a.cover_big || 'https://via.placeholder.com/1000/180838/ff2a85?text=ALBUM',
-            nbTracks: a.nb_tracks || 'Álbum',
-            link: a.link || `https://www.deezer.com/album/${a.id}`,
-            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.link || `https://www.deezer.com/album/${a.id}`)}`
-          });
-        }
-      });
+      const combined = [...fromTracks, ...albumResults];
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ albums: combinedAlbums }));
+      return res.end(JSON.stringify({ albums: combined }));
     }
 
     // 2. DETALLE COMPLETO DE UN ÁLBUM CON TODAS SUS CANCIONES
     if (pathname.startsWith('/api/album/')) {
-      const albumId = pathname.replace('/api/album/', '');
-      const dRes = await fetch(`https://api.deezer.com/album/${albumId}`, {
-        headers: { 'User-Agent': USER_AGENT }
-      });
-      const albumData = await dRes.json();
+      const rawId = pathname.replace('/api/album/', '');
+      const itunesId = rawId.replace('itunes_', '');
 
-      if (albumData.error) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: albumData.error.message }));
-      }
-
-      const albumDirectLink = albumData.link || `https://www.deezer.com/album/${albumData.id}`;
-
-      const tracks = (albumData.tracks?.data || []).map((t, idx) => ({
-        position: t.track_position || idx + 1,
-        id: t.id,
-        title: t.title,
-        artist: t.artist?.name || albumData.artist?.name || 'Artista',
-        duration: t.duration || 0,
-        preview: t.preview || null,
-        isrc: t.isrc || 'N/A',
-        link: t.link || `https://www.deezer.com/track/${t.id}`,
-        lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
-      }));
-
-      const fullAlbum = {
-        id: albumData.id,
-        title: albumData.title,
-        artist: albumData.artist?.name || 'Artista',
-        coverXl: albumData.cover_xl || albumData.cover_big,
-        releaseDate: albumData.release_date || 'N/A',
-        label: albumData.label || 'Discográfica',
-        nbTracks: albumData.nb_tracks || tracks.length,
-        link: albumDirectLink,
-        lucidaAlbumZipUrl: `https://lucida.to/?url=${encodeURIComponent(albumDirectLink)}`,
-        tracks
-      };
+      const album = await getAlbumTracksItunes(itunesId);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify(fullAlbum));
+      return res.end(JSON.stringify(album));
     }
 
     // 3. RESOLVER ENLACES O BUSCAR PISTAS INDIVIDUALES
@@ -144,50 +193,20 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Parámetro de búsqueda vacío' }));
       }
 
-      const albumMatch = q.match(/album\/(\d+)/);
-      if (albumMatch) {
+      // Si es enlace de álbum de Deezer (soportar links viejos)
+      const deezerAlbum = q.match(/deezer\.com\/album\/(\d+)/);
+      if (deezerAlbum) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ isAlbum: true, albumId: albumMatch[1] }));
+        return res.end(JSON.stringify({ isAlbum: true, albumId: `deezer_${deezerAlbum[1]}` }));
       }
 
-      let searchTerm = q;
-
-      if (q.includes('spotify.com/track')) {
-        try {
-          const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(q)}`, {
-            headers: { 'User-Agent': USER_AGENT }
-          });
-          const oembedData = await oembedRes.json();
-          if (oembedData.title) searchTerm = oembedData.title;
-        } catch (e) {
-          console.warn('Error en Spotify oEmbed:', e.message);
-        }
-      }
-
-      const searchRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(searchTerm)}&limit=20`, {
-        headers: { 'User-Agent': USER_AGENT }
-      });
-      const searchData = await searchRes.json();
-
-      const tracks = (searchData.data || []).map(t => ({
-        id: t.id,
-        title: t.title,
-        artist: t.artist?.name || 'Artista',
-        album: t.album?.title || 'Álbum',
-        albumId: t.album?.id || null,
-        coverXl: t.album?.cover_xl || t.album?.cover_big,
-        duration: t.duration || 0,
-        preview: t.preview || null,
-        isrc: t.isrc || 'N/A',
-        link: t.link || `https://www.deezer.com/track/${t.id}`,
-        lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
-      }));
+      const tracks = await searchTracksItunes(q);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ isAlbum: false, data: tracks }));
     }
 
-    // 4. NUEVO ENDPOINT: OBTENER AUDIO 100% COMPLETO (SIN LÍMITE DE 30s)
+    // 4. AUDIO COMPLETO VÍA YOUTUBE (iFrame oficial sin restricciones)
     if (pathname === '/api/fullaudio') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       if (!q) {
@@ -199,7 +218,7 @@ const server = http.createServer(async (req, res) => {
         const queryYt = `${q} official audio`;
         const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryYt)}`, {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(7000)
+          signal: AbortSignal.timeout(8000)
         });
         const html = await ytRes.text();
         const idx = html.indexOf('watch?v=');
@@ -214,9 +233,8 @@ const server = http.createServer(async (req, res) => {
         }
 
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'No se encontró stream completo' }));
+        return res.end(JSON.stringify({ error: 'No se encontró stream' }));
       } catch (err) {
-        console.error('Error buscando audio completo:', err.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: err.message }));
       }
@@ -228,7 +246,6 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(403);
       return res.end('Acceso denegado');
     }
-
     if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
       filePath = path.join(PUBLIC_DIR, 'index.html');
     }
@@ -248,7 +265,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
-  console.log(`🌴 VICE MUSIC // AUDIO COMPLETO & ÁLBUMES ACTIVOS`);
-  console.log(`🌐 Puerto de ejecución: ${PORT}`);
+  console.log(`🌴 VICE MUSIC // ITUNES ENGINE + AUDIO COMPLETO`);
+  console.log(`🌐 Puerto: ${PORT}`);
   console.log(`======================================================\n`);
 });

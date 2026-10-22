@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -29,7 +29,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v2.1</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v2.2</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -180,8 +180,8 @@
 
       <!-- Controles de Audio -->
       <div class="player-controls">
-        <div class="btn-group">
-          <!-- Botón de Velocidad (1x, 1.25x, 1.5x, 2x) -->
+                <div class="btn-group">
+          <!-- Velocidad -->
           <button class="control-btn speed-btn" id="btnSpeed" title="Velocidad: 1x, 1.25x, 1.5x, 2x">
             <span id="speedLabel">1x</span>
           </button>
@@ -192,7 +192,7 @@
               <line x1="5" y1="19" x2="5" y2="5"></line>
             </svg>
           </button>
-          
+
           <button class="control-btn play-main" id="btnPlayPause" title="Reproducir / Pausar">
             <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -208,6 +208,14 @@
               <polygon points="5 4 15 12 5 20 5 4"></polygon>
               <line x1="19" y1="5" x2="19" y2="19"></line>
             </svg>
+          </button>
+
+          <!-- MP3 y Completa: visibles solo en movil via CSS -->
+          <button id="btnPlayerDlMp3Mobile" class="control-btn btn-mobile-action btn-dl-mp3" title="Descargar MP3 320 kbps">
+            <span>📥</span>
+          </button>
+          <button id="btnPlayFullSongMobile" class="control-btn btn-mobile-action" title="Escuchar completa">
+            <span>🎧</span>
           </button>
         </div>
 

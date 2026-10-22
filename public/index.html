@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0412">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>VICE MUSIC // VI - Full Albums & Lossless Vault</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -63,8 +66,8 @@
     <!-- Hero / Input de Enlaces -->
     <section class="hero-section">
       <div class="hero-badge">⚡ EXPLORADOR DE ÁLBUMES & DISCOGRAFÍAS ⚡</div>
-      <h2 class="hero-title" id="searchHeaderTitle">BUSCA CUALQUIER ÁLBUM O ARTISTA</h2>
-      <p class="hero-sub" id="searchHeaderSub">Escribe el nombre de un artista para ver <strong>todos sus álbumes</strong> con todas sus canciones.</p>
+      <h2 class="hero-title" id="searchHeaderTitle">BUSCA CUALQUIER ÁLBUM O CANCIÓN</h2>
+      <p class="hero-sub" id="searchHeaderSub">Escribe un artista o canción (ej: <strong>Blessd Superstar</strong>, <strong>Karol G</strong>) para ver álbumes completos.</p>
 
       <div class="search-box-vice">
         <div class="search-icon">
@@ -76,7 +79,7 @@
         <input 
           type="text" 
           id="searchInput" 
-          placeholder="Busca un artista o álbum (ej: Blessd, Feid, Bad Bunny, Daft Punk)..." 
+          placeholder="Busca artista o tema (ej: Blessd Superstar, Karol G, Feid)..." 
           autocomplete="off"
         >
         <button id="searchBtn" class="vice-btn-primary">
@@ -89,13 +92,13 @@
 
       <!-- Chips Rápidos -->
       <div class="quick-tags">
-        <span class="tag-label">DISCOGRAFÍAS TOP:</span>
-        <button class="chip" data-query="Blessd">🔥 Blessd (Álbumes)</button>
+        <span class="tag-label">TOP:</span>
+        <button class="chip" data-query="Blessd Superstar">🔥 Blessd - SUPERSTAR</button>
+        <button class="chip" data-query="Blessd">Blessd (Discografía)</button>
+        <button class="chip" data-query="Karol G">Karol G</button>
         <button class="chip" data-query="Feid">Feid (Ferxxo)</button>
         <button class="chip" data-query="Bad Bunny">Bad Bunny</button>
-        <button class="chip" data-query="Karol G">Karol G</button>
         <button class="chip" data-query="Daft Punk">Daft Punk</button>
-        <button class="chip" data-query="The Weeknd">The Weeknd</button>
       </div>
     </section>
 
@@ -111,7 +114,7 @@
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
         </svg>
-        <span>VOLVER AL CATÁLOGO DE ÁLBUMES</span>
+        <span>VOLVER AL CATÁLOGO</span>
       </button>
 
       <div class="album-hero" id="albumHeroContent">
@@ -138,7 +141,7 @@
         <div class="vice-spinner">
           <div class="inner-vi">VI</div>
         </div>
-        <p class="loader-text">CARGANDO DISCOGRAFÍA COMPLETA...</p>
+        <p class="loader-text">LOCALIZANDO DISCOGRAFÍA Y CANCIONES...</p>
       </div>
 
       <!-- Grid -->
@@ -166,7 +169,7 @@
           <h4 id="playerTitle">Selecciona una pista</h4>
           <p id="playerArtist">Vice City Radio 98.3</p>
           <div class="track-specs">
-            <span class="spec-pill gold">STUDIO MASTER</span>
+            <span class="spec-pill gold" id="playerModeBadge">STUDIO MASTER</span>
             <span class="spec-pill" id="playerDuration">00:00</span>
           </div>
         </div>
@@ -175,12 +178,18 @@
       <!-- Controles de Audio -->
       <div class="player-controls">
         <div class="btn-group">
+          <!-- Botón de Velocidad (1x, 1.25x, 1.5x, 2x) -->
+          <button class="control-btn speed-btn" id="btnSpeed" title="Velocidad: 1x, 1.25x, 1.5x, 2x">
+            <span id="speedLabel">1x</span>
+          </button>
+
           <button class="control-btn" id="btnBackward" title="Retroceder 5s">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="19 20 9 12 19 4 19 20"></polygon>
               <line x1="5" y1="19" x2="5" y2="5"></line>
             </svg>
           </button>
+          
           <button class="control-btn play-main" id="btnPlayPause" title="Reproducir / Pausar">
             <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -190,6 +199,7 @@
               <rect x="14" y="4" width="4" height="16"></rect>
             </svg>
           </button>
+
           <button class="control-btn" id="btnForward" title="Adelantar 5s">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="5 4 15 12 5 20 5 4"></polygon>
@@ -219,23 +229,13 @@
     </div>
   </footer>
 
-  <!-- Modal Reproductor de Canción Completa (YouTube Stream Oficial) -->
-  <div id="fullAudioModal" class="vice-modal hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card" style="max-width: 680px; text-align: center;">
-      <button class="modal-close" id="modalFullAudioClose">✕</button>
-      <div style="margin-bottom: 1.2rem;">
-        <span class="badge-gold" style="display: inline-block; margin-bottom: 0.5rem;">AUDIO COMPLETO 100% OFICIAL</span>
-        <h3 id="fullAudioTitle" style="font-family: var(--font-logo); font-size: 1.3rem; font-style: italic; color: #fff;">Canción</h3>
-        <p id="fullAudioArtist" style="color: var(--vice-pink); font-weight: 700;">Artista</p>
-      </div>
-      <div id="fullAudioContainer" style="position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; border: 2px solid var(--vice-pink); box-shadow: 0 0 35px rgba(255, 42, 133, 0.4); background: #000;">
-        <!-- Se inserta el iframe del reproductor oficial completo -->
-      </div>
-    </div>
+  <!-- Motor de Audio Completo Oculto (Invisible, sin video en pantalla) -->
+  <div id="hiddenYtWrapper" style="position: fixed; width: 1px; height: 1px; bottom: -200px; right: -200px; opacity: 0.001; pointer-events: none; overflow: hidden; z-index: -9999;">
+    <div id="ytPlayerSlot"></div>
   </div>
 
   <audio id="audioElement" preload="none"></audio>
+  <script src="https://www.youtube.com/iframe_api"></script>
   <script src="app.js"></script>
 </body>
 </html>

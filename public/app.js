@@ -868,26 +868,27 @@ async function playFullSong(artist, title, cover = null) {
 async function downloadMp3_320(artist, title) {
   // 1. Si tenemos el enlace oficial de Lucida / Deezer, abrimos descarga directa en MP3 320 kbps de estudio
   if (state.currentTrack && state.currentTrack.lucidaUrl) {
-    showToast(📥 Abriendo descarga MP3 320 kbps (Estudio Deezer sin anuncios): );
+    showToast('📥 Abriendo descarga MP3 320 kbps (Estudio Deezer): ' + title);
     window.open(state.currentTrack.lucidaUrl, '_blank');
     return;
   }
 
   // 2. Si no, buscar el audio y abrir la descarga limpia
-  showToast(📥 Conectando descarga de alta fidelidad para: ...);
+  showToast('📥 Conectando descarga de alta fidelidad para: ' + title + '...');
   try {
-    const res = await fetch(/api/fullaudio?q=);
+    const res = await fetch('/api/fullaudio?q=' + encodeURIComponent(artist + ' ' + title));
     const data = await res.json();
     if (data.videoId) {
-      window.open(https://lucida.to/?url=, '_blank');
+      window.open('https://lucida.to/?url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + data.videoId), '_blank');
     } else {
       showToast('❌ No se encontró enlace de descarga para esta canción.');
     }
   } catch (err) {
     console.error('Error en descarga:', err);
-    showToast(❌ Error: );
+    showToast('❌ Error: ' + err.message);
   }
 }
+
 function togglePlayPause() {
   if (state.playbackSource === 'full') {
     if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;

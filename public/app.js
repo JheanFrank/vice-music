@@ -216,6 +216,18 @@ function setupEventListeners() {
     });
   }
 
+  // Botón Descargar MP3 320 en la barra fija
+  const btnPlayerDlMp3 = document.getElementById('btnPlayerDlMp3');
+  if (btnPlayerDlMp3) {
+    btnPlayerDlMp3.addEventListener('click', () => {
+      if (state.currentTrack) {
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title);
+      } else {
+        showToast('Selecciona primero una canción para descargar en MP3 320.');
+      }
+    });
+  }
+
   // Botón de Velocidad (1x -> 1.25x -> 1.5x -> 2x)
   if (btnSpeed) {
     btnSpeed.addEventListener('click', cyclePlaybackSpeed);
@@ -592,6 +604,9 @@ async function openAlbumDetail(albumId) {
           <button class="btn-track-action btn-play-full" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);" title="Escuchar Canción Completa">
             🎧 COMPLETA
           </button>
+          <button class="btn-track-action btn-dl-mp3" title="Descargar MP3 320 kbps (Audio YouTube)">
+            📥 MP3 320
+          </button>
           <button class="btn-track-action btn-dl-flac" title="Descargar pista individual en FLAC">
             ⚡ FLAC
           </button>
@@ -616,6 +631,11 @@ async function openAlbumDetail(albumId) {
       // Escuchar Canción Completa (YouTube Audio Oficial en segundo plano)
       trackRow.querySelector('.btn-play-full').addEventListener('click', () => {
         playFullSong(track.artist, track.title, album.coverXl);
+      });
+
+      // Descargar MP3 320 kbps oficial vía stream
+      trackRow.querySelector('.btn-dl-mp3').addEventListener('click', () => {
+        downloadMp3_320(track.artist, track.title);
       });
 
       // Descargar pista individual
@@ -683,11 +703,14 @@ function renderTracks(tracks) {
         
         <div style="margin-top: auto;">
           ${goToAlbumBtn}
-          <div style="display: flex; gap: 0.4rem;">
-            <button class="btn-track-action btn-single-full" style="flex: 1; padding: 0.55rem; font-size: 0.72rem; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
+          <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+            <button class="btn-track-action btn-single-full" style="flex: 1; min-width: 65px; padding: 0.55rem; font-size: 0.72rem; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
               🎧 COMPLETA
             </button>
-            <button class="btn-track-action btn-single-flac" style="padding: 0.55rem 0.65rem; font-size: 0.72rem;">
+            <button class="btn-track-action btn-single-mp3 btn-dl-mp3" style="padding: 0.55rem 0.6rem; font-size: 0.72rem;" title="Descargar MP3 320 kbps (YouTube Audio)">
+              📥 MP3
+            </button>
+            <button class="btn-track-action btn-single-flac" style="padding: 0.55rem 0.6rem; font-size: 0.72rem;" title="Descargar FLAC Lossless">
               ⚡ FLAC
             </button>
             <button class="btn-track-play btn-single-play" title="Muestra 30s">
@@ -708,6 +731,11 @@ function renderTracks(tracks) {
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
       playFullSong(track.artist, track.title, track.coverXl);
+    });
+
+    card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadMp3_320(track.artist, track.title);
     });
 
     card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
@@ -811,6 +839,25 @@ async function playFullSong(artist, title, cover = null) {
   } catch (err) {
     console.error('Error al conectar con stream:', err);
     showToast(`Error al sintonizar stream completo: ${err.message}`);
+  }
+}
+
+// DESCARGAR AUDIO EN MP3 320 KBPS DIRECTO DESDE EL STREAM OFICIAL
+async function downloadMp3_320(artist, title) {
+  showToast(`📥 Conectando con stream MP3 320 kbps para: ${title}...`);
+  try {
+    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}`);
+    const data = await res.json();
+    if (data.videoId) {
+      const converterUrl = `https://y2mate.nu/es-es/?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${data.videoId}`;
+      showToast(`⚡ Abriendo convertidor oficial a MP3 320 kbps...`);
+      window.open(converterUrl, '_blank');
+    } else {
+      showToast('⚠️ No se encontró el stream para MP3. Intenta con FLAC.');
+    }
+  } catch (err) {
+    console.error('Error al generar MP3:', err);
+    showToast(`Error al obtener enlace MP3: ${err.message}`);
   }
 }
 

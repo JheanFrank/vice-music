@@ -1,4 +1,4 @@
-﻿// ========================================================
+// ========================================================
 // VICE MUSIC // GTA VI EDITION (FULL ALBUMS & FLAC)
 // ========================================================
 
@@ -101,27 +101,55 @@ function fetchDeezerJsonp(endpoint) {
 let ytPlayer = null;
 let ytReady = false;
 let ytProgressInterval = null;
+let ytPendingVideoId = null;
 
-window.onYouTubeIframeAPIReady = function() {
-  ytPlayer = new YT.Player('ytPlayerSlot', {
-    height: '200',
-    width: '200',
-    playerVars: {
-      autoplay: 1,
-      controls: 0,
-      disablekb: 1,
-      fs: 0,
-      modestbranding: 1,
-      rel: 0
-    },
-    events: {
-      onReady: () => {
-        ytReady = true;
+function initYtPlayer() {
+  if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') return;
+  const slot = document.getElementById('ytPlayerSlot');
+  if (!slot) return;
+  if (window.YT && typeof window.YT.Player === 'function') {
+    ytPlayer = new YT.Player('ytPlayerSlot', {
+      height: '100%',
+      width: '100%',
+      playerVars: {
+        autoplay: 1,
+        controls: 0,
+        disablekb: 1,
+        fs: 0,
+        modestbranding: 1,
+        rel: 0,
+        playsinline: 1
       },
-      onStateChange: onYtStateChange
-    }
-  });
-};
+      events: {
+        onReady: (event) => {
+          ytReady = true;
+          console.log('[YouTube Player] Listo');
+          if (ytPendingVideoId) {
+            try {
+              event.target.loadVideoById(ytPendingVideoId);
+              event.target.playVideo();
+              setPlayingState(true);
+              startYtProgress();
+            } catch (err) {
+              console.warn('[YouTube onReady] Error iniciando video pendiente:', err);
+            }
+            ytPendingVideoId = null;
+          }
+        },
+        onStateChange: onYtStateChange,
+        onError: (err) => {
+          console.warn('[YouTube Error]', err.data);
+          showToast('⚠️ Reproducción de stream en progreso...');
+        }
+      }
+    });
+  }
+}
+
+window.onYouTubeIframeAPIReady = initYtPlayer;
+if (window.YT && window.YT.Player) {
+  initYtPlayer();
+}
 
 function onYtStateChange(event) {
   if (state.playbackSource !== 'full') return;
@@ -814,7 +842,9 @@ async function playFullSong(artist, title, cover = null) {
   }
 
   state.playbackSource = 'full';
-  state.currentTrack = (state.currentTrack && state.currentTrack.title === title) ? { ...state.currentTrack, title, artist, cover } : { title, artist, cover };
+  state.currentTrack = (state.currentTrack && state.currentTrack.title === title)
+    ? { ...state.currentTrack, title, artist, cover }
+    : { title, artist, cover };
 
   playerTitle.innerText = title;
   playerArtist.innerText = artist;
@@ -828,39 +858,47 @@ async function playFullSong(artist, title, cover = null) {
   progressFill.style.width = '0%';
   progressThumb.style.left = '0%';
 
-  showToast(`🎧 Sintonizando audio completo: ${title}...`);
+  showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
   try {
-    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}`);
+    const res = await fetch('/api/fullaudio?q=' + encodeURIComponent(artist + ' ' + title));
     const data = await res.json();
 
     if (data.videoId) {
-      if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-        ytPlayer.loadVideoById(data.videoId);
-        ytPlayer.playVideo();
-        if (typeof ytPlayer.setPlaybackRate === 'function') {
-          ytPlayer.setPlaybackRate(state.currentSpeed);
-        }
-        setPlayingState(true);
-        startYtProgress();
-        showToast(`▶️ Reproduciendo canción completa oficial: ${title}`);
-      } else {
-        showToast(`▶️ Iniciando stream...`);
-        setTimeout(() => {
-          if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-            ytPlayer.loadVideoById(data.videoId);
-            ytPlayer.playVideo();
-            startYtProgress();
+      initYtPlayer();
+
+      const tryPlay = () => {
+        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+          ytPlayer.loadVideoById(data.videoId);
+          ytPlayer.playVideo();
+          if (typeof ytPlayer.setPlaybackRate === 'function') {
+            ytPlayer.setPlaybackRate(state.currentSpeed);
           }
-        }, 1500);
+          setPlayingState(true);
+          startYtProgress();
+          showToast('🎧 Reproduciendo canción completa oficial: ' + title);
+          return true;
+        }
+        return false;
+      };
+
+      if (!tryPlay()) {
+        ytPendingVideoId = data.videoId;
+        showToast('⏳ Sintonizando reproductor...');
+        let retries = 0;
+        const interval = setInterval(() => {
+          retries++;
+          if (tryPlay() || retries > 12) {
+            clearInterval(interval);
+          }
+        }, 350);
       }
     } else {
-      showToast('⚠️ No se encontró stream de audio completo. Prueba con la muestra de 30s o descarga en FLAC.');
-      playerModeBadge.innerText = 'NO DISPONIBLE';
+      showToast('❌ No se encontró el stream oficial para esta canción.');
     }
   } catch (err) {
     console.error('Error al conectar con stream:', err);
-    showToast(`Error al sintonizar stream completo: ${err.message}`);
+    showToast('Error al sintonizar stream completo: ' + err.message);
   }
 }
 

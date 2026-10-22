@@ -1,4 +1,4 @@
-// ========================================================
+﻿// ========================================================
 // VICE MUSIC // GTA VI EDITION (FULL ALBUMS & FLAC)
 // ========================================================
 
@@ -224,6 +224,28 @@ function setupEventListeners() {
         downloadMp3_320(state.currentTrack.artist, state.currentTrack.title);
       } else {
         showToast('Selecciona primero una canción para descargar en MP3 320.');
+      }
+    });
+  }
+
+  // Botones movil en btn-group (📥 y 🎧)
+  const btnPlayerDlMp3Mobile = document.getElementById('btnPlayerDlMp3Mobile');
+  if (btnPlayerDlMp3Mobile) {
+    btnPlayerDlMp3Mobile.addEventListener('click', () => {
+      if (state.currentTrack) {
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title);
+      } else {
+        showToast('Selecciona primero una cancion para descargar en MP3.');
+      }
+    });
+  }
+  const btnPlayFullSongMobile = document.getElementById('btnPlayFullSongMobile');
+  if (btnPlayFullSongMobile) {
+    btnPlayFullSongMobile.addEventListener('click', () => {
+      if (state.currentTrack) {
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover);
+      } else {
+        showToast('Selecciona primero una cancion para escucharla completa.');
       }
     });
   }
@@ -844,20 +866,20 @@ async function playFullSong(artist, title, cover = null) {
 
 // DESCARGAR AUDIO EN MP3 320 KBPS DIRECTO DESDE EL STREAM OFICIAL
 async function downloadMp3_320(artist, title) {
-  showToast(`📥 Conectando con stream MP3 320 kbps para: ${title}...`);
+  showToast(`📥 Preparando descarga MP3: ${title}...`);
   try {
-    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}`);
-    const data = await res.json();
-    if (data.videoId) {
-      const converterUrl = `https://y2mate.nu/es-es/?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${data.videoId}`;
-      showToast(`⚡ Abriendo convertidor oficial a MP3 320 kbps...`);
-      window.open(converterUrl, '_blank');
-    } else {
-      showToast('⚠️ No se encontró el stream para MP3. Intenta con FLAC.');
-    }
+    const q = encodeURIComponent(`${artist} ${title}`);
+    const filename = encodeURIComponent(`${title} - ${artist}`);
+    const a = document.createElement('a');
+    a.href = `/api/download-mp3?q=${q}&filename=${filename}`;
+    a.download = `${title} - ${artist}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast(`⬇️ Descargando MP3: ${title} - ${artist}`);
   } catch (err) {
-    console.error('Error al generar MP3:', err);
-    showToast(`Error al obtener enlace MP3: ${err.message}`);
+    console.error('Error al descargar MP3:', err);
+    showToast(`❌ Error al descargar MP3: ${err.message}`);
   }
 }
 

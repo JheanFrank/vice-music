@@ -16,6 +16,14 @@ try {
   ytdl = new Ytdl();
 }
 
+// Prevenir caídas del servidor ante errores imprevistos
+process.on('uncaughtException', (err) => {
+  console.error('🛡️ [Uncaught Exception Evitada]:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('🛡️ [Unhandled Rejection Evitada]:', reason);
+});
+
 // Forzar resolución IPv4 primero para evitar timeouts con Deezer, Apple Music y YouTube
 dns.setDefaultResultOrder('ipv4first');
 

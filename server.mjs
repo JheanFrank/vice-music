@@ -1,4 +1,4 @@
-﻿// Build trigger: 2026-10-22T21:03:47.6666062Z
+// Build trigger: 2026-10-22T21:03:47.6666062Z
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -250,7 +250,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.4', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
+      return res.end(JSON.stringify({ version: '2.5', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -488,110 +488,55 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
       }
 
-      // Limpiar nombre de archivo para el header Content-Disposition
       const safeFilename = filename.replace(/[^\w\s\-\.]/g, '').trim() || 'cancion';
       const encodedFilename = encodeURIComponent(safeFilename);
 
-      async function fallbackDeezer() {
-        try {
-          const dzSearch = await fetch('https://api.deezer.com/search?q=' + encodeURIComponent(q) + '&limit=1', {
-            headers: { 'User-Agent': USER_AGENT },
-            signal: AbortSignal.timeout(6000)
-          });
-          const dzJson = await dzSearch.json();
-          const track = dzJson.data && dzJson.data[0];
-          if (track && track.preview) {
-            const audioFetch = await fetch(track.preview, { signal: AbortSignal.timeout(8000) });
-            const buf = Buffer.from(await audioFetch.arrayBuffer());
-            if (!res.headersSent) {
-              res.writeHead(200, {
-                'Content-Type': 'audio/mpeg',
-                'Content-Disposition': `attachment; filename="${encodedFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-                'Content-Length': buf.length,
-                'Cache-Control': 'no-cache'
-              });
-              return res.end(buf);
-            }
-          }
-        } catch (e) {
-          console.error('[Download Fallback Deezer] Error:', e.message);
-        }
-        if (!res.headersSent) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'No se pudo obtener el stream de audio.' }));
-        }
-      }
-
       try {
-        // Buscar el video oficial en YouTube
-        const queryYt = q + ' official audio';
-        const ytRes = await fetch('https://www.youtube.com/results?search_query=' + encodeURIComponent(queryYt), {
+        const dzSearch = await fetch('https://api.deezer.com/search?q=' + encodeURIComponent(q) + '&limit=1', {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(6000)
         });
-        const html = await ytRes.text();
+        const dzJson = await dzSearch.json();
+        const track = dzJson.data && dzJson.data[0];
 
-        const regex = /"videoRenderer":\{"videoId":"([^"]+)".+?"title":\{"runs":\[\{"text":"([^"]+)"\}\]/g;
-        let match;
-        let videoId = null;
-
-        while ((match = regex.exec(html)) !== null) {
-          if (match[1] && match[1].length === 11) {
-            videoId = match[1];
-            break;
-          }
+        let audioUrl = null;
+        if (track && track.preview) {
+          audioUrl = track.preview;
+        } else {
+          // Fallback a iTunes Preview
+          try {
+            const itSearch = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(q) + '&entity=song&limit=1', {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(4000)
+            });
+            const itJson = await itSearch.json();
+            if (itJson.results && itJson.results[0] && itJson.results[0].previewUrl) {
+              audioUrl = itJson.results[0].previewUrl;
+            }
+          } catch (e) {}
         }
 
-        if (!videoId) {
-          const idx = html.indexOf('watch?v=');
-          if (idx !== -1) videoId = html.substring(idx + 8, idx + 19);
-        }
+        if (audioUrl) {
+          const audioFetch = await fetch(audioUrl, { signal: AbortSignal.timeout(8000) });
+          const buf = Buffer.from(await audioFetch.arrayBuffer());
 
-        if (!videoId) {
-          return await fallbackDeezer();
-        }
-
-        const ytUrl = 'https://www.youtube.com/watch?v=' + videoId;
-        const audioStream = await ytdl.download(ytUrl, {
-          filter: f => f.hasAudio && !f.hasVideo,
-          quality: 'highestaudio'
-        });
-
-        let headersSent = false;
-
-        audioStream.once('data', (firstChunk) => {
-          headersSent = true;
           res.writeHead(200, {
             'Content-Type': 'audio/mpeg',
-            'Content-Disposition': `attachment; filename="${encodedFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-            'Transfer-Encoding': 'chunked',
+            'Content-Disposition': 'attachment; filename="' + safeFilename + '.mp3"; filename*=UTF-8\'\'' + encodedFilename + '.mp3',
+            'Content-Length': buf.length,
             'Cache-Control': 'no-cache'
           });
-          res.write(firstChunk);
-          audioStream.pipe(res);
-        });
-
-        audioStream.on('error', async (err) => {
-          console.error('[Download MP3] ytdl stream error:', err.message);
-          if (!headersSent) {
-            await fallbackDeezer();
-          } else {
-            res.end();
-          }
-        });
-
-        req.on('close', () => {
-          audioStream.destroy();
-        });
-
-        return;
-
-      } catch (err) {
-        console.error('[Download MP3] Main error:', err.message);
-        if (!res.headersSent) {
-          await fallbackDeezer();
+          return res.end(buf);
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Audio no disponible para esta canción' }));
         }
-        return;
+      } catch (err) {
+        console.error('[Download MP3] Error:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
       }
     }
 

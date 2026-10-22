@@ -10,7 +10,15 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["music", "flac", "gtavi", "vice-city"],
+  "keywords": [
+    "music",
+    "flac",
+    "gtavi",
+    "vice-city"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@distube/ytdl-core": "^5.0.1"
+  }
 }

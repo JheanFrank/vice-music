@@ -1039,28 +1039,418 @@ body {
   letter-spacing: 2px;
 }
 
+.speed-btn {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 0.28rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--vice-cyan);
+  color: var(--vice-cyan);
+  background: rgba(0, 240, 255, 0.12);
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.speed-btn:hover {
+  background: var(--vice-cyan);
+  color: #000;
+  box-shadow: 0 0 14px var(--vice-cyan);
+}
+
 .hidden {
   display: none !important;
 }
 
+/* ========================================================
+   OPTIMIZACIÓN RESPONSIVA Y MÓVIL (GTA VI MOBILE EDITION)
+   ======================================================== */
+
 @media (max-width: 900px) {
   .player-content {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 240px 1fr auto;
+    gap: 1rem;
+    padding: 0 1rem;
   }
-  .player-track {
+}
+
+@media (max-width: 768px) {
+  body {
+    padding-bottom: 165px;
+  }
+
+  .vice-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .brand {
+    gap: 0.6rem;
+  }
+
+  .gta-vi-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .vi-roman {
+    font-size: 1.25rem;
+  }
+
+  .palm-mini {
+    font-size: 0.8rem;
+  }
+
+  .logo-title {
+    font-size: 1.35rem;
+  }
+
+  .tagline {
+    font-size: 0.55rem;
+    letter-spacing: 0.5px;
+  }
+
+  .header-status {
     display: none;
   }
-  .vice-header {
-    padding: 1rem 1.5rem;
+
+  .main-container {
+    padding: 1.2rem 0.8rem;
   }
+
+  .view-switcher {
+    gap: 0.5rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .view-btn {
+    padding: 0.65rem 0.85rem;
+    font-size: 0.72rem;
+    border-radius: 12px;
+  }
+
+  .view-btn svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .view-btn .pill-mini {
+    display: none;
+  }
+
+  .hero-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .hero-badge {
+    font-size: 0.62rem;
+    padding: 0.3rem 0.8rem;
+    letter-spacing: 1px;
+  }
+
+  .hero-title {
+    font-size: 1.4rem;
+    line-height: 1.25;
+  }
+
+  .hero-sub {
+    font-size: 0.82rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .search-box-vice {
+    padding: 0.35rem 0.4rem 0.35rem 0.8rem;
+    border-radius: 14px;
+  }
+
+  .search-icon svg {
+    width: 18px;
+    height: 18px;
+    margin-right: 0.6rem;
+  }
+
+  .search-box-vice input {
+    font-size: 16px; /* Evita zoom automático en Safari iOS */
+  }
+
+  .search-box-vice input::placeholder {
+    font-size: 0.85rem;
+  }
+
+  .vice-btn-primary {
+    padding: 0.65rem 1rem;
+    font-size: 0.8rem;
+    border-radius: 10px;
+  }
+
+  .vice-btn-primary svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .quick-tags {
+    display: flex;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 0.6rem 0.2rem 0.4rem 0.2rem;
+    gap: 0.5rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .quick-tags::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tag-label {
+    display: none;
+  }
+
+  .chip {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  /* Grid Móvil: 2 columnas perfectas para teléfonos */
+  .results-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .album-card {
+    padding: 0.55rem;
+    border-radius: 12px;
+  }
+
+  .album-badge-tracks {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.5rem;
+    bottom: 6px;
+    right: 6px;
+  }
+
+  .album-info {
+    padding: 0.5rem 0.1rem 0 0.1rem;
+  }
+
+  .album-title {
+    font-size: 0.82rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .album-artist {
+    font-size: 0.72rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .btn-open-album {
+    font-size: 0.68rem;
+    padding: 0.5rem 0.3rem;
+    border-radius: 8px;
+  }
+
+  /* Vista Detalle Álbum Móvil */
+  .btn-back {
+    font-size: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 1.2rem;
+  }
+
   .album-hero {
     flex-direction: column;
     text-align: center;
+    padding: 1.2rem 0.9rem;
+    gap: 1.2rem;
   }
+
+  .album-hero-cover-wrapper {
+    width: 180px;
+    height: 180px;
+    margin: 0 auto;
+    border-radius: 16px;
+  }
+
+  .album-hero-title {
+    font-size: 1.35rem;
+    line-height: 1.25;
+  }
+
+  .album-hero-artist {
+    font-size: 0.95rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .album-hero-details {
+    justify-content: center;
+    font-size: 0.72rem;
+    gap: 0.5rem;
+  }
+
+  .album-hero-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 0.6rem;
+  }
+
+  .album-hero-actions button {
+    width: 100%;
+    justify-content: center;
+    font-size: 0.82rem;
+    padding: 0.75rem 1rem !important;
+  }
+
   .album-track-item {
-    grid-template-columns: 35px 1fr auto;
+    grid-template-columns: 24px 1fr auto;
+    gap: 0.5rem;
+    padding: 0.65rem 0.5rem;
   }
+
+  .track-number {
+    font-size: 0.75rem;
+  }
+
+  .track-main-info h4 {
+    font-size: 0.82rem;
+    max-width: 44vw;
+  }
+
+  .track-main-info p {
+    font-size: 0.7rem;
+  }
+
   .track-duration {
     display: none;
+  }
+
+  .track-actions {
+    gap: 0.35rem;
+  }
+
+  .btn-track-action {
+    font-size: 0.68rem;
+    padding: 0.35rem 0.55rem;
+  }
+
+  .btn-track-play {
+    width: 32px;
+    height: 32px;
+  }
+
+  .btn-track-play svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* BARRA REPRODUCTOR EN MÓVIL (DISEÑO NATIVO COMPACTO) */
+  .vice-player {
+    height: auto;
+    min-height: 100px;
+    padding: 0.65rem 0.8rem 0.75rem 0.8rem;
+  }
+
+  .player-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0;
+  }
+
+  .player-track {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.65rem;
+    padding-right: 155px; /* Espacio para los botones de control a la derecha */
+  }
+
+  .track-artwork-wrapper {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+
+  .track-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .track-meta h4 {
+    font-size: 0.84rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .track-meta p {
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .spec-pill {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.35rem;
+  }
+
+  .player-actions {
+    display: none; /* En móvil se oculta el visualizador y el botón duplicado */
+  }
+
+  .player-controls {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .btn-group {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.75rem;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .control-btn {
+    padding: 0.2rem;
+  }
+
+  .control-btn svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .control-btn.play-main {
+    width: 38px;
+    height: 38px;
+  }
+
+  .control-btn.play-main svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .speed-btn {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.45rem;
+  }
+
+  .progress-bar-container {
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0.25rem;
+    gap: 0.5rem;
+  }
+
+  .time-label {
+    font-size: 0.68rem;
+    width: 32px;
+  }
+
+  .progress-track {
+    height: 6px;
   }
 }

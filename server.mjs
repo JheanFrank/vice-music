@@ -1,4 +1,4 @@
-import http from 'http';
+﻿import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -452,6 +452,25 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 5. DESCARGA DIRECTA MP3 DESDE YOUTUBE (Sin redirigir, desde nuestro servidor)
+        if (pathname === '/api/debug-ytdl') {
+      const v = (reqUrl.searchParams.get('v') || 'zZ_xuLlZ_t4').trim();
+      try {
+        const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${v}`, {
+          clients: ['tv', 'mweb', 'web_embedded']
+        });
+        const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo).map(f => ({
+          container: f.container,
+          bitrate: f.audioBitrate,
+          hasUrl: !!f.url
+        }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ok', title: info.videoDetails.title, audioFormats }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'error', message: err.message }));
+      }
+    }
+
     if (pathname === '/api/download-mp3') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
@@ -492,28 +511,35 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Limpiar nombre de archivo para el header Content-Disposition
-        const safeFilename = filename.replace(/[^a-zA-Z0-9\s_\-\.áéíóúÁÉÍÓÚüÜñÑ]/g, '').trim() || 'cancion';
+        const safeFilename = filename.replace(/[^\w\s\-\.]/g, '').trim() || 'cancion';
         const encodedFilename = encodeURIComponent(safeFilename);
 
-        // Hacer stream del audio directo desde YouTube
+        // Hacer stream del audio con clientes TV / MWEB para evitar bloqueos
         const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
         const audioStream = await ytdl.download(ytUrl, {
           filter: f => f.hasAudio && !f.hasVideo,
-          quality: 'highestaudio'
+          quality: 'highestaudio',
+          clients: ['tv', 'mweb', 'web_embedded']
         });
 
-        res.writeHead(200, {
-          'Content-Type': 'audio/mpeg',
-          'Content-Disposition': `attachment; filename="${encodedFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-          'Transfer-Encoding': 'chunked',
-          'Cache-Control': 'no-cache'
-        });
+        // Solo responder HTTP 200 cuando el primer bloque de audio realmente llegue
+        let headersSent = false;
 
-        audioStream.pipe(res);
+        audioStream.once('data', (firstChunk) => {
+          headersSent = true;
+          res.writeHead(200, {
+            'Content-Type': 'audio/mpeg',
+            'Content-Disposition': `attachment; filename="${encodedFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache'
+          });
+          res.write(firstChunk);
+          audioStream.pipe(res);
+        });
 
         audioStream.on('error', (err) => {
           console.error('[Download MP3] Stream error:', err.message);
-          if (!res.headersSent) {
+          if (!headersSent) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
           } else {

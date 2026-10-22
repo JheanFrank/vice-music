@@ -482,8 +482,9 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/download-mp3') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
+      const directUrl = (reqUrl.searchParams.get('url') || '').trim();
 
-      if (!q) {
+      if (!q && !directUrl) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
       }
@@ -492,32 +493,45 @@ const server = http.createServer(async (req, res) => {
       const encodedFilename = encodeURIComponent(safeFilename);
 
       try {
-        const dzSearch = await fetch('https://api.deezer.com/search?q=' + encodeURIComponent(q) + '&limit=1', {
-          headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(6000)
-        });
-        const dzJson = await dzSearch.json();
-        const track = dzJson.data && dzJson.data[0];
-
         let audioUrl = null;
-        if (track && track.preview) {
-          audioUrl = track.preview;
-        } else {
-          // Fallback a iTunes Preview
+
+        // 1. Si viene URL directa confiable, probar si está vigente
+        if (directUrl && (directUrl.includes('dzcdn.net') || directUrl.includes('apple.com'))) {
           try {
-            const itSearch = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(q) + '&entity=song&limit=1', {
-              headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(4000)
-            });
-            const itJson = await itSearch.json();
-            if (itJson.results && itJson.results[0] && itJson.results[0].previewUrl) {
-              audioUrl = itJson.results[0].previewUrl;
+            const probe = await fetch(directUrl, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
+            if (probe.ok) {
+              audioUrl = directUrl;
             }
           } catch (e) {}
         }
 
+        // 2. Si no viene URL directa o expiró, buscar de forma segura en Deezer
+        if (!audioUrl && q) {
+          try {
+            const dzData = await fetchDeezer(`/search?q=${encodeURIComponent(q)}&limit=1`);
+            if (dzData && Array.isArray(dzData.data) && dzData.data[0] && dzData.data[0].preview) {
+              audioUrl = dzData.data[0].preview;
+            }
+          } catch (e) {
+            console.warn('[Download MP3] Falló Deezer:', e.message);
+          }
+        }
+
+        // 3. Fallback seguro a iTunes
+        if (!audioUrl && q) {
+          try {
+            const itData = await fetchItunes(`/search?term=${encodeURIComponent(q)}&entity=song&limit=1&country=US`);
+            if (itData && Array.isArray(itData.results) && itData.results[0] && itData.results[0].previewUrl) {
+              audioUrl = itData.results[0].previewUrl;
+            }
+          } catch (e) {
+            console.warn('[Download MP3] Falló iTunes:', e.message);
+          }
+        }
+
         if (audioUrl) {
-          const audioFetch = await fetch(audioUrl, { signal: AbortSignal.timeout(8000) });
+          const audioFetch = await fetch(audioUrl, { signal: AbortSignal.timeout(9000) });
+          if (!audioFetch.ok) throw new Error('CDN status ' + audioFetch.status);
           const buf = Buffer.from(await audioFetch.arrayBuffer());
 
           res.writeHead(200, {
@@ -535,9 +549,11 @@ const server = http.createServer(async (req, res) => {
         console.error('[Download MP3] Error:', err.message);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          return res.end(JSON.stringify({ error: err.message }));
         }
+        return;
       }
+      return;
     }
 
     // Servir archivos estáticos del frontend

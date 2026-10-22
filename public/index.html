@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VICE MUSIC // VI - Full Albums & Lossless Vault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Fondo Ambiental Vice City Sunset & Palmeras -->
+  <div class="vice-sunset-glow" id="ambientSunset"></div>
+  <div class="palm-trees-silhouette"></div>
+  <div class="crt-scanline"></div>
+
+  <!-- Header Estilo GTA VI / Vice City -->
+  <header class="vice-header">
+    <div class="brand">
+      <div class="gta-vi-badge">
+        <span class="vi-roman">VI</span>
+        <span class="palm-mini">🌴</span>
+      </div>
+      <div class="brand-text">
+        <h1 class="logo-title">VICE<span>MUSIC</span></h1>
+        <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
+      </div>
+    </div>
+    
+    <div class="header-status">
+      <span class="pulse-pink"></span>
+      <span class="status-text">DISCOGRAFÍAS COMPLETAS 1000PX</span>
+      <span class="badge-gold">ESTUDIO MASTER</span>
+    </div>
+  </header>
+
+  <!-- Contenedor Principal -->
+  <main class="main-container">
+
+    <!-- Selector de Modo: ÁLBUMES vs PISTAS -->
+    <div class="view-switcher">
+      <button class="view-btn active" id="tabAlbums" data-mode="albums">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        <span>ÁLBUMES COMPLETOS</span>
+        <span class="pill-mini">DISCOGRAFÍAS</span>
+      </button>
+
+      <button class="view-btn" id="tabTracks" data-mode="tracks">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
+        </svg>
+        <span>PISTAS INDIVIDUALES</span>
+      </button>
+    </div>
+
+    <!-- Hero / Input de Enlaces -->
+    <section class="hero-section">
+      <div class="hero-badge">⚡ EXPLORADOR DE ÁLBUMES & DISCOGRAFÍAS ⚡</div>
+      <h2 class="hero-title" id="searchHeaderTitle">BUSCA CUALQUIER ÁLBUM O ARTISTA</h2>
+      <p class="hero-sub" id="searchHeaderSub">Escribe el nombre de un artista para ver <strong>todos sus álbumes</strong> con todas sus canciones.</p>
+
+      <div class="search-box-vice">
+        <div class="search-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <input 
+          type="text" 
+          id="searchInput" 
+          placeholder="Busca un artista o álbum (ej: Blessd, Feid, Bad Bunny, Daft Punk)..." 
+          autocomplete="off"
+        >
+        <button id="searchBtn" class="vice-btn-primary">
+          <span>EXPLORAR</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Chips Rápidos -->
+      <div class="quick-tags">
+        <span class="tag-label">DISCOGRAFÍAS TOP:</span>
+        <button class="chip" data-query="Blessd">🔥 Blessd (Álbumes)</button>
+        <button class="chip" data-query="Feid">Feid (Ferxxo)</button>
+        <button class="chip" data-query="Bad Bunny">Bad Bunny</button>
+        <button class="chip" data-query="Karol G">Karol G</button>
+        <button class="chip" data-query="Daft Punk">Daft Punk</button>
+        <button class="chip" data-query="The Weeknd">The Weeknd</button>
+      </div>
+    </section>
+
+    <!-- Notificación Toast -->
+    <div id="toastNotification" class="toast hidden">
+      <span id="toastText">Notificación</span>
+    </div>
+
+    <!-- SECCIÓN VISTA DE ÁLBUM DETALLADO (Desplegable cuando abres un álbum) -->
+    <section id="albumDetailView" class="album-detail-section hidden">
+      <button id="btnBackToAlbums" class="btn-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>VOLVER AL CATÁLOGO DE ÁLBUMES</span>
+      </button>
+
+      <div class="album-hero" id="albumHeroContent">
+        <!-- Render dinámico del Álbum con su portada 1000px y datos -->
+      </div>
+
+      <div class="album-tracklist-container">
+        <h3 class="tracklist-title">LISTA DE PISTAS DEL ÁLBUM</h3>
+        <div class="album-tracklist" id="albumTracklist">
+          <!-- Render dinámico de todas las canciones del álbum -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Catálogo de Resultados (Álbumes o Pistas) -->
+    <section class="results-section" id="catalogSection">
+      <div class="section-header">
+        <h3 id="resultsTitle">DISCOGRAFÍAS ENCONTRADAS</h3>
+        <span id="resultsCount" class="counter">0 RESULTADOS</span>
+      </div>
+
+      <!-- Spinner -->
+      <div id="loader" class="loader-container hidden">
+        <div class="vice-spinner">
+          <div class="inner-vi">VI</div>
+        </div>
+        <p class="loader-text">CARGANDO DISCOGRAFÍA COMPLETA...</p>
+      </div>
+
+      <!-- Grid -->
+      <div id="resultsGrid" class="results-grid">
+        <!-- Generado dinámicamente con JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Reproductor Fijo Vice City -->
+  <footer class="vice-player" id="playerBar">
+    <div class="player-glow"></div>
+    <div class="player-content">
+      
+      <!-- Info Track -->
+      <div class="player-track">
+        <div class="track-artwork-wrapper">
+          <img id="playerCover" src="https://via.placeholder.com/80/1a0933/ff2a85?text=VI" alt="Cover">
+          <div class="sound-wave-indicator" id="waveIndicator">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="track-meta">
+          <h4 id="playerTitle">Selecciona una pista</h4>
+          <p id="playerArtist">Vice City Radio 98.3</p>
+          <div class="track-specs">
+            <span class="spec-pill gold">STUDIO MASTER</span>
+            <span class="spec-pill" id="playerDuration">00:00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controles de Audio -->
+      <div class="player-controls">
+        <div class="btn-group">
+          <button class="control-btn" id="btnBackward" title="Retroceder 5s">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="19 20 9 12 19 4 19 20"></polygon>
+              <line x1="5" y1="19" x2="5" y2="5"></line>
+            </svg>
+          </button>
+          <button class="control-btn play-main" id="btnPlayPause" title="Reproducir / Pausar">
+            <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <svg id="iconPause" class="hidden" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16"></rect>
+              <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+          </button>
+          <button class="control-btn" id="btnForward" title="Adelantar 5s">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 4 15 12 5 20 5 4"></polygon>
+              <line x1="19" y1="5" x2="19" y2="19"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="progress-bar-container">
+          <span id="currentTime" class="time-label">00:00</span>
+          <div class="progress-track" id="progressTrack">
+            <div class="progress-fill" id="progressFill"></div>
+            <div class="progress-thumb" id="progressThumb"></div>
+          </div>
+          <span id="totalTime" class="time-label">00:00</span>
+        </div>
+      </div>
+
+      <!-- Visualizador Vice City & Botón Escuchar Completa -->
+      <div class="player-actions">
+        <canvas id="visualizerCanvas" width="110" height="35"></canvas>
+        <button id="btnPlayFullSong" class="btn-track-action" style="padding: 0.6rem 1rem; font-size: 0.78rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap;">
+          <span>🎧 CANCIÓN COMPLETA</span>
+        </button>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- Modal Reproductor de Canción Completa (YouTube Stream Oficial) -->
+  <div id="fullAudioModal" class="vice-modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" style="max-width: 680px; text-align: center;">
+      <button class="modal-close" id="modalFullAudioClose">✕</button>
+      <div style="margin-bottom: 1.2rem;">
+        <span class="badge-gold" style="display: inline-block; margin-bottom: 0.5rem;">AUDIO COMPLETO 100% OFICIAL</span>
+        <h3 id="fullAudioTitle" style="font-family: var(--font-logo); font-size: 1.3rem; font-style: italic; color: #fff;">Canción</h3>
+        <p id="fullAudioArtist" style="color: var(--vice-pink); font-weight: 700;">Artista</p>
+      </div>
+      <div id="fullAudioContainer" style="position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; border: 2px solid var(--vice-pink); box-shadow: 0 0 35px rgba(255, 42, 133, 0.4); background: #000;">
+        <!-- Se inserta el iframe del reproductor oficial completo -->
+      </div>
+    </div>
+  </div>
+
+  <audio id="audioElement" preload="none"></audio>
+  <script src="app.js"></script>
+</body>
+</html>

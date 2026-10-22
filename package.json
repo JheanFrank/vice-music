@@ -1,0 +1,16 @@
+{
+  "name": "vice-music",
+  "version": "1.0.0",
+  "description": "VICE MUSIC // GTA VI Leonida Lossless Hub",
+  "main": "server.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["music", "flac", "gtavi", "vice-city"],
+  "author": "",
+  "license": "MIT"
+}

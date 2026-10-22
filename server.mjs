@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
+import { Ytdl } from '@distube/ytdl-core';
+
+const ytdl = new Ytdl();
 
 // Forzar resolución IPv4 primero para evitar timeouts con Deezer, Apple Music y YouTube
 dns.setDefaultResultOrder('ipv4first');
@@ -238,7 +241,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.1', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube' }));
+      return res.end(JSON.stringify({ version: '2.2', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -445,6 +448,92 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: err.message }));
+      }
+    }
+
+    // 5. DESCARGA DIRECTA MP3 DESDE YOUTUBE (Sin redirigir, desde nuestro servidor)
+    if (pathname === '/api/download-mp3') {
+      const q = (reqUrl.searchParams.get('q') || '').trim();
+      const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
+
+      if (!q) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
+      }
+
+      try {
+        // Buscar el videoId en YouTube
+        const queryYt = `${q} audio oficial`;
+        const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryYt)}`, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(8000)
+        });
+        const html = await ytRes.text();
+
+        const regex = /"videoRenderer":\{"videoId":"([^"]+)".+?"title":\{"runs":\[\{"text":"([^"]+)"\}\]/g;
+        let match;
+        let videoId = null;
+
+        while ((match = regex.exec(html)) !== null) {
+          if (match[1] && match[1].length === 11) {
+            videoId = match[1];
+            break;
+          }
+        }
+
+        if (!videoId) {
+          const idx = html.indexOf('watch?v=');
+          if (idx !== -1) videoId = html.substring(idx + 8, idx + 19);
+        }
+
+        if (!videoId) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'No se encontró el audio en YouTube' }));
+        }
+
+        // Limpiar nombre de archivo para el header Content-Disposition
+        const safeFilename = filename.replace(/[^a-zA-Z0-9\s_\-\.áéíóúÁÉÍÓÚüÜñÑ]/g, '').trim() || 'cancion';
+        const encodedFilename = encodeURIComponent(safeFilename);
+
+        // Hacer stream del audio directo desde YouTube
+        const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        const audioStream = await ytdl.download(ytUrl, {
+          filter: f => f.hasAudio && !f.hasVideo,
+          quality: 'highestaudio'
+        });
+
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Content-Disposition': `attachment; filename="${encodedFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+          'Transfer-Encoding': 'chunked',
+          'Cache-Control': 'no-cache'
+        });
+
+        audioStream.pipe(res);
+
+        audioStream.on('error', (err) => {
+          console.error('[Download MP3] Stream error:', err.message);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          } else {
+            res.end();
+          }
+        });
+
+        req.on('close', () => {
+          audioStream.destroy();
+        });
+
+        return;
+
+      } catch (err) {
+        console.error('[Download MP3] Error:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
       }
     }
 

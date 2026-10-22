@@ -249,7 +249,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.3', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
+      return res.end(JSON.stringify({ version: '2.4', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -487,10 +487,44 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
       }
 
+      // Limpiar nombre de archivo para el header Content-Disposition
+      const safeFilename = filename.replace(/[^\w\s\-\.]/g, '').trim() || 'cancion';
+      const encodedFilename = encodeURIComponent(safeFilename);
+
+      async function fallbackDeezer() {
+        try {
+          const dzSearch = await fetch('https://api.deezer.com/search?q=' + encodeURIComponent(q) + '&limit=1', {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(6000)
+          });
+          const dzJson = await dzSearch.json();
+          const track = dzJson.data && dzJson.data[0];
+          if (track && track.preview) {
+            const audioFetch = await fetch(track.preview, { signal: AbortSignal.timeout(8000) });
+            const buf = Buffer.from(await audioFetch.arrayBuffer());
+            if (!res.headersSent) {
+              res.writeHead(200, {
+                'Content-Type': 'audio/mpeg',
+                'Content-Disposition': `attachment; filename="${encodedFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+                'Content-Length': buf.length,
+                'Cache-Control': 'no-cache'
+              });
+              return res.end(buf);
+            }
+          }
+        } catch (e) {
+          console.error('[Download Fallback Deezer] Error:', e.message);
+        }
+        if (!res.headersSent) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No se pudo obtener el stream de audio.' }));
+        }
+      }
+
       try {
-        // Buscar el videoId en YouTube
-        const queryYt = `${q} audio oficial`;
-        const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryYt)}`, {
+        // Buscar el video oficial en YouTube
+        const queryYt = q + ' official audio';
+        const ytRes = await fetch('https://www.youtube.com/results?search_query=' + encodeURIComponent(queryYt), {
           headers: { 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(8000)
         });
@@ -513,22 +547,15 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (!videoId) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'No se encontró el audio en YouTube' }));
+          return await fallbackDeezer();
         }
 
-        // Limpiar nombre de archivo para el header Content-Disposition
-        const safeFilename = filename.replace(/[^\w\s\-\.]/g, '').trim() || 'cancion';
-        const encodedFilename = encodeURIComponent(safeFilename);
-
-        // Hacer stream del audio con clientes TV / MWEB para evitar bloqueos
-        const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        const ytUrl = 'https://www.youtube.com/watch?v=' + videoId;
         const audioStream = await ytdl.download(ytUrl, {
           filter: f => f.hasAudio && !f.hasVideo,
-          quality: 'highestaudio',
-                  });
+          quality: 'highestaudio'
+        });
 
-        // Solo responder HTTP 200 cuando el primer bloque de audio realmente llegue
         let headersSent = false;
 
         audioStream.once('data', (firstChunk) => {
@@ -543,11 +570,10 @@ const server = http.createServer(async (req, res) => {
           audioStream.pipe(res);
         });
 
-        audioStream.on('error', (err) => {
-          console.error('[Download MP3] Stream error:', err.message);
+        audioStream.on('error', async (err) => {
+          console.error('[Download MP3] ytdl stream error:', err.message);
           if (!headersSent) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
+            await fallbackDeezer();
           } else {
             res.end();
           }
@@ -560,10 +586,9 @@ const server = http.createServer(async (req, res) => {
         return;
 
       } catch (err) {
-        console.error('[Download MP3] Error:', err.message);
+        console.error('[Download MP3] Main error:', err.message);
         if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          await fallbackDeezer();
         }
         return;
       }

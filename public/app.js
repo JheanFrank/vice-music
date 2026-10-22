@@ -249,7 +249,7 @@ function setupEventListeners() {
   if (btnPlayerDlMp3) {
     btnPlayerDlMp3.addEventListener('click', () => {
       if (state.currentTrack) {
-        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title);
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl);
       } else {
         showToast('Selecciona primero una canción para descargar en MP3 320.');
       }
@@ -261,7 +261,7 @@ function setupEventListeners() {
   if (btnPlayerDlMp3Mobile) {
     btnPlayerDlMp3Mobile.addEventListener('click', () => {
       if (state.currentTrack) {
-        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title);
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl);
       } else {
         showToast('Selecciona primero una cancion para descargar en MP3.');
       }
@@ -685,7 +685,7 @@ async function openAlbumDetail(albumId) {
 
       // Descargar MP3 320 kbps oficial vía stream
       trackRow.querySelector('.btn-dl-mp3').addEventListener('click', () => {
-        downloadMp3_320(track.artist, track.title);
+        downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl);
       });
 
       // Descargar pista individual
@@ -785,7 +785,7 @@ function renderTracks(tracks) {
 
     card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
       e.stopPropagation();
-      downloadMp3_320(track.artist, track.title);
+      downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl);
     });
 
     card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
@@ -902,13 +902,16 @@ async function playFullSong(artist, title, cover = null) {
   }
 }
 
-// DESCARGAR AUDIO EN MP3 320 KBPS DIRECTO DESDE NUESTRA PROPIA PAGINA
-async function downloadMp3_320(artist, title) {
+// DESCARGAR AUDIO EN MP3 DIRECTO DESDE NUESTRA PROPIA PAGINA
+async function downloadMp3_320(artist, title, audioUrl = null) {
   showToast('📥 Descargando MP3: ' + title + ' - ' + artist + '...');
   
   const q = encodeURIComponent(artist + ' ' + title);
   const filename = encodeURIComponent(title + ' - ' + artist);
-  const downloadUrl = '/api/download-mp3?q=' + q + '&filename=' + filename;
+  let downloadUrl = '/api/download-mp3?q=' + q + '&filename=' + filename;
+  if (audioUrl) {
+    downloadUrl += '&url=' + encodeURIComponent(audioUrl);
+  }
 
   const a = document.createElement('a');
   a.href = downloadUrl;

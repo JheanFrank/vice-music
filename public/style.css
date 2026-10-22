@@ -1037,6 +1037,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 0.85rem; /* Separacion clara y elegante entre botones */
+}
+
+.player-actions .btn-track-action {
+  padding: 0.6rem 0.95rem !important;
+  font-size: 0.78rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.4rem !important;
+  white-space: nowrap !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.player-actions .btn-track-action:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.15);
 }
 
 .loader-container {

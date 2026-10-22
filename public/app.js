@@ -814,7 +814,7 @@ async function playFullSong(artist, title, cover = null) {
   }
 
   state.playbackSource = 'full';
-  state.currentTrack = { title, artist, cover };
+  state.currentTrack = (state.currentTrack && state.currentTrack.title === title) ? { ...state.currentTrack, title, artist, cover } : { title, artist, cover };
 
   playerTitle.innerText = title;
   playerArtist.innerText = artist;
@@ -866,23 +866,28 @@ async function playFullSong(artist, title, cover = null) {
 
 // DESCARGAR AUDIO EN MP3 320 KBPS DIRECTO DESDE EL STREAM OFICIAL
 async function downloadMp3_320(artist, title) {
-  showToast(`📥 Preparando descarga MP3: ${title}...`);
+  // 1. Si tenemos el enlace oficial de Lucida / Deezer, abrimos descarga directa en MP3 320 kbps de estudio
+  if (state.currentTrack && state.currentTrack.lucidaUrl) {
+    showToast(📥 Abriendo descarga MP3 320 kbps (Estudio Deezer sin anuncios): );
+    window.open(state.currentTrack.lucidaUrl, '_blank');
+    return;
+  }
+
+  // 2. Si no, buscar el audio y abrir la descarga limpia
+  showToast(📥 Conectando descarga de alta fidelidad para: ...);
   try {
-    const q = encodeURIComponent(`${artist} ${title}`);
-    const filename = encodeURIComponent(`${title} - ${artist}`);
-    const a = document.createElement('a');
-    a.href = `/api/download-mp3?q=${q}&filename=${filename}`;
-    a.download = `${title} - ${artist}.mp3`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast(`⬇️ Descargando MP3: ${title} - ${artist}`);
+    const res = await fetch(/api/fullaudio?q=);
+    const data = await res.json();
+    if (data.videoId) {
+      window.open(https://lucida.to/?url=, '_blank');
+    } else {
+      showToast('❌ No se encontró enlace de descarga para esta canción.');
+    }
   } catch (err) {
-    console.error('Error al descargar MP3:', err);
-    showToast(`❌ Error al descargar MP3: ${err.message}`);
+    console.error('Error en descarga:', err);
+    showToast(❌ Error: );
   }
 }
-
 function togglePlayPause() {
   if (state.playbackSource === 'full') {
     if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;

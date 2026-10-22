@@ -456,7 +456,7 @@ const server = http.createServer(async (req, res) => {
       const v = (reqUrl.searchParams.get('v') || 'zZ_xuLlZ_t4').trim();
       try {
         const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${v}`, {
-          clients: ['tv', 'mweb', 'web_embedded']
+          clients: ['visionos']
         });
         const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo).map(f => ({
           container: f.container,
@@ -519,7 +519,7 @@ const server = http.createServer(async (req, res) => {
         const audioStream = await ytdl.download(ytUrl, {
           filter: f => f.hasAudio && !f.hasVideo,
           quality: 'highestaudio',
-          clients: ['tv', 'mweb', 'web_embedded']
+          clients: ['visionos']
         });
 
         // Solo responder HTTP 200 cuando el primer bloque de audio realmente llegue

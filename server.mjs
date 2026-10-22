@@ -1,3 +1,4 @@
+// v1.1 - deploy 2026-10-22 13:07
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -24,7 +25,7 @@ const MIME_TYPES = {
 
 // ==========================================
 // MOTOR PRINCIPAL: iTunes Search API (GRATIS, sin bloqueos en servidores cloud)
-// RESPALDO: Deezer API pública
+// RESPALDO: Deezer API pÃºblica
 // ==========================================
 
 async function searchAlbumsItunes(q) {
@@ -42,7 +43,7 @@ async function searchAlbumsItunes(q) {
     albums.push({
       id: `itunes_${id}`,
       itunesId: id,
-      title: a.collectionName || 'Álbum',
+      title: a.collectionName || 'Ãlbum',
       artist: a.artistName || 'Artista',
       coverXl: (a.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
       nbTracks: a.trackCount || 0,
@@ -66,7 +67,7 @@ async function searchTracksItunes(q) {
     itunesId: t.trackId,
     title: t.trackName || 'Pista',
     artist: t.artistName || 'Artista',
-    album: t.collectionName || 'Álbum',
+    album: t.collectionName || 'Ãlbum',
     albumId: `itunes_${t.collectionId}`,
     itunesAlbumId: t.collectionId,
     coverXl: (t.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
@@ -101,11 +102,11 @@ async function getAlbumTracksItunes(itunesAlbumId) {
   return {
     id: `itunes_${itunesAlbumId}`,
     itunesId: itunesAlbumId,
-    title: albumInfo.collectionName || 'Álbum',
+    title: albumInfo.collectionName || 'Ãlbum',
     artist: albumInfo.artistName || 'Artista',
     coverXl: (albumInfo.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
     releaseDate: albumInfo.releaseDate ? albumInfo.releaseDate.substring(0, 10) : 'N/A',
-    label: albumInfo.copyright || 'Discográfica',
+    label: albumInfo.copyright || 'DiscogrÃ¡fica',
     nbTracks: tracks.length,
     link: albumInfo.collectionViewUrl || '',
     lucidaAlbumZipUrl: `https://lucida.to/?url=${encodeURIComponent(albumInfo.collectionViewUrl || '')}`,
@@ -132,21 +133,21 @@ const server = http.createServer(async (req, res) => {
   const pathname = reqUrl.pathname;
 
   try {
-    // 1. BUSCADOR INTELIGENTE DE ÁLBUMES
+    // 1. BUSCADOR INTELIGENTE DE ÃLBUMES
     if (pathname === '/api/albums/search') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       if (!q) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'Parámetro de búsqueda vacío' }));
+        return res.end(JSON.stringify({ error: 'ParÃ¡metro de bÃºsqueda vacÃ­o' }));
       }
 
-      // Buscar álbumes y pistas en paralelo desde iTunes
+      // Buscar Ã¡lbumes y pistas en paralelo desde iTunes
       const [albumResults, trackResults] = await Promise.all([
         searchAlbumsItunes(q),
         searchTracksItunes(q)
       ]);
 
-      // Extraer álbumes de los tracks encontrados (para búsquedas por canción)
+      // Extraer Ã¡lbumes de los tracks encontrados (para bÃºsquedas por canciÃ³n)
       const seen = new Set(albumResults.map(a => a.itunesId));
       const fromTracks = [];
 
@@ -159,7 +160,7 @@ const server = http.createServer(async (req, res) => {
             title: t.album,
             artist: t.artist,
             coverXl: t.coverXl,
-            nbTracks: '—',
+            nbTracks: 'â€”',
             matchedTrack: t.title,
             link: '',
             lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || '')}`,
@@ -174,7 +175,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ albums: combined }));
     }
 
-    // 2. DETALLE COMPLETO DE UN ÁLBUM CON TODAS SUS CANCIONES
+    // 2. DETALLE COMPLETO DE UN ÃLBUM CON TODAS SUS CANCIONES
     if (pathname.startsWith('/api/album/')) {
       const rawId = pathname.replace('/api/album/', '');
       const itunesId = rawId.replace('itunes_', '');
@@ -190,10 +191,10 @@ const server = http.createServer(async (req, res) => {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       if (!q) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'Parámetro de búsqueda vacío' }));
+        return res.end(JSON.stringify({ error: 'ParÃ¡metro de bÃºsqueda vacÃ­o' }));
       }
 
-      // Si es enlace de álbum de Deezer (soportar links viejos)
+      // Si es enlace de Ã¡lbum de Deezer (soportar links viejos)
       const deezerAlbum = q.match(/deezer\.com\/album\/(\d+)/);
       if (deezerAlbum) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -206,12 +207,12 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ isAlbum: false, data: tracks }));
     }
 
-    // 4. AUDIO COMPLETO VÍA YOUTUBE (iFrame oficial sin restricciones)
+    // 4. AUDIO COMPLETO VÃA YOUTUBE (iFrame oficial sin restricciones)
     if (pathname === '/api/fullaudio') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       if (!q) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
+        return res.end(JSON.stringify({ error: 'ParÃ¡metro vacÃ­o' }));
       }
 
       try {
@@ -233,14 +234,14 @@ const server = http.createServer(async (req, res) => {
         }
 
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'No se encontró stream' }));
+        return res.end(JSON.stringify({ error: 'No se encontrÃ³ stream' }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: err.message }));
       }
     }
 
-    // Servir frontend estático
+    // Servir frontend estÃ¡tico
     let filePath = path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
     if (!filePath.startsWith(PUBLIC_DIR)) {
       res.writeHead(403);
@@ -265,7 +266,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
-  console.log(`🌴 VICE MUSIC // ITUNES ENGINE + AUDIO COMPLETO`);
-  console.log(`🌐 Puerto: ${PORT}`);
+  console.log(`ðŸŒ´ VICE MUSIC // ITUNES ENGINE + AUDIO COMPLETO`);
+  console.log(`ðŸŒ Puerto: ${PORT}`);
   console.log(`======================================================\n`);
 });

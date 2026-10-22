@@ -1,4 +1,4 @@
-/* ========================================================
+﻿/* ========================================================
    VICE MUSIC // GTA VI EDITION (FULL ALBUMS & FLAC)
    ======================================================== */
 
@@ -1114,6 +1114,11 @@ body {
   }
 }
 
+
+/* Botones exclusivos de movil (MP3 y Completa en btn-group) - ocultos en desktop */
+.btn-mobile-action {
+  display: none !important;
+}
 @media (max-width: 768px) {
   body {
     padding-bottom: 165px;
@@ -1391,26 +1396,28 @@ body {
     height: 14px;
   }
 
-  /* BARRA REPRODUCTOR EN MÓVIL (DISEÑO NATIVO COMPACTO) */
+  /* BARRA REPRODUCTOR EN MOVIL (DISENO NATIVO COMPACTO) */
   .vice-player {
     height: auto;
-    min-height: 100px;
-    padding: 0.65rem 0.8rem 0.75rem 0.8rem;
+    min-height: 120px;
+    padding: 0.6rem 0.75rem 0.7rem 0.75rem;
   }
 
   .player-content {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.4rem;
     padding: 0;
+    position: relative;
   }
 
+  /* Fila 1: portada + info + botones de control (todo en la misma linea) */
   .player-track {
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 0.65rem;
-    padding-right: 155px; /* Espacio para los botones de control a la derecha */
+    gap: 0.6rem;
+    padding-right: 0;
   }
 
   .track-artwork-wrapper {
@@ -1426,44 +1433,72 @@ body {
   }
 
   .track-meta h4 {
-    font-size: 0.84rem;
+    font-size: 0.82rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .track-meta p {
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .spec-pill {
-    font-size: 0.6rem;
-    padding: 0.1rem 0.35rem;
+    font-size: 0.58rem;
+    padding: 0.1rem 0.3rem;
   }
 
   .player-actions {
-    display: none; /* En móvil se oculta el visualizador y el botón duplicado */
+    display: none;
   }
 
+  /* Controles: apilados verticalmente */
   .player-controls {
     width: 100%;
     display: flex;
     flex-direction: column;
+    gap: 0.35rem;
   }
 
-  .btn-group {
-    position: absolute;
-    top: 0.65rem;
-    right: 0.75rem;
-    gap: 0.5rem;
+  /* Botones de prev/play/next/velocidad/descarga/completa en una fila con wrap */
+  /* Mostrar botones de movil en la seccion mobile */
+  .btn-mobile-action {
+    display: flex !important;
+    height: 36px;
+    padding: 0 0.4rem;
+    font-size: 1rem;
+    background: rgba(255, 42, 133, 0.12);
+    border: 1px solid rgba(255, 42, 133, 0.3);
+    border-radius: 8px;
     align-items: center;
+    justify-content: center;
+    color: var(--vice-pink);
+    flex-shrink: 0;
+    min-width: 36px;
+  }
+  .btn-group {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    overflow: hidden;
   }
 
   .control-btn {
-    padding: 0.2rem;
+    padding: 0.25rem;
+    flex-shrink: 0;
+    height: 36px;
+    min-width: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .control-btn svg {
@@ -1472,33 +1507,47 @@ body {
   }
 
   .control-btn.play-main {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
   }
 
   .control-btn.play-main svg {
-    width: 17px;
-    height: 17px;
+    width: 18px;
+    height: 18px;
   }
 
-  .speed-btn {
-    font-size: 0.68rem;
-    padding: 0.2rem 0.45rem;
+  /* Botones de texto (velocidad, MP3, Completa) */
+  .speed-btn,
+  .btn-download-mp3,
+  .btn-full-song {
+    font-size: 0.62rem;
+    padding: 0 0.4rem;
+    height: 36px;
+    white-space: nowrap;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .progress-bar-container {
     width: 100%;
     max-width: 100%;
-    margin-top: 0.25rem;
-    gap: 0.5rem;
+    margin-top: 0.1rem;
+    gap: 0.4rem;
   }
 
   .time-label {
-    font-size: 0.68rem;
-    width: 32px;
+    font-size: 0.65rem;
+    width: 30px;
   }
 
   .progress-track {
-    height: 6px;
+    height: 5px;
   }
 }

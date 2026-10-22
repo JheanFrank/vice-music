@@ -7,6 +7,8 @@ const state = {
   currentTrack: null,
   currentAlbum: null,
   isPlaying: false,
+  playbackSource: 'preview', // 'preview' | 'full'
+  currentSpeed: 1, // 1 | 1.25 | 1.5 | 2
   audio: document.getElementById('audioElement'),
   results: []
 };
@@ -39,11 +41,14 @@ const playerCover = document.getElementById('playerCover');
 const playerTitle = document.getElementById('playerTitle');
 const playerArtist = document.getElementById('playerArtist');
 const playerDuration = document.getElementById('playerDuration');
+const playerModeBadge = document.getElementById('playerModeBadge');
 const btnPlayPause = document.getElementById('btnPlayPause');
 const iconPlay = document.getElementById('iconPlay');
 const iconPause = document.getElementById('iconPause');
 const btnBackward = document.getElementById('btnBackward');
 const btnForward = document.getElementById('btnForward');
+const btnSpeed = document.getElementById('btnSpeed');
+const speedLabel = document.getElementById('speedLabel');
 const progressTrack = document.getElementById('progressTrack');
 const progressFill = document.getElementById('progressFill');
 const progressThumb = document.getElementById('progressThumb');
@@ -51,24 +56,89 @@ const currentTimeLabel = document.getElementById('currentTime');
 const totalTimeLabel = document.getElementById('totalTime');
 const waveIndicator = document.getElementById('waveIndicator');
 const visualizerCanvas = document.getElementById('visualizerCanvas');
-
-// Modal Full Audio DOM
-const fullAudioModal = document.getElementById('fullAudioModal');
-const modalFullAudioClose = document.getElementById('modalFullAudioClose');
-const fullAudioTitle = document.getElementById('fullAudioTitle');
-const fullAudioArtist = document.getElementById('fullAudioArtist');
-const fullAudioContainer = document.getElementById('fullAudioContainer');
 const btnPlayFullSong = document.getElementById('btnPlayFullSong');
 
 const vCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
 
-// Inicialización
+// ========================================================
+// MOTOR YOUTUBE IFRAME (AUDIO COMPLETO EN SEGUNDO PLANO)
+// ========================================================
+let ytPlayer = null;
+let ytReady = false;
+let ytProgressInterval = null;
+
+window.onYouTubeIframeAPIReady = function() {
+  ytPlayer = new YT.Player('ytPlayerSlot', {
+    height: '200',
+    width: '200',
+    playerVars: {
+      autoplay: 1,
+      controls: 0,
+      disablekb: 1,
+      fs: 0,
+      modestbranding: 1,
+      rel: 0
+    },
+    events: {
+      onReady: () => {
+        ytReady = true;
+      },
+      onStateChange: onYtStateChange
+    }
+  });
+};
+
+function onYtStateChange(event) {
+  if (state.playbackSource !== 'full') return;
+
+  if (event.data === 1) { // PLAYING
+    setPlayingState(true);
+    startYtProgress();
+  } else if (event.data === 2) { // PAUSED
+    setPlayingState(false);
+    stopYtProgress();
+  } else if (event.data === 0) { // ENDED
+    setPlayingState(false);
+    stopYtProgress();
+    currentTimeLabel.innerText = '00:00';
+    progressFill.style.width = '0%';
+    progressThumb.style.left = '0%';
+  }
+}
+
+function startYtProgress() {
+  stopYtProgress();
+  ytProgressInterval = setInterval(() => {
+    if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+    const cur = ytPlayer.getCurrentTime() || 0;
+    const dur = ytPlayer.getDuration() || 0;
+
+    currentTimeLabel.innerText = formatTime(cur);
+    totalTimeLabel.innerText = dur > 0 ? formatTime(dur) : '00:00';
+    if (dur > 0) {
+      const pct = (cur / dur) * 100;
+      progressFill.style.width = `${pct}%`;
+      progressThumb.style.left = `${pct}%`;
+    }
+  }, 250);
+}
+
+function stopYtProgress() {
+  if (ytProgressInterval) {
+    clearInterval(ytProgressInterval);
+    ytProgressInterval = null;
+  }
+}
+
+// ========================================================
+// INICIALIZACIÓN
+// ========================================================
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   startVisualizer();
   
-  // Búsqueda inicial
-  performSearch('BbY WOW Karol G');
+  // Búsqueda inicial por defecto
+  performSearch('Blessd Superstar');
 });
 
 function setupEventListeners() {
@@ -97,51 +167,64 @@ function setupEventListeners() {
   btnBackToAlbums.addEventListener('click', () => {
     albumDetailView.classList.add('hidden');
     catalogSection.classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  // Botón Escuchar Completa en la barra fija
+  // Botón Escuchar Canción Completa en la barra fija
   if (btnPlayFullSong) {
     btnPlayFullSong.addEventListener('click', () => {
       if (state.currentTrack) {
-        playFullSong(state.currentTrack.artist, state.currentTrack.title);
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover);
       } else {
         showToast('Selecciona primero una canción para escucharla completa.');
       }
     });
   }
 
-  // Cerrar Modal Full Audio
-  if (modalFullAudioClose) {
-    modalFullAudioClose.addEventListener('click', closeFullAudioModal);
-  }
-  if (fullAudioModal) {
-    fullAudioModal.addEventListener('click', (e) => {
-      if (e.target === fullAudioModal || e.target.classList.contains('modal-backdrop')) {
-        closeFullAudioModal();
-      }
-    });
+  // Botón de Velocidad (1x -> 1.25x -> 1.5x -> 2x)
+  if (btnSpeed) {
+    btnSpeed.addEventListener('click', cyclePlaybackSpeed);
   }
 
-  // Reproductor
+  // Reproductor Controles Fijos
   btnPlayPause.addEventListener('click', togglePlayPause);
+  
   btnBackward.addEventListener('click', () => {
-    state.audio.currentTime = Math.max(0, state.audio.currentTime - 5);
+    seekDelta(-5);
   });
+
   btnForward.addEventListener('click', () => {
-    state.audio.currentTime = Math.min(state.audio.duration || 0, state.audio.currentTime + 5);
+    seekDelta(5);
   });
 
   progressTrack.addEventListener('click', (e) => {
-    if (!state.audio.duration) return;
     const rect = progressTrack.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    state.audio.currentTime = pos * state.audio.duration;
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+    if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getDuration === 'function') {
+      const dur = ytPlayer.getDuration();
+      if (dur > 0) {
+        ytPlayer.seekTo(pos * dur, true);
+      }
+    } else if (state.audio.duration) {
+      state.audio.currentTime = pos * state.audio.duration;
+    }
   });
 
-  state.audio.addEventListener('timeupdate', updateProgress);
-  state.audio.addEventListener('ended', () => setPlayingState(false));
-  state.audio.addEventListener('play', () => setPlayingState(true));
-  state.audio.addEventListener('pause', () => setPlayingState(false));
+  state.audio.addEventListener('timeupdate', () => {
+    if (state.playbackSource === 'preview') {
+      updateProgress();
+    }
+  });
+  state.audio.addEventListener('ended', () => {
+    if (state.playbackSource === 'preview') setPlayingState(false);
+  });
+  state.audio.addEventListener('play', () => {
+    if (state.playbackSource === 'preview') setPlayingState(true);
+  });
+  state.audio.addEventListener('pause', () => {
+    if (state.playbackSource === 'preview') setPlayingState(false);
+  });
 }
 
 function switchViewMode(mode) {
@@ -153,19 +236,19 @@ function switchViewMode(mode) {
     tabAlbums.classList.add('active');
     tabTracks.classList.remove('active');
     searchHeaderTitle.innerText = 'BUSCA CUALQUIER ÁLBUM O CANCIÓN';
-    searchHeaderSub.innerHTML = 'Escribe un artista o canción (ej: <strong>BbY WOW de Karol G</strong>) y te llevará a su álbum completo.';
-    searchInput.placeholder = 'Busca un artista o canción (ej: BbY WOW Karol G, Blessd, Feid)...';
+    searchHeaderSub.innerHTML = 'Escribe un artista o canción (ej: <strong>Blessd Superstar</strong>, <strong>Karol G</strong>) para ver álbumes completos.';
+    searchInput.placeholder = 'Busca un artista o canción (ej: Blessd Superstar, Karol G, Feid)...';
     resultsTitle.innerText = 'ÁLBUMES DISPONIBLES';
   } else {
     tabTracks.classList.add('active');
     tabAlbums.classList.remove('active');
     searchHeaderTitle.innerText = 'BUSCA PISTAS O PEGA ENLACES';
     searchHeaderSub.innerHTML = 'Encuentra canciones sueltas y salta a su <strong>álbum completo</strong> con un solo clic.';
-    searchInput.placeholder = 'Busca canción (ej: BbY WOW, Mírame, Luna)...';
+    searchInput.placeholder = 'Busca canción (ej: Superstar, BbY WOW, Mírame)...';
     resultsTitle.innerText = 'PISTAS IDENTIFICADAS';
   }
 
-  const query = searchInput.value.trim() || 'BbY WOW Karol G';
+  const query = searchInput.value.trim() || 'Blessd Superstar';
   performSearch(query);
 }
 
@@ -217,7 +300,7 @@ function renderAlbums(albums) {
     resultsGrid.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 4rem 1rem;">
         <h3 style="font-family: var(--font-logo); color: var(--vice-pink);">No se encontraron álbumes</h3>
-        <p style="color: var(--text-dim); margin-top: 0.5rem;">Prueba buscando el nombre directo del artista o canción (ej: BbY WOW Karol G, Blessd, Feid).</p>
+        <p style="color: var(--text-dim); margin-top: 0.5rem;">Prueba buscando el nombre directo del artista o canción (ej: Blessd Superstar, Karol G, Feid).</p>
       </div>
     `;
     return;
@@ -228,12 +311,12 @@ function renderAlbums(albums) {
     card.className = 'album-card';
 
     const matchedPill = album.matchedTrack 
-      ? `<span class="badge-tag-hd" style="top: 12px; left: 12px; border-color: var(--vice-cyan); color: var(--vice-cyan);">🎯 CONTIENE: "${album.matchedTrack}"</span>` 
+      ? `<span class="badge-tag-hd" style="top: 10px; left: 10px; border-color: var(--vice-cyan); color: var(--vice-cyan);">🎯 CONTIENE: "${album.matchedTrack}"</span>` 
       : '';
 
     card.innerHTML = `
       <div class="album-cover-wrapper">
-        <img class="album-cover" src="${album.coverXl}" alt="${album.title}" loading="lazy">
+        <img class="album-cover" src="${album.coverXl}" alt="${album.title}" loading="lazy" onerror="this.src='https://via.placeholder.com/400/1a0933/ff2a85?text=VICE'">
         ${matchedPill}
         <span class="album-badge-tracks">${album.nbTracks} CANCIONES</span>
       </div>
@@ -253,7 +336,7 @@ function renderAlbums(albums) {
 async function openAlbumDetail(albumId) {
   catalogSection.classList.add('hidden');
   albumDetailView.classList.remove('hidden');
-  window.scrollTo({ top: 300, behavior: 'smooth' });
+  window.scrollTo({ top: 120, behavior: 'smooth' });
 
   albumHeroContent.innerHTML = `
     <div style="text-align: center; width: 100%; padding: 3rem 0;">
@@ -268,10 +351,10 @@ async function openAlbumDetail(albumId) {
     const album = await res.json();
     state.currentAlbum = album;
 
-    // Renderizar Hero del Álbum con el botón de DESCARGA DE ÁLBUM COMPLETO
+    // Renderizar Hero del Álbum
     albumHeroContent.innerHTML = `
       <div class="album-hero-cover-wrapper">
-        <img src="${album.coverXl}" alt="${album.title}">
+        <img src="${album.coverXl}" alt="${album.title}" onerror="this.src='https://via.placeholder.com/500/1a0933/ff2a85?text=VICE'">
       </div>
       <div class="album-hero-meta">
         <span class="album-badge-type">DISCOGRAFÍA OFICIAL MASTER</span>
@@ -280,12 +363,12 @@ async function openAlbumDetail(albumId) {
         <div class="album-hero-details">
           <span>📅 Lanzamiento: ${album.releaseDate}</span>
           <span>💿 ${album.nbTracks} Canciones</span>
-          <span>🏷️ ${album.label}</span>
+          <span>🏷️ ${album.label || 'Oficial'}</span>
           <span>🖼️ Portada: 1000x1000 HD</span>
         </div>
         <div class="album-hero-actions">
           <!-- BOTÓN PRINCIPAL: DESCARGAR ÁLBUM COMPLETO EN FLAC -->
-          <button class="vice-btn-primary btn-download-full-album" style="background: linear-gradient(135deg, #00f0ff, #ff2a85); font-size: 0.95rem; padding: 0.9rem 2rem;">
+          <button class="vice-btn-primary btn-download-full-album" style="background: linear-gradient(135deg, #00f0ff, #ff2a85); font-size: 0.95rem; padding: 0.9rem 1.8rem;">
             <span>📦 DESCARGAR ÁLBUM COMPLETO (FLAC .ZIP)</span>
           </button>
 
@@ -298,7 +381,6 @@ async function openAlbumDetail(albumId) {
 
     // Acción: Descargar Álbum Completo (.ZIP en FLAC con Lucida)
     albumHeroContent.querySelector('.btn-download-full-album').addEventListener('click', () => {
-      navigator.clipboard.writeText(album.link);
       showToast(`📦 Abriendo descarga del álbum completo en ZIP / FLAC para: ${album.title}`);
       window.open(album.lucidaAlbumZipUrl, '_blank');
     });
@@ -344,7 +426,8 @@ async function openAlbumDetail(albumId) {
       // Escuchar muestra de 30s
       trackRow.querySelector('.btn-track-play').addEventListener('click', () => {
         if (!track.preview) {
-          showToast('⚠️ Esta pista no tiene muestra de audio disponible.');
+          showToast('⚠️ Muestra de 30s no disponible. Reproduciendo canción completa oficial...');
+          playFullSong(track.artist, track.title, album.coverXl);
           return;
         }
         loadTrack({
@@ -355,9 +438,9 @@ async function openAlbumDetail(albumId) {
         });
       });
 
-      // Escuchar Canción Completa (Full Stream)
+      // Escuchar Canción Completa (YouTube Audio Oficial en segundo plano)
       trackRow.querySelector('.btn-play-full').addEventListener('click', () => {
-        playFullSong(track.artist, track.title);
+        playFullSong(track.artist, track.title, album.coverXl);
       });
 
       // Descargar pista individual
@@ -371,7 +454,7 @@ async function openAlbumDetail(albumId) {
 
   } catch (err) {
     console.error('Error al abrir álbum:', err);
-    albumHeroContent.innerHTML = `<p style="color: #ff2a85;">Error al cargar el álbum: ${err.message}</p>`;
+    albumHeroContent.innerHTML = `<p style="color: #ff2a85; padding: 2rem;">Error al cargar el álbum: ${err.message}</p>`;
   }
 }
 
@@ -388,7 +471,6 @@ function renderTracks(tracks) {
     const card = document.createElement('div');
     card.className = 'album-card';
 
-    // Botón para saltar al álbum completo de la canción
     const goToAlbumBtn = track.albumId ? `
       <button class="btn-go-to-album" style="
         width: 100%;
@@ -396,7 +478,7 @@ function renderTracks(tracks) {
         background: linear-gradient(90deg, #ff2a85, #9d00ff);
         color: #fff;
         border: none;
-        padding: 0.65rem;
+        padding: 0.6rem;
         border-radius: 10px;
         font-family: var(--font-logo);
         font-size: 0.78rem;
@@ -415,7 +497,7 @@ function renderTracks(tracks) {
 
     card.innerHTML = `
       <div class="album-cover-wrapper">
-        <img class="album-cover" src="${track.coverXl}" alt="${track.title}" loading="lazy">
+        <img class="album-cover" src="${track.coverXl}" alt="${track.title}" loading="lazy" onerror="this.src='https://via.placeholder.com/400/1a0933/ff2a85?text=VICE'">
         <span class="album-badge-tracks" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
           💿 ${track.album}
         </span>
@@ -427,24 +509,31 @@ function renderTracks(tracks) {
         <div style="margin-top: auto;">
           ${goToAlbumBtn}
           <div style="display: flex; gap: 0.5rem;">
-            <button class="btn-track-action btn-single-flac" style="flex: 1; padding: 0.6rem; font-size: 0.78rem;">
-              ⚡ FLAC CANCIÓN
+            <button class="btn-track-action btn-single-full" style="flex: 1; padding: 0.55rem; font-size: 0.75rem; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
+              🎧 COMPLETA
             </button>
-            <button class="btn-track-play btn-single-play">
-              <svg viewBox="0 0 24 24" fill="currentColor" style="width: 16px; height: 16px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <button class="btn-track-action btn-single-flac" style="padding: 0.55rem 0.7rem; font-size: 0.75rem;">
+              ⚡ FLAC
+            </button>
+            <button class="btn-track-play btn-single-play" title="Muestra 30s">
+              <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
             </button>
           </div>
         </div>
       </div>
     `;
 
-    // Click en botón para saltar de una vez al álbum completo
     if (track.albumId) {
       card.querySelector('.btn-go-to-album').addEventListener('click', (e) => {
         e.stopPropagation();
         openAlbumDetail(track.albumId);
       });
     }
+
+    card.querySelector('.btn-single-full').addEventListener('click', (e) => {
+      e.stopPropagation();
+      playFullSong(track.artist, track.title, track.coverXl);
+    });
 
     card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -465,26 +554,148 @@ function renderTracks(tracks) {
   });
 }
 
-// Reproductor
+// ========================================================
+// REPRODUCTOR UNIFICADO (PREVIEW 30S + CANCIÓN COMPLETA)
+// ========================================================
+
 function loadTrack(track) {
+  // Detener YouTube si estaba sonando
+  if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    ytPlayer.pauseVideo();
+    stopYtProgress();
+  }
+
+  state.playbackSource = 'preview';
   state.currentTrack = track;
   playerTitle.innerText = track.title;
   playerArtist.innerText = track.artist;
-  playerCover.src = track.cover;
+  playerCover.src = track.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
+
+  playerModeBadge.innerText = 'PREVIEW 30S';
+  playerModeBadge.className = 'spec-pill';
 
   if (track.audioUrl) {
     state.audio.src = track.audioUrl;
+    state.audio.playbackRate = state.currentSpeed;
     state.audio.play().then(() => setPlayingState(true)).catch(() => setPlayingState(false));
   }
 }
 
-function togglePlayPause() {
-  if (!state.audio.src) return;
-  if (state.audio.paused) {
-    state.audio.play();
-  } else {
+// REPRODUCIR CANCIÓN 100% COMPLETA (SIN VIDEO MOLESTO EN PANTALLA)
+async function playFullSong(artist, title, cover = null) {
+  // Pausar audio de muestra si está sonando
+  if (state.audio) {
     state.audio.pause();
   }
+
+  state.playbackSource = 'full';
+  state.currentTrack = { title, artist, cover };
+
+  playerTitle.innerText = title;
+  playerArtist.innerText = artist;
+  if (cover) {
+    playerCover.src = cover;
+  }
+  playerModeBadge.innerText = '🎧 CANCIÓN COMPLETA';
+  playerModeBadge.className = 'spec-pill gold';
+  currentTimeLabel.innerText = '00:00';
+  totalTimeLabel.innerText = 'Cargando...';
+  progressFill.style.width = '0%';
+  progressThumb.style.left = '0%';
+
+  showToast(`🎧 Sintonizando audio completo: ${title}...`);
+
+  try {
+    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}`);
+    const data = await res.json();
+
+    if (data.videoId) {
+      if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+        ytPlayer.loadVideoById(data.videoId);
+        ytPlayer.playVideo();
+        if (typeof ytPlayer.setPlaybackRate === 'function') {
+          ytPlayer.setPlaybackRate(state.currentSpeed);
+        }
+        setPlayingState(true);
+        startYtProgress();
+        showToast(`▶️ Reproduciendo canción completa oficial: ${title}`);
+      } else {
+        // En caso de que la API de YT aún no termine de cargar
+        showToast(`▶️ Iniciando stream...`);
+        setTimeout(() => {
+          if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+            ytPlayer.loadVideoById(data.videoId);
+            ytPlayer.playVideo();
+            startYtProgress();
+          }
+        }, 1500);
+      }
+    } else {
+      showToast('⚠️ No se encontró stream de audio completo. Prueba con la muestra de 30s o descarga en FLAC.');
+      playerModeBadge.innerText = 'NO DISPONIBLE';
+    }
+  } catch (err) {
+    console.error('Error al conectar con stream:', err);
+    showToast(`Error al sintonizar stream completo: ${err.message}`);
+  }
+}
+
+function togglePlayPause() {
+  if (state.playbackSource === 'full') {
+    if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
+    const ytState = ytPlayer.getPlayerState();
+    if (ytState === 1) { // está reproduciendo
+      ytPlayer.pauseVideo();
+      setPlayingState(false);
+    } else {
+      ytPlayer.playVideo();
+      setPlayingState(true);
+    }
+  } else {
+    if (!state.audio.src) return;
+    if (state.audio.paused) {
+      state.audio.play();
+    } else {
+      state.audio.pause();
+    }
+  }
+}
+
+function seekDelta(seconds) {
+  if (state.playbackSource === 'full') {
+    if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+    const cur = ytPlayer.getCurrentTime() || 0;
+    const dur = ytPlayer.getDuration() || 0;
+    const target = Math.max(0, Math.min(dur, cur + seconds));
+    ytPlayer.seekTo(target, true);
+  } else {
+    if (!state.audio.duration) return;
+    state.audio.currentTime = Math.max(0, Math.min(state.audio.duration, state.audio.currentTime + seconds));
+  }
+}
+
+// Alternar velocidad (1x -> 1.25x -> 1.5x -> 2x)
+function cyclePlaybackSpeed() {
+  const speeds = [1, 1.25, 1.5, 2];
+  const currentIndex = speeds.indexOf(state.currentSpeed);
+  const nextIndex = (currentIndex + 1) % speeds.length;
+  state.currentSpeed = speeds[nextIndex];
+
+  if (speedLabel) {
+    speedLabel.innerText = `${state.currentSpeed}x`;
+  }
+
+  // Aplicar a YouTube
+  if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
+    ytPlayer.setPlaybackRate(state.currentSpeed);
+  }
+
+  // Aplicar a Audio HTML5
+  if (state.audio) {
+    state.audio.playbackRate = state.currentSpeed;
+  }
+
+  showToast(`⚡ Velocidad ajustada a ${state.currentSpeed}x`);
 }
 
 function setPlayingState(playing) {
@@ -537,60 +748,6 @@ function showToast(message) {
   setTimeout(() => toastNotification.classList.add('hidden'), 4500);
 }
 
-// REPRODUCIR CANCIÓN 100% COMPLETA
-async function playFullSong(artist, title) {
-  // Pausar audio de muestra si está sonando
-  if (state.audio) {
-    state.audio.pause();
-    setPlayingState(false);
-  }
-
-  fullAudioTitle.innerText = title;
-  fullAudioArtist.innerText = artist;
-  fullAudioContainer.innerHTML = `
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--vice-pink);">
-      <div class="vice-spinner"><div class="inner-vi">VI</div></div>
-      <p style="font-family: var(--font-mono); font-size: 0.85rem; margin-top: 1rem;">CARGANDO STREAM COMPLETO OFICIAL...</p>
-    </div>
-  `;
-  fullAudioModal.classList.remove('hidden');
-
-  try {
-    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}`);
-    const data = await res.json();
-
-    if (data.embedUrl) {
-      fullAudioContainer.innerHTML = `
-        <iframe 
-          src="${data.embedUrl}" 
-          style="width: 100%; height: 100%; border: none;" 
-          allow="autoplay; encrypted-media; picture-in-picture" 
-          allowfullscreen>
-        </iframe>
-      `;
-      showToast(`🎧 Reproduciendo canción completa: ${title}`);
-    } else {
-      fullAudioContainer.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #fff; padding: 2rem;">
-          <p style="color: var(--vice-pink); font-size: 1.1rem; margin-bottom: 0.5rem;">No se encontró stream directo.</p>
-          <p style="color: var(--text-dim); font-size: 0.85rem;">Puedes escuchar la muestra o descargar el FLAC completo con el botón FLAC.</p>
-        </div>
-      `;
-    }
-  } catch (err) {
-    console.error('Error al cargar stream completo:', err);
-    fullAudioContainer.innerHTML = `<p style="color: #ff2a85; padding: 2rem;">Error al conectar: ${err.message}</p>`;
-  }
-}
-
-function closeFullAudioModal() {
-  if (fullAudioModal) {
-    fullAudioModal.classList.add('hidden');
-    // Limpiar iframe para detener la reproducción de inmediato al cerrar
-    fullAudioContainer.innerHTML = '';
-  }
-}
-
 function startVisualizer() {
   if (!vCtx) return;
 
@@ -603,7 +760,8 @@ function startVisualizer() {
     for (let i = 0; i < numBars; i++) {
       let height = 4;
       if (state.isPlaying) {
-        const wave = Math.sin(Date.now() / 140 + i * 0.7) * 14 + Math.cos(Date.now() / 200 + i) * 6;
+        const factor = state.currentSpeed || 1;
+        const wave = Math.sin((Date.now() * factor) / 140 + i * 0.7) * 14 + Math.cos((Date.now() * factor) / 200 + i) * 6;
         height = Math.max(3, Math.min(visualizerCanvas.height - 4, 16 + wave));
       }
 

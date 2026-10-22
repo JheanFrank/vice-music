@@ -238,7 +238,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.0', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube' }));
+      return res.end(JSON.stringify({ version: '2.1', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)

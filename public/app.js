@@ -61,6 +61,41 @@ const btnPlayFullSong = document.getElementById('btnPlayFullSong');
 const vCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
 
 // ========================================================
+// MOTOR CLIENT-SIDE DEEZER JSONP (SIN RESTRICCIÓN DE NUBE)
+// ========================================================
+function fetchDeezerJsonp(endpoint) {
+  return new Promise((resolve) => {
+    const callbackName = 'dz_cb_' + Math.random().toString(36).substring(2, 9);
+    const script = document.createElement('script');
+    const separator = endpoint.includes('?') ? '&' : '?';
+    script.src = `https://api.deezer.com${endpoint}${separator}output=jsonp&callback=${callbackName}`;
+    
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, 4500);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[callbackName] = function(data) {
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = function() {
+      cleanup();
+      resolve(null);
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+// ========================================================
 // MOTOR YOUTUBE IFRAME (AUDIO COMPLETO EN SEGUNDO PLANO)
 // ========================================================
 let ytPlayer = null;
@@ -252,7 +287,7 @@ function switchViewMode(mode) {
   performSearch(query);
 }
 
-// Búsqueda Principal
+// Búsqueda Híbrida (Backend Render + Cliente Deezer JSONP Directo)
 async function performSearch(query) {
   if (!query || !query.trim()) return;
 
@@ -265,25 +300,129 @@ async function performSearch(query) {
 
   try {
     if (state.currentMode === 'albums') {
-      const res = await fetch(`/api/albums/search?q=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
-      state.results = data.albums || [];
-      renderAlbums(state.results);
-    } else {
-      const res = await fetch(`/api/resolve?q=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
-      if (data.isAlbum && data.albumId) {
-        openAlbumDetail(data.albumId);
-        return;
+      // 1. Backend Search (iTunes + Server Deezer)
+      const backendPromise = fetch(`/api/albums/search?q=${encodeURIComponent(query.trim())}`)
+        .then(r => r.json())
+        .catch(() => ({ albums: [] }));
+
+      // 2. Client-side JSONP Deezer (Directo desde el navegador del usuario, inmune a bloqueos de nube)
+      const clientDeezerAlbumPromise = fetchDeezerJsonp(`/search/album?q=${encodeURIComponent(query.trim())}&limit=15`);
+      const clientDeezerTrackPromise = fetchDeezerJsonp(`/search?q=${encodeURIComponent(query.trim())}&limit=20`);
+
+      const [backendData, dzAlbumData, dzTrackData] = await Promise.all([
+        backendPromise,
+        clientDeezerAlbumPromise,
+        clientDeezerTrackPromise
+      ]);
+
+      const seen = new Set();
+      const combined = [];
+
+      function addAlbum(a) {
+        if (!a || !a.title || !a.artist) return;
+        const norm = `${a.title.toLowerCase().trim()}_${a.artist.toLowerCase().trim()}`;
+        if (seen.has(norm)) return;
+        seen.add(norm);
+        combined.push(a);
       }
-      state.results = data.data || [];
+
+      // Procesar canciones de Deezer para sacar su álbum (ej: Blessd Superstar -> Álbum SUPERSTAR)
+      if (dzTrackData && Array.isArray(dzTrackData.data)) {
+        dzTrackData.data.forEach(t => {
+          if (t.album && t.album.id) {
+            addAlbum({
+              id: `deezer_${t.album.id}`,
+              deezerId: t.album.id,
+              title: t.album.title,
+              artist: t.artist ? t.artist.name : 'Artista',
+              coverXl: t.album.cover_xl || t.album.cover_big || t.album.cover_medium,
+              nbTracks: '—',
+              matchedTrack: t.title,
+              link: `https://www.deezer.com/album/${t.album.id}`,
+              lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(`https://www.deezer.com/album/${t.album.id}`)}`,
+              source: 'deezer'
+            });
+          }
+        });
+      }
+
+      // Procesar álbumes directos de Deezer
+      if (dzAlbumData && Array.isArray(dzAlbumData.data)) {
+        dzAlbumData.data.forEach(a => {
+          addAlbum({
+            id: `deezer_${a.id}`,
+            deezerId: a.id,
+            title: a.title,
+            artist: a.artist ? a.artist.name : 'Artista',
+            coverXl: a.cover_xl || a.cover_big || a.cover_medium,
+            nbTracks: a.nb_tracks || '—',
+            link: a.link || `https://www.deezer.com/album/${a.id}`,
+            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.link || `https://www.deezer.com/album/${a.id}`)}`,
+            source: 'deezer'
+          });
+        });
+      }
+
+      // Procesar álbumes del Backend (iTunes + Server)
+      (backendData.albums || []).forEach(a => addAlbum(a));
+
+      state.results = combined;
+      renderAlbums(state.results);
+
+    } else {
+      // Modo Pistas
+      const backendPromise = fetch(`/api/resolve?q=${encodeURIComponent(query.trim())}`)
+        .then(r => r.json())
+        .catch(() => ({ data: [] }));
+
+      const clientDeezerTrackPromise = fetchDeezerJsonp(`/search?q=${encodeURIComponent(query.trim())}&limit=30`);
+
+      const [backendData, dzTrackData] = await Promise.all([
+        backendPromise,
+        clientDeezerTrackPromise
+      ]);
+
+      const seen = new Set();
+      const combinedTracks = [];
+
+      function addTrack(t) {
+        if (!t || !t.title || !t.artist) return;
+        const norm = `${t.title.toLowerCase().trim()}_${t.artist.toLowerCase().trim()}`;
+        if (seen.has(norm)) return;
+        seen.add(norm);
+        combinedTracks.push(t);
+      }
+
+      // Pistas de Deezer JSONP
+      if (dzTrackData && Array.isArray(dzTrackData.data)) {
+        dzTrackData.data.forEach(t => {
+          addTrack({
+            id: `deezer_${t.id}`,
+            title: t.title,
+            artist: t.artist ? t.artist.name : 'Artista',
+            album: t.album ? t.album.title : 'Álbum',
+            albumId: t.album ? `deezer_${t.album.id}` : null,
+            coverXl: t.album ? (t.album.cover_xl || t.album.cover_big) : (t.artist ? t.artist.picture_xl : ''),
+            duration: t.duration || 0,
+            preview: t.preview || null,
+            link: t.link || `https://www.deezer.com/track/${t.id}`,
+            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`,
+            source: 'deezer'
+          });
+        });
+      }
+
+      // Pistas del Backend (iTunes)
+      (backendData.data || []).forEach(t => addTrack(t));
+
+      state.results = combinedTracks;
       renderTracks(state.results);
     }
   } catch (error) {
     console.error('Error al buscar:', error);
     resultsGrid.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: #ff2a85;">
-        <h3>Error al consultar los satélites</h3>
+        <h3>Error al consultar satélites</h3>
         <p style="font-family: var(--font-mono); font-size: 0.85rem; margin-top: 0.5rem;">${error.message}</p>
       </div>
     `;
@@ -311,7 +450,7 @@ function renderAlbums(albums) {
     card.className = 'album-card';
 
     const matchedPill = album.matchedTrack 
-      ? `<span class="badge-tag-hd" style="top: 10px; left: 10px; border-color: var(--vice-cyan); color: var(--vice-cyan);">🎯 CONTIENE: "${album.matchedTrack}"</span>` 
+      ? `<span class="badge-tag-hd" style="top: 8px; left: 8px; border-color: var(--vice-cyan); color: var(--vice-cyan); font-size: 0.62rem; padding: 0.2rem 0.5rem;">🎯 CONTIENE: "${album.matchedTrack}"</span>` 
       : '';
 
     card.innerHTML = `
@@ -347,8 +486,44 @@ async function openAlbumDetail(albumId) {
   albumTracklist.innerHTML = '';
 
   try {
-    const res = await fetch(`/api/album/${albumId}`);
-    const album = await res.json();
+    let album = null;
+
+    // Si es de Deezer, obtener directo por JSONP (más rápido y sin bloqueos)
+    if (albumId.startsWith('deezer_')) {
+      const deezerId = albumId.replace('deezer_', '');
+      const dzData = await fetchDeezerJsonp(`/album/${deezerId}`);
+      if (dzData && !dzData.error) {
+        album = {
+          id: `deezer_${dzData.id}`,
+          deezerId: dzData.id,
+          title: dzData.title || 'Álbum',
+          artist: dzData.artist ? dzData.artist.name : 'Artista',
+          coverXl: dzData.cover_xl || dzData.cover_big || dzData.cover_medium,
+          releaseDate: dzData.release_date || 'Oficial',
+          label: dzData.label || 'Discográfica',
+          nbTracks: dzData.nb_tracks || (dzData.tracks?.data?.length || 0),
+          link: dzData.link || `https://www.deezer.com/album/${dzData.id}`,
+          lucidaAlbumZipUrl: `https://lucida.to/?url=${encodeURIComponent(dzData.link || `https://www.deezer.com/album/${dzData.id}`)}`,
+          tracks: (dzData.tracks?.data || []).map((t, idx) => ({
+            position: t.track_position || idx + 1,
+            id: `deezer_${t.id}`,
+            title: t.title,
+            artist: t.artist ? t.artist.name : (dzData.artist ? dzData.artist.name : 'Artista'),
+            duration: t.duration || 0,
+            preview: t.preview || null,
+            link: t.link || `https://www.deezer.com/track/${t.id}`,
+            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
+          }))
+        };
+      }
+    }
+
+    // Si no fue de Deezer o falló, consultar al backend
+    if (!album) {
+      const res = await fetch(`/api/album/${albumId}`);
+      album = await res.json();
+    }
+
     state.currentAlbum = album;
 
     // Renderizar Hero del Álbum
@@ -508,11 +683,11 @@ function renderTracks(tracks) {
         
         <div style="margin-top: auto;">
           ${goToAlbumBtn}
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn-track-action btn-single-full" style="flex: 1; padding: 0.55rem; font-size: 0.75rem; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
+          <div style="display: flex; gap: 0.4rem;">
+            <button class="btn-track-action btn-single-full" style="flex: 1; padding: 0.55rem; font-size: 0.72rem; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
               🎧 COMPLETA
             </button>
-            <button class="btn-track-action btn-single-flac" style="padding: 0.55rem 0.7rem; font-size: 0.75rem;">
+            <button class="btn-track-action btn-single-flac" style="padding: 0.55rem 0.65rem; font-size: 0.72rem;">
               ⚡ FLAC
             </button>
             <button class="btn-track-play btn-single-play" title="Muestra 30s">
@@ -620,7 +795,6 @@ async function playFullSong(artist, title, cover = null) {
         startYtProgress();
         showToast(`▶️ Reproduciendo canción completa oficial: ${title}`);
       } else {
-        // En caso de que la API de YT aún no termine de cargar
         showToast(`▶️ Iniciando stream...`);
         setTimeout(() => {
           if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {

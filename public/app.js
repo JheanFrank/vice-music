@@ -864,29 +864,24 @@ async function playFullSong(artist, title, cover = null) {
   }
 }
 
-// DESCARGAR AUDIO EN MP3 320 KBPS DIRECTO DESDE EL STREAM OFICIAL
+// DESCARGAR AUDIO EN MP3 320 KBPS DIRECTO DESDE NUESTRA PROPIA PAGINA
 async function downloadMp3_320(artist, title) {
-  // 1. Si tenemos el enlace oficial de Lucida / Deezer, abrimos descarga directa en MP3 320 kbps de estudio
-  if (state.currentTrack && state.currentTrack.lucidaUrl) {
-    showToast('📥 Abriendo descarga MP3 320 kbps (Estudio Deezer): ' + title);
-    window.open(state.currentTrack.lucidaUrl, '_blank');
-    return;
-  }
+  showToast('📥 Descargando MP3: ' + title + ' - ' + artist + '...');
+  
+  const q = encodeURIComponent(artist + ' ' + title);
+  const filename = encodeURIComponent(title + ' - ' + artist);
+  const downloadUrl = '/api/download-mp3?q=' + q + '&filename=' + filename;
 
-  // 2. Si no, buscar el audio y abrir la descarga limpia
-  showToast('📥 Conectando descarga de alta fidelidad para: ' + title + '...');
-  try {
-    const res = await fetch('/api/fullaudio?q=' + encodeURIComponent(artist + ' ' + title));
-    const data = await res.json();
-    if (data.videoId) {
-      window.open('https://lucida.to/?url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + data.videoId), '_blank');
-    } else {
-      showToast('❌ No se encontró enlace de descarga para esta canción.');
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.setAttribute('download', title + ' - ' + artist + '.mp3');
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    if (document.body.contains(a)) {
+      document.body.removeChild(a);
     }
-  } catch (err) {
-    console.error('Error en descarga:', err);
-    showToast('❌ Error: ' + err.message);
-  }
+  }, 2000);
 }
 
 function togglePlayPause() {

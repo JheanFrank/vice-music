@@ -146,6 +146,22 @@ body {
   margin-left: 4px;
 }
 
+.version-badge {
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  font-weight: 900;
+  color: var(--vice-cyan);
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--vice-cyan);
+  padding: 0.18rem 0.5rem;
+  border-radius: 8px;
+  letter-spacing: 1px;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+}
+
 .tagline {
   font-family: var(--font-mono);
   font-size: 0.65rem;

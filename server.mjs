@@ -3,9 +3,17 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
-import { Ytdl } from '@distube/ytdl-core';
+import { Ytdl, createPoTokenProvider } from '@distube/ytdl-core';
 
-const ytdl = new Ytdl({ clients: ['visionos'] });
+let ytdl;
+try {
+  const getPoToken = await createPoTokenProvider();
+  ytdl = new Ytdl({ getPoToken });
+  console.log('✅ [Ytdl] PO Token Provider activado');
+} catch (err) {
+  console.warn('⚠️ [Ytdl] Fallback sin PO token:', err.message);
+  ytdl = new Ytdl();
+}
 
 // Forzar resolución IPv4 primero para evitar timeouts con Deezer, Apple Music y YouTube
 dns.setDefaultResultOrder('ipv4first');
@@ -241,7 +249,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.2', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
+      return res.end(JSON.stringify({ version: '2.3', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -456,8 +464,7 @@ const server = http.createServer(async (req, res) => {
       const v = (reqUrl.searchParams.get('v') || 'zZ_xuLlZ_t4').trim();
       try {
         const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${v}`, {
-          clients: ['visionos']
-        });
+                  });
         const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo).map(f => ({
           container: f.container,
           bitrate: f.audioBitrate,
@@ -519,8 +526,7 @@ const server = http.createServer(async (req, res) => {
         const audioStream = await ytdl.download(ytUrl, {
           filter: f => f.hasAudio && !f.hasVideo,
           quality: 'highestaudio',
-          clients: ['visionos']
-        });
+                  });
 
         // Solo responder HTTP 200 cuando el primer bloque de audio realmente llegue
         let headersSent = false;

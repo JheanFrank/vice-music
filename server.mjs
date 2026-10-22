@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import dns from 'dns';
 import { Ytdl } from '@distube/ytdl-core';
 
-const ytdl = new Ytdl();
+const ytdl = new Ytdl({ clients: ['visionos'] });
 
 // Forzar resolución IPv4 primero para evitar timeouts con Deezer, Apple Music y YouTube
 dns.setDefaultResultOrder('ipv4first');

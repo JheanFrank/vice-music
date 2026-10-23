@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
 import { Ytdl, Client } from '@distube/ytdl-core';
-const ytdl = new Ytdl({ clients: [Client.VisionOS] });
+const ytdl = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded] });
 
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {
@@ -542,7 +542,7 @@ const server = http.createServer(async (req, res) => {
                 try { stream.destroy(); } catch (e) {}
                 reject(new Error('YouTube stream timeout'));
               }
-            }, 8000);
+            }, 25000);
           });
 
           if (streamSent) return;
@@ -641,4 +641,15 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌴 VICE MUSIC // MOTOR DUAL: DEEZER + ITUNES + AUDIO STREAM`);
   console.log(`🌐 Puerto: ${PORT}`);
   console.log(`======================================================\n`);
+
+  // Pre-calentar el motor de descarga en segundo plano para que la primera descarga sea instantánea
+  setTimeout(async () => {
+    try {
+      console.log('⏳ [Ytdl] Pre-calentando motor de YouTube...');
+      await ytdl.getInfo('https://www.youtube.com/watch?v=zZ_xuLlZ_t4');
+      console.log('✅ [Ytdl] Motor de audio completo listo y en caché');
+    } catch (e) {
+      console.warn('⚠️ [Ytdl] Pre-calentamiento diferido:', e.message);
+    }
+  }, 2500);
 });

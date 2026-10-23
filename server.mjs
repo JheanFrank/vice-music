@@ -558,10 +558,79 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 6. PROXY DE DESCARGA MP3 (Descarga desde savenow CDN con validación de audio)
+// ==========================================
+// MOTOR ID3v2.3: GENERADOR DE METADATOS Y CARÁTULA OFICIAL HD 1000PX
+// ==========================================
+
+function encodeSyncSafe(size) {
+  return Buffer.from([
+    (size >> 21) & 0x7f,
+    (size >> 14) & 0x7f,
+    (size >> 7) & 0x7f,
+    size & 0x7f
+  ]);
+}
+
+function makeTextFrame(id, text) {
+  if (!text) return Buffer.alloc(0);
+  const strBuf = Buffer.from(text, 'utf16le');
+  const bom = Buffer.from([0xff, 0xfe]);
+  const content = Buffer.concat([Buffer.from([0x01]), bom, strBuf]);
+  const header = Buffer.alloc(10);
+  header.write(id, 0, 4, 'ascii');
+  header.writeUInt32BE(content.length, 4);
+  return Buffer.concat([header, content]);
+}
+
+function makeApicFrame(imageBuffer, mimeType = 'image/jpeg') {
+  if (!imageBuffer || imageBuffer.length === 0) return Buffer.alloc(0);
+  const mimeBuf = Buffer.from(mimeType + '\0', 'latin1');
+  const picType = Buffer.from([0x03]); // Cover (front)
+  const desc = Buffer.from([0x00]); // Descripción vacía null
+  const content = Buffer.concat([Buffer.from([0x00]), mimeBuf, picType, desc, imageBuffer]);
+  const header = Buffer.alloc(10);
+  header.write('APIC', 0, 4, 'ascii');
+  header.writeUInt32BE(content.length, 4);
+  return Buffer.concat([header, content]);
+}
+
+function createId3Tag({ title, artist, album, year, imageBuffer }) {
+  const frames = [];
+  if (title) frames.push(makeTextFrame('TIT2', title));
+  if (artist) frames.push(makeTextFrame('TPE1', artist));
+  if (album) frames.push(makeTextFrame('TALB', album));
+  if (year) frames.push(makeTextFrame('TYER', year));
+  if (imageBuffer) frames.push(makeApicFrame(imageBuffer, 'image/jpeg'));
+
+  const totalFrames = Buffer.concat(frames);
+  const tagHeader = Buffer.alloc(10);
+  tagHeader.write('ID3', 0, 3, 'ascii');
+  tagHeader.writeUInt8(3, 3); // ID3v2.3
+  tagHeader.writeUInt8(0, 4);
+  tagHeader.writeUInt8(0, 5); // flags
+  encodeSyncSafe(totalFrames.length).copy(tagHeader, 6);
+
+  return Buffer.concat([tagHeader, totalFrames]);
+}
+
+function stripOldId3(mp3Buffer) {
+  if (mp3Buffer.length > 10 && mp3Buffer.toString('ascii', 0, 3) === 'ID3') {
+    const size = (mp3Buffer[6] << 21) | (mp3Buffer[7] << 14) | (mp3Buffer[8] << 7) | mp3Buffer[9];
+    const totalHeader = size + 10;
+    return mp3Buffer.subarray(totalHeader);
+  }
+  return mp3Buffer;
+}
+
+    // 6. DESCARGA MP3 320 KBPS CON ETIQUETAS ID3V2 Y CARÁTULA HD 1000PX INCORPORADA
     if (pathname === '/api/download-mp3') {
       const downloadUrl = (reqUrl.searchParams.get('url') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
+      const title = (reqUrl.searchParams.get('title') || '').trim();
+      const artist = (reqUrl.searchParams.get('artist') || '').trim();
+      const album = (reqUrl.searchParams.get('album') || '').trim();
+      const year = (reqUrl.searchParams.get('year') || '').trim();
+      const coverUrl = (reqUrl.searchParams.get('cover') || '').trim();
 
       if (!downloadUrl) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -572,51 +641,61 @@ const server = http.createServer(async (req, res) => {
       const encodedFilename = encodeURIComponent(safeFilename);
 
       try {
+        console.log(`[Download MP3] Descargando audio para "${safeFilename}" desde CDN...`);
         const audioFetch = await fetch(downloadUrl, {
-          headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(60000)
+          headers: { 
+            'User-Agent': USER_AGENT,
+            'Referer': 'https://p.savenow.to/'
+          },
+          signal: AbortSignal.timeout(90000)
         });
 
         if (!audioFetch.ok) {
           throw new Error('El servidor de almacenamiento respondió con status ' + audioFetch.status);
         }
 
-        const contentType = audioFetch.headers.get('content-type') || '';
-        if (contentType.includes('text') || contentType.includes('html')) {
+        const rawAudioBuf = Buffer.from(await audioFetch.arrayBuffer());
+        if (rawAudioBuf.length < 10000) {
           throw new Error('El archivo aún se está procesando o no es válido.');
         }
 
-        const contentLength = audioFetch.headers.get('content-length');
-        const headers = {
-          'Content-Type': 'audio/mpeg',
-          'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-          'Cache-Control': 'no-cache'
-        };
-        if (contentLength) {
-          headers['Content-Length'] = contentLength;
+        // Descargar carátula oficial si viene proporcionada
+        let coverBuf = null;
+        if (coverUrl) {
+          try {
+            const coverRes = await fetch(coverUrl, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(10000)
+            });
+            if (coverRes.ok) {
+              coverBuf = Buffer.from(await coverRes.arrayBuffer());
+            }
+          } catch (cErr) {
+            console.warn('[Download MP3] Falló descarga de carátula:', cErr.message);
+          }
         }
 
-        res.writeHead(200, headers);
-
-        const reader = audioFetch.body.getReader();
-        const pump = async () => {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-              res.end();
-              break;
-            }
-            if (!res.write(value)) {
-              await new Promise(resolve => res.once('drain', resolve));
-            }
-          }
-        };
-
-        res.on('close', () => {
-          try { reader.cancel(); } catch (e) {}
+        // Limpiar metadatos viejos de YouTube y generar ID3v2.3 oficial
+        const cleanAudio = stripOldId3(rawAudioBuf);
+        const id3Tag = createId3Tag({
+          title: title || safeFilename,
+          artist: artist || 'Artista',
+          album: album || title || 'Álbum',
+          year: year || String(new Date().getFullYear()),
+          imageBuffer: coverBuf
         });
 
-        await pump();
+        const finalMp3 = Buffer.concat([id3Tag, cleanAudio]);
+
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+          'Content-Length': finalMp3.length,
+          'Cache-Control': 'no-cache'
+        });
+
+        res.end(finalMp3);
+        console.log(`[Download MP3] ✅ Enviado exitosamente: "${safeFilename}.mp3" (${(finalMp3.length / (1024 * 1024)).toFixed(2)} MB)`);
         return;
       } catch (err) {
         console.error('[Download MP3 Proxy] Error:', err.message);

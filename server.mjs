@@ -247,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.9', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + MP3 Async Polling' }));
+      return res.end(JSON.stringify({ version: '3.0', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + Savenow Real Engine' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -457,7 +457,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 5. INICIAR CONVERSIÓN MP3 COMPLETA (Responde inmediatamente sin bloquear)
+    // 5. INICIAR CONVERSIÓN MP3 COMPLETA (Usando backend limpio savenow.to)
     if (pathname === '/api/start-mp3-conversion') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
@@ -489,9 +489,10 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'No se encontró el video en YouTube' }));
         }
 
-        console.log(`[Start MP3] Iniciando conversión para: ${targetVideoId}`);
+        console.log(`[Start MP3] Iniciando conversión limpia para: ${targetVideoId}`);
 
-        const startRes = await fetch(`https://loader.to/ajax/download.php?format=mp3&url=https://www.youtube.com/watch?v=${targetVideoId}`, {
+        // Usar p.savenow.to directamente para evitar los honeypots de redirección
+        const startRes = await fetch(`https://p.savenow.to/ajax/download.php?format=mp3&url=https://www.youtube.com/watch?v=${targetVideoId}`, {
           headers: { 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(15000)
         });
@@ -535,7 +536,8 @@ const server = http.createServer(async (req, res) => {
         });
         const progData = await progRes.json();
 
-        const isFinished = progData.progress === 1000 && progData.download_url && !progData.download_url.includes('affadaffa');
+        // Validar que el progreso haya llegado al 100% (progress === 1000) y que sea un enlace real de descarga (.savenow.to)
+        const isFinished = progData.progress === 1000 && progData.download_url && progData.download_url.includes('savenow.to');
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({

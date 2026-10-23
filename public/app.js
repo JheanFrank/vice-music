@@ -82,7 +82,11 @@ const amLyricsSection = document.getElementById('amLyricsSection');
 const amCoverStage = document.querySelector('.am-cover-stage');
 const amCoverCard = document.getElementById('amCoverCard');
 const amCoverImg = document.getElementById('amCoverImg');
+const amMotionVideo = document.getElementById('amMotionVideo');
+const amMotionBadge = document.getElementById('amMotionBadge');
+const amMotionText = document.getElementById('amMotionText');
 const amCoverGlow = document.getElementById('amCoverGlow');
+let hlsMotion = null;
 const amVinylDisc = document.getElementById('amVinylDisc');
 const amVinylCenter = document.getElementById('amVinylCenter');
 const amTrackTitle = document.getElementById('amTrackTitle');
@@ -2180,6 +2184,15 @@ function setPlayingState(playing) {
     if (amIconPlay) amIconPlay.classList.add('hidden');
     if (amIconPause) amIconPause.classList.remove('hidden');
     if (amVinylDisc) amVinylDisc.classList.add('playing');
+    if (amCoverCard) amCoverCard.classList.add('playing');
+    if (amCoverGlow) amCoverGlow.classList.add('playing');
+    if (amCoverImg) amCoverImg.classList.add('auto-moving');
+    if (amMotionVideo) {
+      amMotionVideo.classList.add('auto-moving');
+      if (!amMotionVideo.classList.contains('hidden')) {
+        amMotionVideo.play().catch(() => {});
+      }
+    }
   } else {
     iconPlay.classList.remove('hidden');
     iconPause.classList.add('hidden');
@@ -2187,6 +2200,13 @@ function setPlayingState(playing) {
     if (amIconPlay) amIconPlay.classList.remove('hidden');
     if (amIconPause) amIconPause.classList.add('hidden');
     if (amVinylDisc) amVinylDisc.classList.remove('playing');
+    if (amCoverCard) amCoverCard.classList.remove('playing');
+    if (amCoverGlow) amCoverGlow.classList.remove('playing');
+    if (amCoverImg) amCoverImg.classList.remove('auto-moving');
+    if (amMotionVideo) {
+      amMotionVideo.classList.remove('auto-moving');
+      amMotionVideo.pause();
+    }
   }
 }
 
@@ -2580,6 +2600,72 @@ function updateAppleMusicTrackInfo(track) {
     appleMusicState.lyrics = [];
     appleMusicState.activeLyricIndex = -1;
     fetchAppleMusicLyrics(track.artist, track.title);
+    fetchMotionArtwork(track.artist, track.album, track.title);
+  }
+}
+
+async function fetchMotionArtwork(artist, album, title) {
+  if (!amMotionVideo) return;
+
+  const cleanArtist = (artist || '').split(/[,&/]/)[0].trim();
+  const cleanAlbum = (album || '').replace(/\s*[\(\[](?:Explicit|Deluxe|Edition).*?[\)\]]/gi, '').trim();
+  const cleanTitle = (title || '').replace(/\s*[\(\[](?:Official|Video|Audio).*?[\)\]]/gi, '').trim();
+
+  try {
+    const q = `/api/motion-artwork?artist=${encodeURIComponent(cleanArtist)}&album=${encodeURIComponent(cleanAlbum)}&title=${encodeURIComponent(cleanTitle)}`;
+    const res = await fetch(q);
+    const data = await res.json();
+
+    if (data && data.hasMotion && data.videoUrl) {
+      console.log('[Motion Artwork] Encontrado video oficial de Apple Music:', data.videoUrl);
+      
+      if (hlsMotion) {
+        hlsMotion.destroy();
+        hlsMotion = null;
+      }
+
+      if (window.Hls && Hls.isSupported()) {
+        hlsMotion = new Hls({ enableWorker: true });
+        hlsMotion.loadSource(data.videoUrl);
+        hlsMotion.attachMedia(amMotionVideo);
+        hlsMotion.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (state.isPlaying) amMotionVideo.play().catch(() => {});
+        });
+      } else if (amMotionVideo.canPlayType('application/vnd.apple.mpegurl')) {
+        amMotionVideo.src = data.videoUrl;
+        if (state.isPlaying) amMotionVideo.play().catch(() => {});
+      }
+
+      amMotionVideo.classList.remove('hidden');
+      if (amCoverImg) amCoverImg.style.opacity = '0';
+      if (amMotionBadge) {
+        amMotionBadge.className = 'am-motion-badge active-video';
+        if (amMotionText) amMotionText.innerText = '🎬 MOTION ARTWORK OFICIAL';
+      }
+      return;
+    }
+  } catch (err) {
+    console.warn('Error cargando motion artwork:', err.message);
+  }
+
+  // Fallback: Modo Carátula en Movimiento Autónomo 3D
+  if (hlsMotion) {
+    hlsMotion.destroy();
+    hlsMotion = null;
+  }
+  if (amMotionVideo) {
+    amMotionVideo.pause();
+    amMotionVideo.removeAttribute('src');
+    amMotionVideo.load();
+    amMotionVideo.classList.add('hidden');
+  }
+  if (amCoverImg) {
+    amCoverImg.style.opacity = '1';
+    amCoverImg.classList.add('auto-moving');
+  }
+  if (amMotionBadge) {
+    amMotionBadge.className = 'am-motion-badge';
+    if (amMotionText) amMotionText.innerText = '🌀 CARÁTULA EN MOVIMIENTO';
   }
 }
 

@@ -785,12 +785,16 @@ function stripOldId3(mp3Buffer) {
           throw new Error('No se pudo obtener el archivo de audio');
         }
 
+        // Limpiar año a formato estándar de 4 dígitos YYYY (ID3v2.3 TYER)
+        const yearMatch = (year || '').match(/\b(19\d{2}|20\d{2})\b/);
+        const cleanYear = yearMatch ? yearMatch[0] : String(new Date().getFullYear());
+
         // Inyectar metadatos ID3v2.3 oficiales y carátula HD 1000px
         const tag = createId3Tag({
           title: title || safeFilename,
           artist: artist || 'Artista',
           album: album || title || 'Álbum',
-          year: year || String(new Date().getFullYear()),
+          year: cleanYear,
           imageBuffer: coverBuf
         });
 

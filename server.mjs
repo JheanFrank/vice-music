@@ -252,7 +252,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '3.2', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Audio' }));
+      return res.end(JSON.stringify({ version: '4.1', status: 'online', engine: 'Vice Music Audio Stream + Apple Music HD Metadata' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -450,6 +450,7 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({
             videoId,
             videoTitle,
+            streamUrl: `/api/stream-audio?videoId=${videoId}`,
             embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1`
           }));
         }
@@ -460,6 +461,53 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: err.message }));
       }
+    }
+
+    // 4.1 STREAM DE AUDIO DIRECTO HTML5 (Sin logos, sin embeds, 100% nativo para reproductor móvil y PC)
+    if (pathname === '/api/stream-audio') {
+      const videoId = (reqUrl.searchParams.get('videoId') || '').trim();
+      if (!videoId || videoId.length !== 11) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'videoId inválido' }));
+      }
+
+      try {
+        console.log(`[Stream Audio] Abriendo stream nativo para videoId: ${videoId}`);
+        const stream = ytdl.download(videoId, {
+          filter: { hasAudio: true, hasVideo: false },
+          highWaterMark: 1 << 22
+        });
+
+        res.writeHead(200, {
+          'Content-Type': 'audio/webm',
+          'Cache-Control': 'no-cache, no-store',
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*'
+        });
+
+        stream.pipe(res);
+
+        stream.on('error', (err) => {
+          console.warn('[Stream Audio] Advertencia de stream:', err.message);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          } else {
+            res.end();
+          }
+        });
+
+        req.on('close', () => {
+          if (typeof stream.destroy === 'function') stream.destroy();
+        });
+      } catch (err) {
+        console.error('[Stream Audio] Error al iniciar stream:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
+      return;
     }
 
     // 5. INICIAR CONVERSIÓN MP3 COMPLETA (Vía motor limpio p.savenow.to)

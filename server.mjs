@@ -135,13 +135,13 @@ let cachedTopColombiaTime = 0;
 
 async function getTopColombia() {
   const now = Date.now();
-  if (cachedTopColombia && (now - cachedTopColombiaTime < 1000 * 60 * 20)) {
+  if (cachedTopColombia && cachedTopColombia.tracks && cachedTopColombia.tracks.length > 0 && (now - cachedTopColombiaTime < 1000 * 60 * 20)) {
     return cachedTopColombia;
   }
 
   try {
     const plData = await fetchDeezer('/playlist/1116188451');
-    const tracks = (plData && plData.tracks && Array.isArray(plData.tracks.data))
+    let tracks = (plData && plData.tracks && Array.isArray(plData.tracks.data))
       ? plData.tracks.data.slice(0, 10).map((t, idx) => ({
           rank: idx + 1,
           id: `deezer_${t.id}`,
@@ -251,9 +251,11 @@ async function getTopColombia() {
       }
     }
 
-    cachedTopColombia = { tracks, albums };
-    cachedTopColombiaTime = now;
-    return cachedTopColombia;
+    if (tracks.length > 0) {
+      cachedTopColombia = { tracks, albums };
+      cachedTopColombiaTime = now;
+    }
+    return { tracks, albums };
   } catch (err) {
     console.error('Error al obtener Top Colombia:', err);
     if (cachedTopColombia) return cachedTopColombia;

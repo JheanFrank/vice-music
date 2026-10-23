@@ -42,6 +42,7 @@ const playerTitle = document.getElementById('playerTitle');
 const playerArtist = document.getElementById('playerArtist');
 const playerDuration = document.getElementById('playerDuration');
 const playerModeBadge = document.getElementById('playerModeBadge');
+const playerLabel = document.getElementById('playerLabel');
 const btnPlayPause = document.getElementById('btnPlayPause');
 const iconPlay = document.getElementById('iconPlay');
 const iconPause = document.getElementById('iconPause');
@@ -977,6 +978,16 @@ function loadTrack(track) {
   playerModeBadge.innerText = 'PREVIEW 30S';
   playerModeBadge.className = 'spec-pill';
 
+  const labelText = (state.currentAlbum && state.currentAlbum.label) || (track && track.label) || '';
+  if (playerLabel) {
+    if (labelText) {
+      playerLabel.innerText = '🏷️ ' + labelText;
+      playerLabel.style.display = 'inline-block';
+    } else {
+      playerLabel.style.display = 'none';
+    }
+  }
+
   updateMediaSession(track);
 
   if (track.audioUrl) {
@@ -1013,6 +1024,16 @@ async function playFullSong(artist, title, cover = null, album = null) {
   }
   playerModeBadge.innerText = '🎧 CANCIÓN COMPLETA';
   playerModeBadge.className = 'spec-pill gold';
+
+  const labelTextFull = (state.currentAlbum && state.currentAlbum.label) || '';
+  if (playerLabel) {
+    if (labelTextFull) {
+      playerLabel.innerText = '🏷️ ' + labelTextFull;
+      playerLabel.style.display = 'inline-block';
+    } else {
+      playerLabel.style.display = 'none';
+    }
+  }
   currentTimeLabel.innerText = '00:00';
   totalTimeLabel.innerText = 'Cargando...';
   progressFill.style.width = '0%';

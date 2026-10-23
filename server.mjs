@@ -11,6 +11,7 @@ import { Ytdl, Client } from '@distube/ytdl-core';
 const ytdl = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
 
 const audioUrlCache = new Map();
+const motionArtworkCache = new Map();
 
 async function getFullSongMp3Url(videoId) {
   if (audioUrlCache.has(videoId)) {
@@ -418,7 +419,68 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '4.7', status: 'online', engine: 'Vice Music Apple Music UI + Dynamic Moving Cover + Live Synced Lyrics' }));
+      return res.end(JSON.stringify({ version: '4.8', status: 'online', engine: 'Vice Music Apple Music Autonomous Moving Covers + Official Motion Artwork' }));
+    }
+
+    // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
+    if (pathname === '/api/motion-artwork') {
+      const artist = (reqUrl.searchParams.get('artist') || '').trim();
+      const title = (reqUrl.searchParams.get('title') || '').trim();
+      const album = (reqUrl.searchParams.get('album') || '').trim();
+
+      if (!artist && !title && !album) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, error: 'Faltan parámetros' }));
+      }
+
+      const cacheKey = `${artist}::${album || title}`.toLowerCase();
+      if (motionArtworkCache.has(cacheKey)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(motionArtworkCache.get(cacheKey)));
+      }
+
+      try {
+        const queryTerm = encodeURIComponent(`${artist} ${album || title}`);
+        const itunesRes = await fetch(`https://itunes.apple.com/search?media=music&entity=album&limit=3&term=${queryTerm}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        const itunesData = await itunesRes.json();
+
+        let videoUrl = null;
+        if (itunesData && Array.isArray(itunesData.results)) {
+          for (const item of itunesData.results) {
+            if (!item.collectionViewUrl) continue;
+            try {
+              const htmlRes = await fetch(item.collectionViewUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+                signal: AbortSignal.timeout(3500)
+              });
+              const html = await htmlRes.text();
+              const matches = html.match(/https:\/\/mvod\.itunes\.apple\.com\/itunes-assets\/[^\s\"']+\.m3u8/gi);
+              if (matches && matches.length > 0) {
+                videoUrl = matches[0];
+                break;
+              }
+            } catch (pageErr) {
+              // siguiente álbum
+            }
+          }
+        }
+
+        const result = {
+          success: true,
+          hasMotion: !!videoUrl,
+          videoUrl: videoUrl || null
+        };
+
+        motionArtworkCache.set(cacheKey, result);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(result));
+      } catch (err) {
+        console.warn('Error en motion-artwork:', err.message);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, hasMotion: false, error: err.message }));
+      }
     }
 
     // 0.0 AUTENTICACIÓN VIP ADMIN

@@ -10,6 +10,39 @@ import { Ytdl, Client } from '@distube/ytdl-core';
 
 const ytdl = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
 
+const audioUrlCache = new Map();
+
+async function getFullSongMp3Url(videoId) {
+  if (audioUrlCache.has(videoId)) {
+    return audioUrlCache.get(videoId);
+  }
+
+  const startRes = await fetch(`https://p.savenow.to/ajax/download.php?format=mp3&url=https://www.youtube.com/watch?v=${videoId}`, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(12000)
+  });
+  const startData = await startRes.json();
+  if (!startData.success || !startData.progress_url) {
+    throw new Error('Servidor de audio ocupado');
+  }
+
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 800));
+    const progRes = await fetch(startData.progress_url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(8000)
+    });
+    const progData = await progRes.json();
+    if (progData.download_url && progData.download_url.includes('savenow.to') && !progData.download_url.includes('affadaffa')) {
+      let finalUrl = progData.download_url;
+      if (finalUrl.startsWith('http://')) finalUrl = finalUrl.replace('http://', 'https://');
+      audioUrlCache.set(videoId, finalUrl);
+      return finalUrl;
+    }
+  }
+  throw new Error('Tiempo de espera agotado al preparar audio');
+}
+
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {
   console.error('🛡️ [Uncaught Exception Evitada]:', err.message);
@@ -252,29 +285,44 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '4.1', status: 'online', engine: 'Vice Music Audio Stream + Apple Music HD Metadata' }));
+      return res.end(JSON.stringify({ version: '4.2', status: 'online', engine: 'Vice Music Pure Native Audio (Zero YouTube Iframe)' }));
     }
 
-    if (pathname === '/api/test-ytdl') {
-      const videoId = reqUrl.searchParams.get('videoId') || 'zZ_xuLlZ_t4';
+    // 0.1 STREAM DIRECTO MP3 PARA REPRODUCTOR NATIVO (100% Cero YouTube)
+    if (pathname === '/api/fullaudio-stream') {
+      const q = (reqUrl.searchParams.get('q') || '').trim();
+      let videoId = (reqUrl.searchParams.get('videoId') || '').trim();
+
       try {
-        const info = await ytdl.getInfo(videoId);
-        const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        if (!videoId && q) {
+          const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' audio')}`, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(8000)
+          });
+          const html = await ytRes.text();
+          const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+          if (match) videoId = match[1];
+        }
+
+        if (!videoId) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Audio no encontrado' }));
+        }
+
+        const mp3Url = await getFullSongMp3Url(videoId);
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        });
         return res.end(JSON.stringify({
           success: true,
-          title: info.videoDetails?.title,
-          formatsCount: audioFormats.length,
-          firstFormatUrl: audioFormats[0]?.url ? 'PRESENT' : 'NONE'
+          videoId,
+          audioUrl: mp3Url
         }));
       } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          success: false,
-          errorName: err.name,
-          errorMessage: err.message,
-          errorCode: err.code
-        }));
+        console.error('[FullAudio Stream] Error:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message }));
       }
     }
 
@@ -472,9 +520,7 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
             videoId,
-            videoTitle,
-            streamUrl: `/api/stream-audio?videoId=${videoId}`,
-            embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1`
+            videoTitle
           }));
         }
 
@@ -484,53 +530,6 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: err.message }));
       }
-    }
-
-    // 4.1 STREAM DE AUDIO DIRECTO HTML5 (Sin logos, sin embeds, 100% nativo para reproductor móvil y PC)
-    if (pathname === '/api/stream-audio') {
-      const videoId = (reqUrl.searchParams.get('videoId') || '').trim();
-      if (!videoId || videoId.length !== 11) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'videoId inválido' }));
-      }
-
-      try {
-        console.log(`[Stream Audio] Abriendo stream nativo para videoId: ${videoId}`);
-        const stream = ytdl.download(videoId, {
-          filter: { hasAudio: true, hasVideo: false },
-          highWaterMark: 1 << 22
-        });
-
-        res.writeHead(200, {
-          'Content-Type': 'audio/webm',
-          'Cache-Control': 'no-cache, no-store',
-          'Accept-Ranges': 'bytes',
-          'Access-Control-Allow-Origin': '*'
-        });
-
-        stream.pipe(res);
-
-        stream.on('error', (err) => {
-          console.warn('[Stream Audio] Advertencia de stream:', err.message);
-          if (!res.headersSent) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
-          } else {
-            res.end();
-          }
-        });
-
-        req.on('close', () => {
-          if (typeof stream.destroy === 'function') stream.destroy();
-        });
-      } catch (err) {
-        console.error('[Stream Audio] Error al iniciar stream:', err.message);
-        if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
-        }
-      }
-      return;
     }
 
     // 5. INICIAR CONVERSIÓN MP3 COMPLETA (Vía motor limpio p.savenow.to)

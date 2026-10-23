@@ -696,6 +696,7 @@ async function openAlbumDetail(albumId) {
         downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
           album: album.title,
           albumArtist: album.artist,
+          publisher: album.label || null,
           coverUrl: album.coverXl,
           year: album.releaseDate,
           releaseDate: album.releaseDate,
@@ -1032,6 +1033,9 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
   try {
     const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
     const albumArtistName = extraMeta.albumArtist || artist;
+    const publisherName = extraMeta.publisher || extraMeta.label || '';
+    const composerName = extraMeta.composer || '';
+    const isrcCode = extraMeta.isrc || '';
     const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
     const exactReleaseDate = extraMeta.releaseDate || (state.currentTrack ? state.currentTrack.releaseDate : '') || '';
     const trackNumber = extraMeta.track || '';
@@ -1041,13 +1045,16 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
     const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : '');
     const targetVideoId = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : '') || '';
 
-    // URL de descarga directa y nativa de nuestro servidor con metadatos completos
+    // URL de descarga directa y nativa de nuestro servidor con metadatos completos estilo Apple Music
     const downloadApiUrl = `/api/download-mp3?q=${encodeURIComponent(artist + ' ' + title)}`
       + `&videoId=${encodeURIComponent(targetVideoId)}`
       + `&title=${encodeURIComponent(title || '')}`
       + `&artist=${encodeURIComponent(artist || '')}`
       + `&albumArtist=${encodeURIComponent(albumArtistName || '')}`
       + `&album=${encodeURIComponent(albumName || '')}`
+      + `&publisher=${encodeURIComponent(publisherName || '')}`
+      + `&composer=${encodeURIComponent(composerName || '')}`
+      + `&isrc=${encodeURIComponent(isrcCode || '')}`
       + `&year=${encodeURIComponent(String(releaseYear) || '')}`
       + `&releaseDate=${encodeURIComponent(String(exactReleaseDate) || '')}`
       + `&track=${encodeURIComponent(String(trackNumber) || '')}`

@@ -599,12 +599,30 @@ function makeApicFrame(imageBuffer, mimeType = 'image/jpeg') {
   return Buffer.concat([header, content]);
 }
 
-function createId3Tag({ title, artist, albumArtist, album, year, releaseDate, track, totalTracks, disk, genre, imageBuffer }) {
+function makeCommentFrame(text, lang = 'eng') {
+  if (!text) return Buffer.alloc(0);
+  const langBuf = Buffer.from(lang.slice(0, 3), 'ascii');
+  const bom = Buffer.from([0xff, 0xfe]);
+  const emptyDesc = Buffer.from([0x00, 0x00]);
+  const textBuf = Buffer.from(text, 'utf16le');
+  const content = Buffer.concat([Buffer.from([0x01]), langBuf, bom, emptyDesc, bom, textBuf]);
+  const header = Buffer.alloc(10);
+  header.write('COMM', 0, 4, 'ascii');
+  header.writeUInt32BE(content.length, 4);
+  return Buffer.concat([header, content]);
+}
+
+function createId3Tag({ title, artist, albumArtist, album, composer, publisher, copyright, isrc, encodedBy, comment, year, releaseDate, track, totalTracks, disk, genre, imageBuffer }) {
   const frames = [];
   if (title) frames.push(makeTextFrame('TIT2', title));
   if (artist) frames.push(makeTextFrame('TPE1', artist));
   if (albumArtist || artist) frames.push(makeTextFrame('TPE2', albumArtist || artist));
   if (album) frames.push(makeTextFrame('TALB', album));
+  if (composer) frames.push(makeTextFrame('TCOM', composer));
+  if (publisher) frames.push(makeTextFrame('TPUB', publisher));
+  if (copyright) frames.push(makeTextFrame('TCOP', copyright));
+  if (isrc) frames.push(makeTextFrame('TSRC', isrc));
+  if (encodedBy) frames.push(makeTextFrame('TENC', encodedBy));
 
   // Pista (TRCK): e.g. "3/15" o "3"
   if (track) {
@@ -637,6 +655,7 @@ function createId3Tag({ title, artist, albumArtist, album, year, releaseDate, tr
     }
   }
 
+  if (comment) frames.push(makeCommentFrame(comment));
   if (imageBuffer) frames.push(makeApicFrame(imageBuffer, 'image/jpeg'));
 
   const totalFrames = Buffer.concat(frames);
@@ -674,6 +693,10 @@ function stripOldId3(mp3Buffer) {
       let totalTracks = (reqUrl.searchParams.get('totalTracks') || '').trim();
       let disk = (reqUrl.searchParams.get('disk') || '').trim();
       let genre = (reqUrl.searchParams.get('genre') || '').trim();
+      let publisher = (reqUrl.searchParams.get('publisher') || reqUrl.searchParams.get('label') || '').trim();
+      let copyright = (reqUrl.searchParams.get('copyright') || '').trim();
+      let composer = (reqUrl.searchParams.get('composer') || '').trim();
+      let isrc = (reqUrl.searchParams.get('isrc') || '').trim();
       let coverUrl = (reqUrl.searchParams.get('cover') || '').trim();
 
       const safeFilename = filename.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
@@ -681,7 +704,7 @@ function stripOldId3(mp3Buffer) {
 
       try {
         // Enriquecer metadatos automáticamente con Deezer si faltan datos de discografía
-        if (!genre || !track || !releaseDate || !albumArtist) {
+        if (!genre || !track || !releaseDate || !albumArtist || !publisher || !isrc) {
           try {
             const dzSearchRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(`${artist || ''} ${title || q}`.trim())}&limit=1`, {
               headers: { 'User-Agent': USER_AGENT },
@@ -696,8 +719,8 @@ function stripOldId3(mp3Buffer) {
               if (!albumArtist && (dzItem.album?.artist || dzItem.artist?.name)) albumArtist = dzItem.album?.artist || dzItem.artist?.name;
               if (!coverUrl && (dzItem.album?.cover_xl || dzItem.album?.cover_big)) coverUrl = dzItem.album?.cover_xl || dzItem.album?.cover_big;
 
-              // Obtener track_position y disk_number desde el endpoint de pista
-              if (!track || !disk) {
+              // Obtener track_position, disk_number, ISRC y compositores desde el endpoint de pista
+              if (!track || !disk || !isrc || !composer) {
                 try {
                   const trkRes = await fetch(`https://api.deezer.com/track/${dzItem.id}`, {
                     headers: { 'User-Agent': USER_AGENT },
@@ -707,6 +730,10 @@ function stripOldId3(mp3Buffer) {
                   if (!track && trkData.track_position) track = String(trkData.track_position);
                   if (!disk && trkData.disk_number) disk = String(trkData.disk_number);
                   if (!releaseDate && trkData.release_date) releaseDate = trkData.release_date;
+                  if (!isrc && trkData.isrc) isrc = trkData.isrc;
+                  if (!composer && trkData.contributors?.length > 0) {
+                    composer = trkData.contributors.map(c => c.name).join(' / ');
+                  }
                 } catch (_) {}
               }
 
@@ -728,6 +755,9 @@ function stripOldId3(mp3Buffer) {
                   }
                   if (!albumArtist && albData.artist?.name) {
                     albumArtist = albData.artist.name;
+                  }
+                  if (!publisher && albData.label) {
+                    publisher = albData.label;
                   }
                 } catch (_) {}
               }
@@ -877,13 +907,20 @@ function stripOldId3(mp3Buffer) {
           throw new Error('No se pudo obtener el archivo de audio');
         }
 
-        // Inyectar metadatos ID3v2.3 completos y oficiales (Pista, Género, Intérprete del álbum, Fecha exacta y Carátula 1000px HD)
+        // Inyectar metadatos ID3v2.3 completos estilo Apple Music (Disquera, Copyright, ISRC, Compositor, Pista, Género, Carátula 1000px HD)
+        const cleanYear = (year || releaseDate || '').match(/\b(19\d{2}|20\d{2})\b/)?.[0] || String(new Date().getFullYear());
         const tag = createId3Tag({
           title: title || safeFilename,
           artist: artist || 'Artista',
           albumArtist: albumArtist || artist || 'Artista',
           album: album || title || 'Álbum',
-          year: year || releaseDate?.slice(0, 4) || String(new Date().getFullYear()),
+          composer: composer || null,
+          publisher: publisher || null,
+          copyright: copyright || (publisher ? `℗ ${cleanYear} ${publisher}` : `℗ ${cleanYear} ${artist}`),
+          isrc: isrc || null,
+          encodedBy: 'Apple Music / Vice Music Studio Master',
+          comment: 'Vice Music Studio Master 320 kbps',
+          year: cleanYear,
           releaseDate: releaseDate || year,
           track: track,
           totalTracks: totalTracks,

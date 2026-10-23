@@ -922,117 +922,12 @@ async function playFullSong(artist, title, cover = null) {
 }
 
 // ========================================================
-// GENERADOR DE METADATOS ID3v2.3 EN CLIENTE (CARÁTULA 1000PX + METADATOS OFICIALES)
-// ========================================================
-function createId3TagBytes({ title, artist, album, year, imageBytes }) {
-  const frames = [];
-
-  function encodeSyncSafe(size) {
-    return [
-      (size >> 21) & 0x7f,
-      (size >> 14) & 0x7f,
-      (size >> 7) & 0x7f,
-      size & 0x7f
-    ];
-  }
-
-  function makeTextFrame(id, text) {
-    if (!text) return null;
-    const utf16 = [];
-    utf16.push(0x01); // UTF-16 con BOM
-    utf16.push(0xff, 0xfe); // Little Endian BOM
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      utf16.push(code & 0xff, (code >> 8) & 0xff);
-    }
-    const content = new Uint8Array(utf16);
-    const frame = new Uint8Array(10 + content.length);
-    for (let i = 0; i < 4; i++) frame[i] = id.charCodeAt(i);
-    const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-    view.setUint32(4, content.length, false); // Big endian size en ID3v2.3
-    frame.set(content, 10);
-    return frame;
-  }
-
-  function makeApicFrame(imageBytes, mimeType = 'image/jpeg') {
-    if (!imageBytes || imageBytes.length === 0) return null;
-    const mimeArr = [];
-    for (let i = 0; i < mimeType.length; i++) mimeArr.push(mimeType.charCodeAt(i));
-    mimeArr.push(0);
-
-    const content = new Uint8Array(1 + mimeArr.length + 1 + 1 + imageBytes.length);
-    content[0] = 0x00; // ISO-8859-1 para MIME y descripción
-    content.set(mimeArr, 1);
-    const afterMime = 1 + mimeArr.length;
-    content[afterMime] = 0x03; // Picture Type: 0x03 = Cover (front)
-    content[afterMime + 1] = 0x00; // Descripción vacía null
-    content.set(imageBytes, afterMime + 2);
-
-    const frame = new Uint8Array(10 + content.length);
-    for (let i = 0; i < 4; i++) frame[i] = 'APIC'.charCodeAt(i);
-    const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-    view.setUint32(4, content.length, false);
-    frame.set(content, 10);
-    return frame;
-  }
-
-  const fTitle = makeTextFrame('TIT2', title);
-  if (fTitle) frames.push(fTitle);
-  const fArtist = makeTextFrame('TPE1', artist);
-  if (fArtist) frames.push(fArtist);
-  const fAlbum = makeTextFrame('TALB', album);
-  if (fAlbum) frames.push(fAlbum);
-  const fYear = makeTextFrame('TYER', year ? String(year).substring(0, 4) : '');
-  if (fYear) frames.push(fYear);
-  const fCover = makeApicFrame(imageBytes);
-  if (fCover) frames.push(fCover);
-
-  let totalFramesLen = 0;
-  for (const f of frames) totalFramesLen += f.length;
-
-  const tag = new Uint8Array(10 + totalFramesLen);
-  tag[0] = 0x49; // 'I'
-  tag[1] = 0x44; // 'D'
-  tag[2] = 0x33; // '3'
-  tag[3] = 0x03; // ID3v2.3
-  tag[4] = 0x00;
-  tag[5] = 0x00; // flags
-  const syncSafe = encodeSyncSafe(totalFramesLen);
-  tag[6] = syncSafe[0];
-  tag[7] = syncSafe[1];
-  tag[8] = syncSafe[2];
-  tag[9] = syncSafe[3];
-
-  let offset = 10;
-  for (const f of frames) {
-    tag.set(f, offset);
-    offset += f.length;
-  }
-  return tag;
-}
-
-function stripOldId3Bytes(mp3Uint8) {
-  if (mp3Uint8.length > 10 && mp3Uint8[0] === 0x49 && mp3Uint8[1] === 0x44 && mp3Uint8[2] === 0x33) {
-    const size = (mp3Uint8[6] << 21) | (mp3Uint8[7] << 14) | (mp3Uint8[8] << 7) | mp3Uint8[9];
-    const totalHeader = size + 10;
-    return mp3Uint8.subarray(totalHeader);
-  }
-  return mp3Uint8;
-}
-
-function injectId3IntoMp3(rawMp3Bytes, meta) {
-  const audioOnly = stripOldId3Bytes(rawMp3Bytes);
-  const tagBytes = createId3TagBytes(meta);
-  const finalBuf = new Uint8Array(tagBytes.length + audioOnly.length);
-  finalBuf.set(tagBytes, 0);
-  finalBuf.set(audioOnly, tagBytes.length);
-  return finalBuf;
-}
-
 // DESCARGAR AUDIO 320 KBPS CON METADATOS OFICIALES Y CARÁTULA HD 1000PX
+// (100% EN LA MISMA PÁGINA, SIN ABRIR PESTAÑAS NUEVAS)
+// ========================================================
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}) {
   const displayTitle = title || 'Canción';
-  showToast(`⚡ Preparando descarga 320 kbps para: ${displayTitle}…`);
+  showToast(`⚡ Preparando audio 320 kbps para: ${displayTitle}...`);
   try {
     const query = `${artist} ${title}`;
     const startRes = await fetch(`/api/start-mp3-conversion?q=${encodeURIComponent(query)}`);
@@ -1065,67 +960,30 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
     }
 
     const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
+    const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
+    const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
+    const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : '');
 
-    // Descargar audio y carátula para incrustar ID3 oficiales directamente en el navegador
-    showToast(`📥 Descargando audio oficial 320 kbps...`);
-    try {
-      const audioRes = await fetch(downloadUrl);
-      if (!audioRes.ok) throw new Error('Status ' + audioRes.status);
-      const rawAudioBuf = await audioRes.arrayBuffer();
-      const rawAudioBytes = new Uint8Array(rawAudioBuf);
+    showToast(`🎨 Empaquetando MP3 320 kbps con carátula 1000px y metadatos oficiales...`);
 
-      showToast(`🎨 Incrustando carátula HD 1000px y metadatos oficiales...`);
+    // Iniciar descarga limpia en la MISMA página (sin abrir pestañas nuevas)
+    const downloadApiUrl = `/api/download-mp3?url=${encodeURIComponent(downloadUrl)}`
+      + `&title=${encodeURIComponent(title || '')}`
+      + `&artist=${encodeURIComponent(artist || '')}`
+      + `&album=${encodeURIComponent(albumName || '')}`
+      + `&year=${encodeURIComponent(String(releaseYear) || '')}`
+      + `&cover=${encodeURIComponent(coverTarget || '')}`
+      + `&filename=${encodeURIComponent(safeName)}`;
 
-      // Obtener carátula oficial en HD de la plataforma
-      let coverBytes = null;
-      const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : null);
-      if (coverTarget) {
-        try {
-          const coverRes = await fetch(coverTarget);
-          if (coverRes.ok) {
-            coverBytes = new Uint8Array(await coverRes.arrayBuffer());
-          }
-        } catch (cErr) {
-          console.warn('[Cover fetch]', cErr);
-        }
-      }
+    // Disparar descarga directa en la misma ventana
+    const a = document.createElement('a');
+    a.href = downloadApiUrl;
+    a.download = `${safeName}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 
-      const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
-      const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
-
-      // Incrustar ID3v2.3 tags
-      const taggedBytes = injectId3IntoMp3(rawAudioBytes, {
-        title: title,
-        artist: artist,
-        album: albumName,
-        year: releaseYear,
-        imageBytes: coverBytes
-      });
-
-      const blob = new Blob([taggedBytes], { type: 'audio/mpeg' });
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `${safeName}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
-
-      showToast(`✅ ¡Descarga completada con carátula 1000px y metadatos!`);
-    } catch (streamErr) {
-      console.warn('[Direct Blob fetch falló, usando descarga directa de enlace]:', streamErr);
-      // Fallback directo que nunca se cae
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `${safeName}.mp3`;
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      showToast(`✅ Descarga iniciada: ${title}`);
-    }
-
+    showToast(`✅ Descarga iniciada: ${title}`);
   } catch (err) {
     console.error('[downloadMp3_320]', err);
     showToast('❌ Error al descargar MP3: ' + err.message);

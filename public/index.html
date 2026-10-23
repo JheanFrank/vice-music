@@ -34,7 +34,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v4.4</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v4.5</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -63,9 +63,18 @@
   <!-- Contenedor Principal -->
   <main class="main-container">
 
-    <!-- Selector de Modo: ÁLBUMES vs PISTAS -->
+    <!-- Selector de Modo: HOME vs ÁLBUMES vs PISTAS -->
     <div class="view-switcher">
-      <button class="view-btn active" id="tabAlbums" data-mode="albums">
+      <button class="view-btn active" id="tabHome" data-mode="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+        <span>HOME</span>
+        <span class="pill-mini">TOP 10 🇨🇴</span>
+      </button>
+
+      <button class="view-btn" id="tabAlbums" data-mode="albums">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <circle cx="12" cy="12" r="3"></circle>
@@ -84,11 +93,11 @@
       </button>
     </div>
 
-    <!-- Hero / Input de Enlaces -->
+    <!-- Hero / Input de Búsqueda Limpio -->
     <section class="hero-section">
       <div class="hero-badge">⚡ EXPLORADOR DE ÁLBUMES & DISCOGRAFÍAS ⚡</div>
-      <h2 class="hero-title" id="searchHeaderTitle">BUSCA CUALQUIER ÁLBUM O CANCIÓN</h2>
-      <p class="hero-sub" id="searchHeaderSub">Escribe un artista o canción (ej: <strong>Blessd Superstar</strong>, <strong>Karol G</strong>) para ver álbumes completos.</p>
+      <h2 class="hero-title" id="searchHeaderTitle">BUSCA CUALQUIER ARTISTA O CANCIÓN</h2>
+      <p class="hero-sub" id="searchHeaderSub">Escribe cualquier artista o canción para explorar discografías completas y sencillos en alta calidad.</p>
 
       <div class="search-box-vice">
         <div class="search-icon">
@@ -100,7 +109,7 @@
         <input 
           type="text" 
           id="searchInput" 
-          placeholder="Busca artista o tema (ej: Blessd Superstar, Karol G, Feid)..." 
+          placeholder="Busca cualquier artista o canción..." 
           autocomplete="off"
         >
         <button id="searchBtn" class="vice-btn-primary">
@@ -111,15 +120,17 @@
         </button>
       </div>
 
-      <!-- Chips Rápidos -->
+      <!-- Chips: Los más buscados de Colombia -->
       <div class="quick-tags">
-        <span class="tag-label">TOP:</span>
-        <button class="chip" data-query="Blessd Superstar">🔥 Blessd - SUPERSTAR</button>
-        <button class="chip" data-query="Blessd">Blessd (Discografía)</button>
+        <span class="tag-label">🇨🇴 MÁS BUSCADOS DE COLOMBIA:</span>
+        <button class="chip" data-query="Blessd">Blessd</button>
+        <button class="chip" data-query="Feid">Feid</button>
         <button class="chip" data-query="Karol G">Karol G</button>
-        <button class="chip" data-query="Feid">Feid (Ferxxo)</button>
-        <button class="chip" data-query="Bad Bunny">Bad Bunny</button>
-        <button class="chip" data-query="Daft Punk">Daft Punk</button>
+        <button class="chip" data-query="Ryan Castro">Ryan Castro</button>
+        <button class="chip" data-query="Maluma">Maluma</button>
+        <button class="chip" data-query="J Balvin">J Balvin</button>
+        <button class="chip" data-query="Manuel Turizo">Manuel Turizo</button>
+        <button class="chip" data-query="Shakira">Shakira</button>
       </div>
     </section>
 
@@ -166,8 +177,54 @@
       </div>
     </section>
 
+    <!-- SECCIÓN HOME: TOP 10 COLOMBIA & LANZAMIENTOS (ESTILO APPLE MUSIC / SPOTIFY) -->
+    <section class="home-section" id="homeSection">
+      
+      <!-- Banner Editorial Top Colombia -->
+      <div class="home-hero-banner">
+        <div class="home-hero-badge">
+          <span class="pulse-pink"></span>
+          <span>CHART OFICIAL EN VIVO 🇨🇴</span>
+        </div>
+        <h2 class="home-hero-title">TOP 10 COLOMBIA</h2>
+        <p class="home-hero-subtitle">Los éxitos más escuchados en Colombia hoy, actualizados en tiempo real con carátulas en 1000px HD y audio Master.</p>
+      </div>
+
+      <!-- Contenedor del Ranking Top 10 -->
+      <div class="top-ranking-wrapper">
+        <div class="ranking-header">
+          <span class="rh-col rh-rank">#</span>
+          <span class="rh-col rh-track">CANCIÓN</span>
+          <span class="rh-col rh-album">ÁLBUM</span>
+          <span class="rh-col rh-time">TIEMPO</span>
+          <span class="rh-col rh-actions">ACCIONES VIP</span>
+        </div>
+
+        <div id="topRankingList" class="top-ranking-list">
+          <div class="ranking-loader">
+            <div class="vice-spinner">
+              <div class="inner-vi">VI</div>
+            </div>
+            <p>Sincronizando los 10 éxitos más sonados en Colombia...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Álbumes y Discografías de Colombia -->
+      <div class="home-trending-albums">
+        <div class="trending-header">
+          <div>
+            <h3 class="trending-title">🔥 DISCOGRAFÍAS DESTACADAS DE COLOMBIA</h3>
+            <p class="trending-sub">Álbumes oficiales de estudio listos para reproducir o descargar completos en FLAC .ZIP.</p>
+          </div>
+        </div>
+        <div id="homeTrendingGrid" class="results-grid"></div>
+      </div>
+
+    </section>
+
     <!-- Catálogo de Resultados (Álbumes o Pistas) -->
-    <section class="results-section" id="catalogSection">
+    <section class="results-section hidden" id="catalogSection">
       <div class="section-header">
         <h3 id="resultsTitle">DISCOGRAFÍAS ENCONTRADAS</h3>
         <span id="resultsCount" class="counter">0 RESULTADOS</span>
@@ -301,7 +358,7 @@
           <label for="loginUsername">USUARIO</label>
           <div class="login-input-wrap">
             <span class="input-icon">👤</span>
-            <input type="text" id="loginUsername" name="username" placeholder="Ingresa tu usuario (admin)" required autocomplete="username">
+            <input type="text" id="loginUsername" name="username" placeholder="Ingresa tu usuario" required autocomplete="username">
           </div>
         </div>
 
@@ -309,7 +366,7 @@
           <label for="loginPassword">CONTRASEÑA</label>
           <div class="login-input-wrap">
             <span class="input-icon">🔒</span>
-            <input type="password" id="loginPassword" name="password" placeholder="Ingresa tu contraseña (admin)" required autocomplete="current-password">
+            <input type="password" id="loginPassword" name="password" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
             <button type="button" id="btnTogglePassword" class="btn-toggle-pwd" title="Mostrar/ocultar contraseña">👁️</button>
           </div>
         </div>
@@ -318,16 +375,12 @@
           <span id="loginBtnText">INGRESAR AL SISTEMA</span>
           <div id="loginBtnSpinner" class="login-spinner hidden"></div>
         </button>
-
-        <div class="login-footer-hint">
-          <span>🌴 Acceso exclusivo Vice City // Credenciales demo: <code>admin</code> / <code>admin</code></span>
-        </div>
       </form>
     </div>
   </div>
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=440"></script>
+  <script src="app.js?v=450"></script>
 </body>
 </html>

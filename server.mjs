@@ -599,12 +599,44 @@ function makeApicFrame(imageBuffer, mimeType = 'image/jpeg') {
   return Buffer.concat([header, content]);
 }
 
-function createId3Tag({ title, artist, album, year, imageBuffer }) {
+function createId3Tag({ title, artist, albumArtist, album, year, releaseDate, track, totalTracks, disk, genre, imageBuffer }) {
   const frames = [];
   if (title) frames.push(makeTextFrame('TIT2', title));
   if (artist) frames.push(makeTextFrame('TPE1', artist));
+  if (albumArtist || artist) frames.push(makeTextFrame('TPE2', albumArtist || artist));
   if (album) frames.push(makeTextFrame('TALB', album));
-  if (year) frames.push(makeTextFrame('TYER', year));
+
+  // Pista (TRCK): e.g. "3/15" o "3"
+  if (track) {
+    const trackStr = totalTracks ? `${track}/${totalTracks}` : String(track);
+    frames.push(makeTextFrame('TRCK', trackStr));
+  }
+
+  // Disco (TPOS): e.g. "1" o "1/1"
+  if (disk) {
+    frames.push(makeTextFrame('TPOS', String(disk)));
+  }
+
+  // Género musical (TCON)
+  if (genre) {
+    frames.push(makeTextFrame('TCON', genre));
+  }
+
+  // Año estándar TYER (4 dígitos YYYY)
+  const cleanYear = (year || releaseDate || '').match(/\b(19\d{2}|20\d{2})\b/);
+  if (cleanYear) {
+    frames.push(makeTextFrame('TYER', cleanYear[0]));
+  }
+
+  // Fecha completa exacta con día y mes (TDRC / TDAT)
+  if (releaseDate && releaseDate.includes('-')) {
+    frames.push(makeTextFrame('TDRC', releaseDate));
+    const parts = releaseDate.split('-');
+    if (parts.length >= 3) {
+      frames.push(makeTextFrame('TDAT', parts[2].slice(0, 2) + parts[1].slice(0, 2)));
+    }
+  }
+
   if (imageBuffer) frames.push(makeApicFrame(imageBuffer, 'image/jpeg'));
 
   const totalFrames = Buffer.concat(frames);
@@ -632,16 +664,76 @@ function stripOldId3(mp3Buffer) {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
-      const title = (reqUrl.searchParams.get('title') || '').trim();
-      const artist = (reqUrl.searchParams.get('artist') || '').trim();
-      const album = (reqUrl.searchParams.get('album') || '').trim();
-      const year = (reqUrl.searchParams.get('year') || '').trim();
-      const coverUrl = (reqUrl.searchParams.get('cover') || '').trim();
+      let title = (reqUrl.searchParams.get('title') || '').trim();
+      let artist = (reqUrl.searchParams.get('artist') || '').trim();
+      let album = (reqUrl.searchParams.get('album') || '').trim();
+      let albumArtist = (reqUrl.searchParams.get('albumArtist') || '').trim();
+      let year = (reqUrl.searchParams.get('year') || '').trim();
+      let releaseDate = (reqUrl.searchParams.get('releaseDate') || '').trim();
+      let track = (reqUrl.searchParams.get('track') || '').trim();
+      let totalTracks = (reqUrl.searchParams.get('totalTracks') || '').trim();
+      let disk = (reqUrl.searchParams.get('disk') || '').trim();
+      let genre = (reqUrl.searchParams.get('genre') || '').trim();
+      let coverUrl = (reqUrl.searchParams.get('cover') || '').trim();
 
       const safeFilename = filename.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
       const encodedFilename = encodeURIComponent(safeFilename);
 
       try {
+        // Enriquecer metadatos automáticamente con Deezer si faltan datos de discografía
+        if (!genre || !track || !releaseDate || !albumArtist) {
+          try {
+            const dzSearchRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(`${artist || ''} ${title || q}`.trim())}&limit=1`, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(3500)
+            });
+            const dzSearchData = await dzSearchRes.json();
+            if (dzSearchData.data && dzSearchData.data[0]) {
+              const dzItem = dzSearchData.data[0];
+              if (!title && dzItem.title) title = dzItem.title;
+              if (!artist && dzItem.artist?.name) artist = dzItem.artist.name;
+              if (!album && dzItem.album?.title) album = dzItem.album.title;
+              if (!albumArtist && (dzItem.album?.artist || dzItem.artist?.name)) albumArtist = dzItem.album?.artist || dzItem.artist?.name;
+              if (!coverUrl && (dzItem.album?.cover_xl || dzItem.album?.cover_big)) coverUrl = dzItem.album?.cover_xl || dzItem.album?.cover_big;
+
+              // Obtener track_position y disk_number desde el endpoint de pista
+              if (!track || !disk) {
+                try {
+                  const trkRes = await fetch(`https://api.deezer.com/track/${dzItem.id}`, {
+                    headers: { 'User-Agent': USER_AGENT },
+                    signal: AbortSignal.timeout(3000)
+                  });
+                  const trkData = await trkRes.json();
+                  if (!track && trkData.track_position) track = String(trkData.track_position);
+                  if (!disk && trkData.disk_number) disk = String(trkData.disk_number);
+                  if (!releaseDate && trkData.release_date) releaseDate = trkData.release_date;
+                } catch (_) {}
+              }
+
+              if (dzItem.album?.id) {
+                try {
+                  const albRes = await fetch(`https://api.deezer.com/album/${dzItem.album.id}`, {
+                    headers: { 'User-Agent': USER_AGENT },
+                    signal: AbortSignal.timeout(3500)
+                  });
+                  const albData = await albRes.json();
+                  if (!genre && albData.genres?.data?.length > 0) {
+                    genre = albData.genres.data.map(g => g.name).join(' / ');
+                  }
+                  if (!releaseDate && albData.release_date) {
+                    releaseDate = albData.release_date;
+                  }
+                  if (!totalTracks && albData.nb_tracks) {
+                    totalTracks = String(albData.nb_tracks);
+                  }
+                  if (!albumArtist && albData.artist?.name) {
+                    albumArtist = albData.artist.name;
+                  }
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        }
         let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
 
         if (!targetVideoId && q) {
@@ -785,16 +877,18 @@ function stripOldId3(mp3Buffer) {
           throw new Error('No se pudo obtener el archivo de audio');
         }
 
-        // Limpiar año a formato estándar de 4 dígitos YYYY (ID3v2.3 TYER)
-        const yearMatch = (year || '').match(/\b(19\d{2}|20\d{2})\b/);
-        const cleanYear = yearMatch ? yearMatch[0] : String(new Date().getFullYear());
-
-        // Inyectar metadatos ID3v2.3 oficiales y carátula HD 1000px
+        // Inyectar metadatos ID3v2.3 completos y oficiales (Pista, Género, Intérprete del álbum, Fecha exacta y Carátula 1000px HD)
         const tag = createId3Tag({
           title: title || safeFilename,
           artist: artist || 'Artista',
+          albumArtist: albumArtist || artist || 'Artista',
           album: album || title || 'Álbum',
-          year: cleanYear,
+          year: year || releaseDate?.slice(0, 4) || String(new Date().getFullYear()),
+          releaseDate: releaseDate || year,
+          track: track,
+          totalTracks: totalTracks,
+          disk: disk || '1',
+          genre: genre || 'Latino / Música',
           imageBuffer: coverBuf
         });
 

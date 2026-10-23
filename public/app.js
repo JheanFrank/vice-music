@@ -695,8 +695,14 @@ async function openAlbumDetail(albumId) {
       trackRow.querySelector('.btn-dl-mp3').addEventListener('click', (e) => {
         downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
           album: album.title,
+          albumArtist: album.artist,
           coverUrl: album.coverXl,
-          year: album.releaseDate
+          year: album.releaseDate,
+          releaseDate: album.releaseDate,
+          track: track.position || (index + 1),
+          totalTracks: album.tracks ? album.tracks.length : null,
+          disk: track.disk || 1,
+          genre: album.genre || null
         }, e.currentTarget);
       });
 
@@ -799,8 +805,12 @@ function renderTracks(tracks) {
       e.stopPropagation();
       downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
         album: track.album,
+        albumArtist: track.artist,
         coverUrl: track.coverXl,
-        year: track.releaseDate
+        year: track.releaseDate,
+        releaseDate: track.releaseDate,
+        track: track.trackPosition || null,
+        genre: track.genre || null
       }, e.currentTarget);
     });
 
@@ -1021,17 +1031,29 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
 
   try {
     const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
+    const albumArtistName = extraMeta.albumArtist || artist;
     const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
+    const exactReleaseDate = extraMeta.releaseDate || (state.currentTrack ? state.currentTrack.releaseDate : '') || '';
+    const trackNumber = extraMeta.track || '';
+    const totalTracksCount = extraMeta.totalTracks || '';
+    const diskNumber = extraMeta.disk || '1';
+    const musicGenre = extraMeta.genre || '';
     const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : '');
     const targetVideoId = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : '') || '';
 
-    // URL de descarga directa y nativa de nuestro servidor
+    // URL de descarga directa y nativa de nuestro servidor con metadatos completos
     const downloadApiUrl = `/api/download-mp3?q=${encodeURIComponent(artist + ' ' + title)}`
       + `&videoId=${encodeURIComponent(targetVideoId)}`
       + `&title=${encodeURIComponent(title || '')}`
       + `&artist=${encodeURIComponent(artist || '')}`
+      + `&albumArtist=${encodeURIComponent(albumArtistName || '')}`
       + `&album=${encodeURIComponent(albumName || '')}`
       + `&year=${encodeURIComponent(String(releaseYear) || '')}`
+      + `&releaseDate=${encodeURIComponent(String(exactReleaseDate) || '')}`
+      + `&track=${encodeURIComponent(String(trackNumber) || '')}`
+      + `&totalTracks=${encodeURIComponent(String(totalTracksCount) || '')}`
+      + `&disk=${encodeURIComponent(String(diskNumber) || '')}`
+      + `&genre=${encodeURIComponent(musicGenre || '')}`
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 

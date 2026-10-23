@@ -3,7 +3,7 @@
 // ========================================================
 
 const state = {
-  currentMode: 'albums', // 'albums' | 'tracks'
+  currentMode: 'home', // 'home' | 'albums' | 'tracks'
   currentTrack: null,
   currentAlbum: null,
   isPlaying: false,
@@ -24,10 +24,16 @@ const toastNotification = document.getElementById('toastNotification');
 const toastText = document.getElementById('toastText');
 
 // Tabs
+const tabHome = document.getElementById('tabHome');
 const tabAlbums = document.getElementById('tabAlbums');
 const tabTracks = document.getElementById('tabTracks');
 const searchHeaderTitle = document.getElementById('searchHeaderTitle');
 const searchHeaderSub = document.getElementById('searchHeaderSub');
+
+// Home Section Elements
+const homeSection = document.getElementById('homeSection');
+const topRankingList = document.getElementById('topRankingList');
+const homeTrendingGrid = document.getElementById('homeTrendingGrid');
 
 // Album Detail Section
 const albumDetailView = document.getElementById('albumDetailView');
@@ -345,7 +351,7 @@ async function handleLoginSubmit(e) {
       }
     } else {
       if (alertEl) {
-        alertEl.textContent = (data && data.error) || 'Usuario o contraseña incorrectos. Usa admin / admin.';
+        alertEl.textContent = (data && data.error) || 'Usuario o contraseña incorrectos. Verifica tus credenciales.';
         alertEl.classList.remove('hidden');
       }
     }
@@ -374,12 +380,12 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   updateAuthUI();
   startVisualizer();
-  
-  // Búsqueda inicial por defecto
-  performSearch('Blessd Superstar');
+  loadHomeContent();
+  switchViewMode('home');
 });
 
 function setupEventListeners() {
+  if (tabHome) tabHome.addEventListener('click', () => switchViewMode('home'));
   tabAlbums.addEventListener('click', () => switchViewMode('albums'));
   tabTracks.addEventListener('click', () => switchViewMode('tracks'));
 
@@ -392,7 +398,7 @@ function setupEventListeners() {
     setTimeout(() => performSearch(searchInput.value), 100);
   });
 
-  // Chips sugeridos
+  // Chips sugeridos: Más buscados de Colombia
   document.querySelectorAll('.chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const q = chip.getAttribute('data-query');
@@ -404,7 +410,11 @@ function setupEventListeners() {
   // Botón Volver de la vista de Álbum
   btnBackToAlbums.addEventListener('click', () => {
     albumDetailView.classList.add('hidden');
-    catalogSection.classList.remove('hidden');
+    if (state.currentMode === 'home') {
+      if (homeSection) homeSection.classList.remove('hidden');
+    } else {
+      catalogSection.classList.remove('hidden');
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
@@ -558,25 +568,41 @@ function setupEventListeners() {
 function switchViewMode(mode) {
   state.currentMode = mode;
   albumDetailView.classList.add('hidden');
+
+  if (mode === 'home') {
+    if (tabHome) tabHome.classList.add('active');
+    if (tabAlbums) tabAlbums.classList.remove('active');
+    if (tabTracks) tabTracks.classList.remove('active');
+    if (homeSection) homeSection.classList.remove('hidden');
+    if (catalogSection) catalogSection.classList.add('hidden');
+    searchHeaderTitle.innerText = 'BUSCA CUALQUIER ARTISTA O CANCIÓN';
+    searchHeaderSub.innerHTML = 'Escribe cualquier artista o canción para explorar discografías completas y sencillos en alta calidad.';
+    searchInput.placeholder = 'Busca cualquier artista o canción...';
+    return;
+  }
+
+  if (homeSection) homeSection.classList.add('hidden');
   catalogSection.classList.remove('hidden');
 
   if (mode === 'albums') {
-    tabAlbums.classList.add('active');
-    tabTracks.classList.remove('active');
-    searchHeaderTitle.innerText = 'BUSCA CUALQUIER ÁLBUM O CANCIÓN';
-    searchHeaderSub.innerHTML = 'Escribe un artista o canción (ej: <strong>Blessd Superstar</strong>, <strong>Karol G</strong>) para ver álbumes completos.';
-    searchInput.placeholder = 'Busca un artista o canción (ej: Blessd Superstar, Karol G, Feid)...';
+    if (tabAlbums) tabAlbums.classList.add('active');
+    if (tabHome) tabHome.classList.remove('active');
+    if (tabTracks) tabTracks.classList.remove('active');
+    searchHeaderTitle.innerText = 'BUSCA CUALQUIER ÁLBUM O DISCOGRAFÍA';
+    searchHeaderSub.innerHTML = 'Escribe cualquier artista o canción para ver álbumes completos.';
+    searchInput.placeholder = 'Busca artista o álbum...';
     resultsTitle.innerText = 'ÁLBUMES DISPONIBLES';
   } else {
-    tabTracks.classList.add('active');
-    tabAlbums.classList.remove('active');
-    searchHeaderTitle.innerText = 'BUSCA PISTAS O PEGA ENLACES';
-    searchHeaderSub.innerHTML = 'Encuentra canciones sueltas y salta a su <strong>álbum completo</strong> con un solo clic.';
-    searchInput.placeholder = 'Busca canción (ej: Superstar, BbY WOW, Mírame)...';
+    if (tabTracks) tabTracks.classList.add('active');
+    if (tabHome) tabHome.classList.remove('active');
+    if (tabAlbums) tabAlbums.classList.remove('active');
+    searchHeaderTitle.innerText = 'BUSCA CUALQUIER PISTA O CANCIÓN';
+    searchHeaderSub.innerHTML = 'Encuentra canciones sueltas y salta a su álbum completo con un solo clic.';
+    searchInput.placeholder = 'Busca cualquier canción...';
     resultsTitle.innerText = 'PISTAS IDENTIFICADAS';
   }
 
-  const query = searchInput.value.trim() || 'Blessd Superstar';
+  const query = searchInput.value.trim() || 'Blessd';
   performSearch(query);
 }
 
@@ -584,6 +610,15 @@ function switchViewMode(mode) {
 async function performSearch(query) {
   if (!query || !query.trim()) return;
 
+  // Si estábamos en modo 'home', activar visualmente el modo 'albums'
+  if (state.currentMode === 'home') {
+    state.currentMode = 'albums';
+    if (tabHome) tabHome.classList.remove('active');
+    if (tabAlbums) tabAlbums.classList.add('active');
+    if (tabTracks) tabTracks.classList.remove('active');
+  }
+
+  if (homeSection) homeSection.classList.add('hidden');
   albumDetailView.classList.add('hidden');
   catalogSection.classList.remove('hidden');
 
@@ -766,6 +801,7 @@ function renderAlbums(albums) {
 
 // Abrir Vista Detallada del Álbum con TODAS sus canciones y DESCARGA COMPLETA
 async function openAlbumDetail(albumId) {
+  if (homeSection) homeSection.classList.add('hidden');
   catalogSection.classList.add('hidden');
   albumDetailView.classList.remove('hidden');
   window.scrollTo({ top: 120, behavior: 'smooth' });
@@ -1610,6 +1646,203 @@ function showToast(message) {
   toastText.innerText = message;
   toastNotification.classList.remove('hidden');
   setTimeout(() => toastNotification.classList.add('hidden'), 4500);
+}
+
+// ========================================================
+// CARGADOR HOME // TOP 10 COLOMBIA & LANZAMIENTOS (SPOTIFY / APPLE STYLE)
+// ========================================================
+async function loadHomeContent() {
+  const topRankingList = document.getElementById('topRankingList');
+  const homeTrendingGrid = document.getElementById('homeTrendingGrid');
+  if (!topRankingList) return;
+
+  try {
+    let tracks = [];
+    let albums = [];
+
+    // 1. Probar backend Render
+    try {
+      const res = await fetch('/api/top-colombia');
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
+        tracks = data.tracks;
+        albums = data.albums || [];
+      }
+    } catch (e) {
+      console.warn('Backend top-colombia no respondió, intentando JSONP:', e.message);
+    }
+
+    // 2. Fallback JSONP directo con playlist oficial Deezer Top Colombia (1116188451)
+    if (tracks.length === 0) {
+      const dzData = await fetchDeezerJsonp('/playlist/1116188451');
+      if (dzData && dzData.tracks && Array.isArray(dzData.tracks.data)) {
+        tracks = dzData.tracks.data.slice(0, 10).map((t, idx) => ({
+          rank: idx + 1,
+          id: `deezer_${t.id}`,
+          deezerId: t.id,
+          title: t.title,
+          artist: t.artist ? t.artist.name : 'Artista',
+          album: t.album ? t.album.title : 'Álbum',
+          albumId: t.album ? `deezer_${t.album.id}` : null,
+          deezerAlbumId: t.album ? t.album.id : null,
+          coverXl: t.album ? (t.album.cover_xl || t.album.cover_big) : (t.artist ? t.artist.picture_xl : ''),
+          duration: t.duration || 0,
+          preview: t.preview || null,
+          link: t.link || `https://www.deezer.com/track/${t.id}`,
+          lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`,
+          source: 'deezer'
+        }));
+      }
+    }
+
+    // Renderizar Ranking Top 10
+    topRankingList.innerHTML = '';
+    if (tracks.length === 0) {
+      topRankingList.innerHTML = '<p style="padding: 2.5rem; color: var(--text-dim); text-align: center; font-family: var(--font-mono);">Conectando con el satélite de audio... Vuelve a intentarlo en unos instantes.</p>';
+    } else {
+      tracks.forEach((track, index) => {
+        const row = document.createElement('div');
+        row.className = `ranking-row ${index === 0 ? 'rank-first' : ''}`;
+        
+        const rankNumStr = track.rank < 10 ? `0${track.rank}` : `${track.rank}`;
+        const durationFormatted = formatTime(track.duration);
+
+        row.innerHTML = `
+          <div class="ranking-num">
+            ${index === 0 ? '👑 01' : rankNumStr}
+          </div>
+
+          <div class="ranking-track-cell">
+            <div class="ranking-thumb-wrap">
+              <img src="${track.coverXl || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI'}" alt="${track.title}" class="ranking-thumb-img" loading="lazy">
+              <div class="ranking-thumb-play">▶</div>
+            </div>
+            <div class="ranking-track-meta">
+              <span class="ranking-track-title" title="${track.title}">${track.title}</span>
+              <span class="ranking-track-artist" title="${track.artist}">${track.artist}</span>
+            </div>
+          </div>
+
+          <div class="ranking-album-cell">
+            <a href="javascript:void(0)" class="ranking-album-link" title="${track.album}">${track.album}</a>
+          </div>
+
+          <div class="ranking-time-cell">
+            ${durationFormatted}
+          </div>
+
+          <div class="ranking-actions-cell">
+            <button class="btn-rank-action btn-rank-play" title="Escuchar preview">
+              ▶ <span>PREVIEW</span>
+            </button>
+            <button class="btn-rank-action btn-rank-full" title="Escuchar canción completa">
+              🎧 <span>COMPLETA</span>
+            </button>
+            <button class="btn-rank-action btn-dl-vip" title="Descargar MP3 320 kbps (VIP)">
+              📥 <span>MP3 320</span>
+            </button>
+          </div>
+        `;
+
+        const playPreview = () => {
+          loadTrack({
+            title: track.title,
+            artist: track.artist,
+            cover: track.coverXl,
+            audioUrl: track.preview,
+            album: track.album,
+            duration: track.duration,
+            label: 'Top Colombia Official'
+          });
+        };
+
+        row.querySelector('.ranking-thumb-wrap').addEventListener('click', (e) => {
+          e.stopPropagation();
+          playPreview();
+        });
+
+        row.querySelector('.btn-rank-play').addEventListener('click', (e) => {
+          e.stopPropagation();
+          playPreview();
+        });
+
+        row.querySelector('.btn-rank-full').addEventListener('click', (e) => {
+          e.stopPropagation();
+          playFullSong(track.artist, track.title, track.coverXl, track.album);
+        });
+
+        row.querySelector('.btn-dl-vip').addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadMp3_320(track.artist, track.title, track.preview, null, {
+            album: track.album,
+            coverUrl: track.coverXl
+          }, e.currentTarget);
+        });
+
+        const albumLink = row.querySelector('.ranking-album-link');
+        if (albumLink && track.albumId) {
+          albumLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openAlbumDetail(track.albumId);
+          });
+        }
+
+        topRankingList.appendChild(row);
+      });
+    }
+
+    // Renderizar Álbumes destacados de Colombia
+    if (homeTrendingGrid) {
+      if (!albums || albums.length === 0) {
+        const [dzBlessd, dzFeid, dzKarol] = await Promise.all([
+          fetchDeezerJsonp('/search/album?q=Blessd+SUPERSTAR&limit=2'),
+          fetchDeezerJsonp('/search/album?q=Feid+FERXXO&limit=2'),
+          fetchDeezerJsonp('/search/album?q=Karol+G&limit=2')
+        ]);
+        const combo = [
+          ...(dzBlessd?.data || []),
+          ...(dzFeid?.data || []),
+          ...(dzKarol?.data || [])
+        ];
+        albums = combo.map(a => ({
+          id: `deezer_${a.id}`,
+          deezerId: a.id,
+          title: a.title,
+          artist: a.artist ? a.artist.name : 'Artista',
+          coverXl: a.cover_xl || a.cover_big || a.cover_medium,
+          nbTracks: a.nb_tracks || '—'
+        }));
+      }
+
+      homeTrendingGrid.innerHTML = '';
+      albums.slice(0, 6).forEach(album => {
+        const card = document.createElement('div');
+        card.className = 'album-card';
+        card.innerHTML = `
+          <div class="album-cover-wrapper">
+            <img src="${album.coverXl || 'https://via.placeholder.com/300/1a0933/ff2a85?text=VI'}" alt="${album.title}" class="album-cover-img" loading="lazy">
+            <div class="cover-flac-badge">1000PX HD</div>
+            <div class="album-hover-overlay">
+              <span class="btn-open-album-hint">VER DISCOGRAFÍA</span>
+            </div>
+          </div>
+          <div class="album-info">
+            <h4 class="album-title" title="${album.title}">${album.title}</h4>
+            <p class="album-artist" title="${album.artist}">${album.artist}</p>
+            <div class="album-meta">
+              <span class="album-tracks-count">${album.nbTracks} canciones</span>
+              <span class="album-type-badge">ÁLBUM</span>
+            </div>
+          </div>
+        `;
+        card.addEventListener('click', () => openAlbumDetail(album.id));
+        homeTrendingGrid.appendChild(card);
+      });
+    }
+
+  } catch (err) {
+    console.error('Error cargando Home Content:', err);
+  }
 }
 
 function startVisualizer() {

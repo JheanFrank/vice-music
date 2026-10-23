@@ -540,12 +540,17 @@ const server = http.createServer(async (req, res) => {
         const hasValidUrl = progData.download_url && progData.download_url.includes('savenow.to') && !progData.download_url.includes('affadaffa');
         const isFinished = progData.progress === 1000 && hasValidUrl;
 
+        let downloadUrl = isFinished ? progData.download_url : null;
+        if (downloadUrl && downloadUrl.startsWith('http://')) {
+          downloadUrl = downloadUrl.replace('http://', 'https://');
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           progress: progData.progress || 0,
           text: progData.text || '',
           isFinished: !!isFinished,
-          downloadUrl: isFinished ? progData.download_url : null
+          downloadUrl: downloadUrl
         }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });

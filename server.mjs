@@ -651,12 +651,13 @@ function stripOldId3(mp3Buffer) {
         });
 
         if (!audioFetch.ok) {
-          throw new Error('El servidor de almacenamiento respondió con status ' + audioFetch.status);
+          throw new Error(`El CDN respondió con error HTTP ${audioFetch.status} ${audioFetch.statusText}`);
         }
 
         const rawAudioBuf = Buffer.from(await audioFetch.arrayBuffer());
         if (rawAudioBuf.length < 10000) {
-          throw new Error('El archivo aún se está procesando o no es válido.');
+          const previewText = rawAudioBuf.toString('utf8', 0, 300);
+          throw new Error(`Buffer muy pequeño (${rawAudioBuf.length} bytes): ${previewText}`);
         }
 
         // Descargar carátula oficial si viene proporcionada

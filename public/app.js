@@ -983,25 +983,23 @@ function loadTrack(track) {
   }
 }
 
-// REPRODUCIR CANCIÓN 100% COMPLETA (STREAM LIMPIO NATIVO SIN RASTROS DE YOUTUBE)
-async function playFullSong(artist, title, cover = null, album = null) {
+// REPRODUCIR CANCIÓN 100% COMPLETA (AUDIO NATIVO PURO, CERO RASTRO DE YOUTUBE)
+async function playFullSong(artist, title, cover = null, album = null, previewUrl = null) {
   // Pausar audio previo
   if (state.audio) {
     state.audio.pause();
-  }
-  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
-    ytPlayer.pauseVideo();
-    stopYtProgress();
   }
 
   const trackObj = {
     title,
     artist,
     cover: cover || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl),
-    album: album || (state.currentAlbum && state.currentAlbum.title) || title
+    album: album || (state.currentAlbum && state.currentAlbum.title) || title,
+    preview: previewUrl || (state.currentTrack && state.currentTrack.audioUrl)
   };
 
   state.currentTrack = trackObj;
+  state.playbackSource = 'native_full';
 
   playerTitle.innerText = title;
   playerArtist.innerText = artist;
@@ -1015,86 +1013,55 @@ async function playFullSong(artist, title, cover = null, album = null) {
   progressFill.style.width = '0%';
   progressThumb.style.left = '0%';
 
-  // Actualizar MediaSession inmediatamente para el navegador y celular (Cero YouTube)
+  // Actualizar MediaSession INMEDIATAMENTE: Carátula HD 1000px y metadatos limpios
   updateMediaSession(trackObj);
 
-  showToast('🎧 Sintonizando canción completa oficial: ' + title + '...');
+  // Si tenemos preview disponible, empezar a sonar de inmediato (0.1 segundos)
+  let isPlayingPreview = false;
+  if (trackObj.preview) {
+    state.audio.src = trackObj.preview;
+    state.audio.playbackRate = state.currentSpeed;
+    state.audio.play().then(() => {
+      setPlayingState(true);
+      updateMediaSession(trackObj);
+      isPlayingPreview = true;
+    }).catch(() => {});
+  }
+
+  showToast('🎧 Sintonizando audio oficial HD: ' + title + '...');
 
   try {
-    const res = await fetch('/api/fullaudio?q=' + encodeURIComponent(artist + ' ' + title));
+    const res = await fetch(`/api/fullaudio-stream?q=${encodeURIComponent(artist + ' ' + title)}`);
     const data = await res.json();
 
-    if (data.streamUrl) {
-      // 1. INTENTO PRIORITARIO: Stream directo nativo en <audio> (Sin rastros de YouTube)
-      state.playbackSource = 'full_stream';
-      state.audio.src = data.streamUrl;
+    if (data.success && data.audioUrl) {
+      const currentPos = isPlayingPreview ? (state.audio.currentTime || 0) : 0;
+      state.audio.src = data.audioUrl;
       state.audio.playbackRate = state.currentSpeed;
 
-      let playedSuccessfully = false;
-      const playPromise = state.audio.play();
-
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          playedSuccessfully = true;
-          setPlayingState(true);
-          updateMediaSession(trackObj);
-          showToast('🎧 Reproduciendo canción completa oficial: ' + title);
-        }).catch((err) => {
-          console.warn('[Reproductor] Stream directo no pudo arrancar, activando respaldo:', err.message);
-          if (data.videoId) {
-            fallbackToYt(data.videoId, trackObj);
-          }
-        });
-      }
-
-      // Si el stream demora más de 4s en empezar a sonar, activar respaldo transparente
-      setTimeout(() => {
-        if (!playedSuccessfully && state.playbackSource === 'full_stream' && state.audio.paused && data.videoId) {
-          console.log('[Reproductor] Timeout de stream nativo, cambiando a respaldo transparente');
-          fallbackToYt(data.videoId, trackObj);
+      state.audio.onloadedmetadata = () => {
+        if (currentPos > 0 && currentPos < state.audio.duration) {
+          state.audio.currentTime = currentPos;
         }
-      }, 4000);
+      };
 
-    } else if (data.videoId) {
-      fallbackToYt(data.videoId, trackObj);
+      state.audio.play().then(() => {
+        setPlayingState(true);
+        updateMediaSession(trackObj);
+        showToast('🎧 Reproduciendo canción completa oficial: ' + title);
+      }).catch(err => {
+        console.warn('[Audio Nativo] Error al reproducir audio completo:', err.message);
+      });
     } else {
-      showToast('❌ No se encontró el stream oficial para esta canción.');
+      if (!isPlayingPreview) {
+        showToast('❌ No se encontró el stream oficial para esta canción.');
+      }
     }
   } catch (err) {
-    console.error('Error al conectar con stream:', err);
-    showToast('Error al sintonizar stream completo: ' + err.message);
-  }
-}
-
-function fallbackToYt(videoId, trackObj) {
-  state.playbackSource = 'full_yt';
-  initYtPlayer();
-
-  const tryPlay = () => {
-    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-      ytPlayer.loadVideoById(videoId);
-      ytPlayer.playVideo();
-      if (typeof ytPlayer.setPlaybackRate === 'function') {
-        ytPlayer.setPlaybackRate(state.currentSpeed);
-      }
-      setPlayingState(true);
-      startYtProgress();
-      updateMediaSession(trackObj);
-      showToast('🎧 Reproduciendo canción completa oficial: ' + trackObj.title);
-      return true;
+    console.error('Error al conectar con stream nativo:', err);
+    if (!isPlayingPreview) {
+      showToast('Error al conectar audio HD: ' + err.message);
     }
-    return false;
-  };
-
-  if (!tryPlay()) {
-    ytPendingVideoId = videoId;
-    let retries = 0;
-    const interval = setInterval(() => {
-      retries++;
-      if (tryPlay() || retries > 12) {
-        clearInterval(interval);
-      }
-    }, 350);
   }
 }
 
@@ -1278,45 +1245,21 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
 }
 
 function togglePlayPause() {
-  if (state.playbackSource === 'full_yt' || (state.playbackSource === 'full' && ytPlayer)) {
-    if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
-    const ytState = ytPlayer.getPlayerState();
-    if (ytState === 1) { // está reproduciendo
-      ytPlayer.pauseVideo();
-      setPlayingState(false);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-    } else {
-      ytPlayer.playVideo();
-      setPlayingState(true);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-      if (state.currentTrack) updateMediaSession(state.currentTrack);
-    }
+  if (!state.audio.src) return;
+  if (state.audio.paused) {
+    state.audio.play();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    if (state.currentTrack) updateMediaSession(state.currentTrack);
   } else {
-    if (!state.audio.src) return;
-    if (state.audio.paused) {
-      state.audio.play();
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-      if (state.currentTrack) updateMediaSession(state.currentTrack);
-    } else {
-      state.audio.pause();
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-    }
+    state.audio.pause();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   }
 }
 
 function seekDelta(seconds) {
-  if (state.playbackSource === 'full_yt' || (state.playbackSource === 'full' && ytPlayer)) {
-    if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
-    const cur = ytPlayer.getCurrentTime() || 0;
-    const dur = ytPlayer.getDuration() || 0;
-    const target = Math.max(0, Math.min(dur, cur + seconds));
-    ytPlayer.seekTo(target, true);
-    updateMediaSessionPosition(target, dur);
-  } else {
-    if (!state.audio.duration) return;
-    state.audio.currentTime = Math.max(0, Math.min(state.audio.duration, state.audio.currentTime + seconds));
-    updateMediaSessionPosition(state.audio.currentTime, state.audio.duration);
-  }
+  if (!state.audio.duration) return;
+  state.audio.currentTime = Math.max(0, Math.min(state.audio.duration, state.audio.currentTime + seconds));
+  updateMediaSessionPosition(state.audio.currentTime, state.audio.duration);
 }
 
 // Alternar velocidad (1x -> 1.25x -> 1.5x -> 2x)

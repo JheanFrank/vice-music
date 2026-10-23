@@ -927,47 +927,17 @@ async function playFullSong(artist, title, cover = null) {
 // ========================================================
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}) {
   const displayTitle = title || 'Canción';
-  showToast(`⚡ Preparando audio 320 kbps para: ${displayTitle}...`);
+  showToast(`⚡ Generando MP3 320 kbps con carátula 1000px: ${displayTitle}...`);
   try {
-    const query = `${artist} ${title}`;
-    const startRes = await fetch(`/api/start-mp3-conversion?q=${encodeURIComponent(query)}`);
-    const startData = await startRes.json();
-    if (!startData.success) {
-      throw new Error(startData.error || 'Error al iniciar la conversión');
-    }
-    const progressUrl = startData.progressUrl;
-
-    // Polling del progreso
-    let downloadUrl = null;
-    let attempts = 0;
-    while (!downloadUrl && attempts < 35) {
-      attempts++;
-      await new Promise(r => setTimeout(r, 1500));
-      const progRes = await fetch(`/api/check-mp3-progress?url=${encodeURIComponent(progressUrl)}`);
-      const progData = await progRes.json();
-
-      if (progData.isFinished && progData.downloadUrl) {
-        downloadUrl = progData.downloadUrl;
-        break;
-      } else {
-        const pct = progData.progress || 0;
-        showToast(`⏳ Procesando audio 320 kbps... ${pct > 0 ? pct + '%' : ''}`);
-      }
-    }
-
-    if (!downloadUrl) {
-      throw new Error('Tiempo de espera agotado al convertir el audio.');
-    }
-
     const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
     const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
     const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
     const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : '');
+    const targetVideoId = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : '') || '';
 
-    showToast(`🎨 Empaquetando MP3 320 kbps con carátula 1000px y metadatos oficiales...`);
-
-    // Iniciar descarga limpia en la MISMA página (sin abrir pestañas nuevas)
-    const downloadApiUrl = `/api/download-mp3?url=${encodeURIComponent(downloadUrl)}`
+    // URL de descarga directa y nativa de nuestro servidor
+    const downloadApiUrl = `/api/download-mp3?q=${encodeURIComponent(artist + ' ' + title)}`
+      + `&videoId=${encodeURIComponent(targetVideoId)}`
       + `&title=${encodeURIComponent(title || '')}`
       + `&artist=${encodeURIComponent(artist || '')}`
       + `&album=${encodeURIComponent(albumName || '')}`
@@ -975,7 +945,7 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 
-    // Disparar descarga directa en la misma ventana
+    // Disparar descarga directa en la misma ventana (sin abrir pestañas nuevas)
     const a = document.createElement('a');
     a.href = downloadApiUrl;
     a.download = `${safeName}.mp3`;

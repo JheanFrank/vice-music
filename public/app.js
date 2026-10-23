@@ -865,6 +865,9 @@ async function playFullSong(artist, title, cover = null) {
     const data = await res.json();
 
     if (data.videoId) {
+      if (state.currentTrack) {
+        state.currentTrack.videoId = data.videoId;
+      }
       initYtPlayer();
 
       const tryPlay = () => {
@@ -902,13 +905,17 @@ async function playFullSong(artist, title, cover = null) {
   }
 }
 
-// DESCARGAR AUDIO EN MP3 DIRECTO DESDE NUESTRA PROPIA PAGINA
-async function downloadMp3_320(artist, title, audioUrl = null) {
-  showToast('📥 Descargando MP3: ' + title + ' - ' + artist + '...');
+// DESCARGAR AUDIO EN MP3 DIRECTO DESDE NUESTRA PROPIA PAGINA (CANCIÓN COMPLETA)
+async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
+  showToast('📥 Descargando canción completa: ' + title + '...');
   
   const q = encodeURIComponent(artist + ' ' + title);
   const filename = encodeURIComponent(title + ' - ' + artist);
   let downloadUrl = '/api/download-mp3?q=' + q + '&filename=' + filename;
+  const targetVid = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : null);
+  if (targetVid) {
+    downloadUrl += '&videoId=' + encodeURIComponent(targetVid);
+  }
   if (audioUrl) {
     downloadUrl += '&url=' + encodeURIComponent(audioUrl);
   }

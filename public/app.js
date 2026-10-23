@@ -905,77 +905,18 @@ async function playFullSong(artist, title, cover = null) {
   }
 }
 
-// DESCARGAR AUDIO EN MP3 DIRECTO DESDE NUESTRA PROPIA PAGINA (CANCIÓN COMPLETA)
+// DESCARGAR AUDIO
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
-  showToast('⏳ Sintonizando audio de: ' + title + '...');
+  // Para evitar archivos corruptos de anuncios (962B) o cortes de 30 segundos:
+  // Ofrecemos la descarga de la canción completa en alta fidelidad
+  showToast('⚡ Preparando descarga completa oficial para: ' + title + '...');
   
-  const targetVid = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : null);
-  const q = encodeURIComponent(artist + ' ' + title);
-  let startEndpoint = '/api/start-mp3-conversion?q=' + q;
-  if (targetVid) {
-    startEndpoint += '&videoId=' + encodeURIComponent(targetVid);
-  }
-
-  try {
-    // 1. Iniciar conversión en el servidor
-    const res = await fetch(startEndpoint);
-    const data = await res.json();
-
-    if (!res.ok || !data.progressUrl) {
-      throw new Error(data.error || 'No se pudo iniciar la conversión');
-    }
-
-    const progressUrl = data.progressUrl;
-    showToast('⚙️ Convirtiendo canción completa a MP3 320 kbps...');
-
-    // 2. Pollear el progreso desde el navegador para evitar cortes de conexión de Render
-    let attempts = 0;
-    const maxAttempts = 35; // hasta 70 segundos máximo
-    let downloadUrl = null;
-
-    while (attempts < maxAttempts) {
-      attempts++;
-      await new Promise(r => setTimeout(r, 2000));
-
-      try {
-        const checkRes = await fetch('/api/check-mp3-progress?url=' + encodeURIComponent(progressUrl));
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData.isFinished && checkData.downloadUrl) {
-            downloadUrl = checkData.downloadUrl;
-            break;
-          } else {
-            const stepText = checkData.text || 'Procesando';
-            showToast(`⚙️ Convirtiendo: ${stepText}... (${Math.min(95, attempts * 5)}%)`);
-          }
-        }
-      } catch (pollErr) {
-        console.warn('Reintento de sondeo:', pollErr.message);
-      }
-    }
-
-    if (!downloadUrl) {
-      throw new Error('La conversión tardó más de lo esperado. Por favor presiona descargar nuevamente.');
-    }
-
-    showToast('🚀 ¡Audio listo! Descargando canción completa: ' + title + '...');
-
-    // 3. Descarga directa en el navegador desde el CDN de audio verificado (sin cortes de Render)
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.setAttribute('download', `${title} - ${artist}.mp3`);
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      if (document.body.contains(a)) {
-        document.body.removeChild(a);
-      }
-    }, 4000);
-
-  } catch (err) {
-    console.error('Error al descargar MP3 completo:', err);
-    showToast('❌ Error al preparar descarga MP3: ' + err.message);
+  if (state.currentTrack && state.currentTrack.lucidaUrl) {
+    window.open(state.currentTrack.lucidaUrl, '_blank');
+  } else {
+    // Si no tiene lucidaUrl directa, abrir con la búsqueda de pista oficial
+    const searchTarget = encodeURIComponent(`${artist} ${title}`);
+    window.open(`https://lucida.to/?url=https://www.deezer.com/search/${searchTarget}`, '_blank');
   }
 }
 

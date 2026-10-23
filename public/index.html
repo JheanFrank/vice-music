@@ -14,6 +14,11 @@
 </head>
 <body>
 
+  <!-- Barra de progreso superior discreta estilo Nano -->
+  <div id="topProgressBar" class="top-progress-bar">
+    <div id="topProgressFill" class="top-progress-fill"></div>
+  </div>
+
   <!-- Fondo Ambiental Vice City Sunset & Palmeras -->
   <div class="vice-sunset-glow" id="ambientSunset"></div>
   <div class="palm-trees-silhouette"></div>
@@ -29,7 +34,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v3.7</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v3.8</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -108,6 +113,22 @@
     <!-- Notificación Toast -->
     <div id="toastNotification" class="toast hidden">
       <span id="toastText">Notificación</span>
+    </div>
+
+    <!-- Widget Flotante de Descarga Activa (Discreto, estilo Glassmorphism GTA VI) -->
+    <div id="dlFloatingWidget" class="dl-floating-widget hidden">
+      <div class="dl-widget-header">
+        <div class="dl-widget-spinner"></div>
+        <div class="dl-widget-info">
+          <span class="dl-widget-title">DESCARGA EN PROCESO (320 KBPS)</span>
+          <span class="dl-widget-sub" id="dlWidgetTrack">Artista - Canción</span>
+        </div>
+        <span class="dl-widget-percent" id="dlWidgetPercent">0%</span>
+      </div>
+      <div class="dl-widget-bar-bg">
+        <div class="dl-widget-bar-fill" id="dlWidgetBarFill"></div>
+      </div>
+      <div class="dl-widget-step" id="dlWidgetStep">Iniciando conexión con satélite...</div>
     </div>
 
     <!-- SECCIÓN VISTA DE ÁLBUM DETALLADO (Desplegable cuando abres un álbum) -->
@@ -250,6 +271,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=370"></script>
+  <script src="app.js?v=380"></script>
 </body>
 </html>

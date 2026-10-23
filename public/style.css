@@ -1,4 +1,4 @@
-﻿/* ========================================================
+/* ========================================================
    VICE MUSIC // GTA VI EDITION (FULL ALBUMS & FLAC)
    ======================================================== */
 
@@ -1569,3 +1569,158 @@ body {
     height: 5px;
   }
 }
+
+/* ========================================================
+   BARRA DE PROGRESO NANO SUPERIOR (DISCRETA Y ELEGANTE)
+   ======================================================== */
+.top-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3.5px;
+  background: transparent;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.top-progress-bar.active {
+  opacity: 1;
+}
+
+.top-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff2a85, #9d00ff, #00f0ff);
+  box-shadow: 0 0 12px #00f0ff, 0 0 20px #ff2a85;
+  transition: width 0.35s ease;
+}
+
+/* ========================================================
+   WIDGET FLOTANTE DISCRETO DE DESCARGA
+   ======================================================== */
+.dl-floating-widget {
+  position: fixed;
+  bottom: 110px;
+  right: 25px;
+  width: 330px;
+  max-width: calc(100vw - 30px);
+  background: rgba(18, 7, 34, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 240, 255, 0.25);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.dl-floating-widget.hidden {
+  display: none !important;
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+}
+
+.dl-widget-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dl-widget-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(0, 240, 255, 0.2);
+  border-top-color: var(--vice-cyan);
+  border-radius: 50%;
+  animation: dlSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes dlSpin {
+  to { transform: rotate(360deg); }
+}
+
+.dl-widget-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.dl-widget-title {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--vice-cyan);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.dl-widget-sub {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.dl-widget-percent {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(255, 42, 133, 0.25);
+  border: 1px solid rgba(255, 42, 133, 0.5);
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.dl-widget-bar-bg {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.dl-widget-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff2a85, #00f0ff);
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.8);
+  transition: width 0.35s ease;
+}
+
+.dl-widget-step {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+  .dl-floating-widget {
+    bottom: 90px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+

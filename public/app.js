@@ -922,11 +922,73 @@ async function playFullSong(artist, title, cover = null) {
 }
 
 // ========================================================
+// CONTROLADOR DE PROGRESO DE DESCARGA EN VIVO (BARRA NANO + WIDGET FLOTANTE)
+// ========================================================
+let isDownloadingMp3 = false;
+let dlProgressTimer = null;
+
+function setDownloadProgress(percent, stepText, trackName) {
+  const topBar = document.getElementById('topProgressBar');
+  const topFill = document.getElementById('topProgressFill');
+  const widget = document.getElementById('dlFloatingWidget');
+  const widgetTrack = document.getElementById('dlWidgetTrack');
+  const widgetPercent = document.getElementById('dlWidgetPercent');
+  const widgetFill = document.getElementById('dlWidgetBarFill');
+  const widgetStep = document.getElementById('dlWidgetStep');
+
+  if (topBar && topFill) {
+    topBar.classList.add('active');
+    topFill.style.width = `${percent}%`;
+  }
+
+  if (widget) {
+    widget.classList.remove('hidden');
+    if (widgetTrack && trackName) widgetTrack.innerText = trackName;
+    if (widgetPercent) widgetPercent.innerText = `${Math.round(percent)}%`;
+    if (widgetFill) widgetFill.style.width = `${percent}%`;
+    if (widgetStep && stepText) widgetStep.innerText = stepText;
+  }
+}
+
+function hideDownloadProgress() {
+  if (dlProgressTimer) {
+    clearInterval(dlProgressTimer);
+    dlProgressTimer = null;
+  }
+  const topBar = document.getElementById('topProgressBar');
+  const topFill = document.getElementById('topProgressFill');
+  const widget = document.getElementById('dlFloatingWidget');
+
+  if (topFill) topFill.style.width = '100%';
+  if (widget) {
+    const widgetPercent = document.getElementById('dlWidgetPercent');
+    const widgetFill = document.getElementById('dlWidgetBarFill');
+    const widgetStep = document.getElementById('dlWidgetStep');
+    if (widgetPercent) widgetPercent.innerText = '100%';
+    if (widgetFill) widgetFill.style.width = '100%';
+    if (widgetStep) widgetStep.innerText = '¡Descarga iniciada con éxito!';
+  }
+
+  setTimeout(() => {
+    if (topBar) topBar.classList.remove('active');
+    if (widget) widget.classList.add('hidden');
+    if (topFill) topFill.style.width = '0%';
+  }, 2200);
+}
+
+// ========================================================
 // DESCARGAR AUDIO 320 KBPS CON METADATOS OFICIALES Y CARÁTULA HD 1000PX
-// (100% EN LA MISMA PÁGINA, SIN ABRIR PESTAÑAS NUEVAS Y CON FEEDBACK VISUAL)
+// (100% EN LA MISMA PÁGINA, CON BARRA DE PROGRESO EN VIVO Y CONTROL ANTI-SPAM)
 // ========================================================
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}, triggerBtn = null) {
+  if (isDownloadingMp3) {
+    showToast(`⏳ Ya hay una descarga en curso. Espera unos segundos para no saturar tu conexión.`);
+    return;
+  }
+
+  isDownloadingMp3 = true;
   const displayTitle = title || 'Canción';
+  const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
   const originalBtnHtml = triggerBtn ? triggerBtn.innerHTML : null;
 
   if (triggerBtn) {
@@ -935,10 +997,29 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
     triggerBtn.style.opacity = '0.7';
   }
 
-  showToast(`⚡ Procesando MP3 320 kbps con carátula 1000px: ${displayTitle}... Por favor espera.`);
+  // Iniciar barrita de progreso visual inmediata
+  let currentProg = 8;
+  setDownloadProgress(currentProg, 'Iniciando conexión con satélite de audio...', safeName);
+
+  dlProgressTimer = setInterval(() => {
+    if (currentProg < 30) {
+      currentProg += 3.5;
+      setDownloadProgress(currentProg, 'Extrayendo audio estéreo oficial de alta fidelidad...', safeName);
+    } else if (currentProg < 65) {
+      currentProg += 2;
+      setDownloadProgress(currentProg, 'Codificando a 320 kbps (Estudio Master)...', safeName);
+    } else if (currentProg < 88) {
+      currentProg += 1.2;
+      setDownloadProgress(currentProg, 'Incrustando carátula HD 1000px y metadatos oficiales...', safeName);
+    } else if (currentProg < 96) {
+      currentProg += 0.4;
+      setDownloadProgress(currentProg, 'Transfiriendo archivo MP3 completo a tu dispositivo...', safeName);
+    }
+  }, 450);
+
+  showToast(`⚡ Generando MP3 320 kbps: ${displayTitle}... Observa la barra de progreso.`);
 
   try {
-    const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
     const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
     const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
     const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : '');
@@ -976,11 +1057,23 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
     document.body.removeChild(a);
 
     setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+
+    hideDownloadProgress();
     showToast(`✅ ¡Descarga completada con éxito: ${safeName}.mp3!`);
   } catch (err) {
+    if (dlProgressTimer) {
+      clearInterval(dlProgressTimer);
+      dlProgressTimer = null;
+    }
+    const topBar = document.getElementById('topProgressBar');
+    const widget = document.getElementById('dlFloatingWidget');
+    if (topBar) topBar.classList.remove('active');
+    if (widget) widget.classList.add('hidden');
+
     console.error('[downloadMp3_320]', err);
     showToast('❌ Error al descargar MP3: ' + err.message);
   } finally {
+    isDownloadingMp3 = false;
     if (triggerBtn && originalBtnHtml !== null) {
       triggerBtn.disabled = false;
       triggerBtn.innerHTML = originalBtnHtml;

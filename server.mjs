@@ -4,17 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
-import { Ytdl, createPoTokenProvider } from '@distube/ytdl-core';
-
-let ytdl;
-try {
-  const getPoToken = await createPoTokenProvider();
-  ytdl = new Ytdl({ getPoToken });
-  console.log('✅ [Ytdl] PO Token Provider activado');
-} catch (err) {
-  console.warn('⚠️ [Ytdl] Fallback sin PO token:', err.message);
-  ytdl = new Ytdl();
-}
+import { Ytdl } from '@distube/ytdl-core';
+const ytdl = new Ytdl();
 
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {
@@ -258,7 +249,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.5', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Direct Download' }));
+      return res.end(JSON.stringify({ version: '2.6', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song Direct Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -491,8 +482,9 @@ const server = http.createServer(async (req, res) => {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
       const directUrl = (reqUrl.searchParams.get('url') || '').trim();
+      const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
 
-      if (!q && !directUrl) {
+      if (!q && !directUrl && !videoIdParam) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
       }
@@ -500,10 +492,66 @@ const server = http.createServer(async (req, res) => {
       const safeFilename = filename.replace(/[^\w\s\-\.]/g, '').trim() || 'cancion';
       const encodedFilename = encodeURIComponent(safeFilename);
 
+      // 1. INTENTAR PRIMERO DESCARGAR LA CANCIÓN 100% COMPLETA VÍA YOUTUBE AUDIO
+      let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
+
+      if (!targetVideoId && q) {
+        try {
+          const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' audio')}`, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(5000)
+          });
+          const html = await ytRes.text();
+          const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+          if (match) targetVideoId = match[1];
+        } catch (e) {
+          console.warn('[Download MP3] Búsqueda de videoId falló:', e.message);
+        }
+      }
+
+      if (targetVideoId) {
+        try {
+          const stream = ytdl.download(`https://www.youtube.com/watch?v=${targetVideoId}`, {
+            filter: f => f.hasAudio && !f.hasVideo,
+            quality: 'highestaudio'
+          });
+
+          let streamSent = false;
+          await new Promise((resolve, reject) => {
+            stream.once('data', (chunk) => {
+              streamSent = true;
+              res.writeHead(200, {
+                'Content-Type': 'audio/mpeg',
+                'Content-Disposition': 'attachment; filename="' + safeFilename + '.mp3"; filename*=UTF-8\'\'' + encodedFilename + '.mp3',
+                'Cache-Control': 'no-cache'
+              });
+              res.write(chunk);
+              stream.pipe(res);
+              resolve();
+            });
+
+            stream.once('error', (err) => {
+              if (!streamSent) reject(err);
+            });
+
+            setTimeout(() => {
+              if (!streamSent) {
+                try { stream.destroy(); } catch (e) {}
+                reject(new Error('YouTube stream timeout'));
+              }
+            }, 8000);
+          });
+
+          if (streamSent) return;
+        } catch (ytErr) {
+          console.warn('[Download MP3] YouTube full audio falló, activando respaldo:', ytErr.message);
+        }
+      }
+
+      // 2. RESPALDO / PREVIEW SI YOUTUBE NO ESTUVO DISPONIBLE
       try {
         let audioUrl = null;
 
-        // 1. Si viene URL directa confiable, probar si está vigente
         if (directUrl && (directUrl.includes('dzcdn.net') || directUrl.includes('apple.com'))) {
           try {
             const probe = await fetch(directUrl, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
@@ -513,7 +561,6 @@ const server = http.createServer(async (req, res) => {
           } catch (e) {}
         }
 
-        // 2. Si no viene URL directa o expiró, buscar de forma segura en Deezer
         if (!audioUrl && q) {
           try {
             const dzData = await fetchDeezer(`/search?q=${encodeURIComponent(q)}&limit=1`);
@@ -525,7 +572,6 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // 3. Fallback seguro a iTunes
         if (!audioUrl && q) {
           try {
             const itData = await fetchItunes(`/search?term=${encodeURIComponent(q)}&entity=song&limit=1&country=US`);
@@ -554,7 +600,7 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Audio no disponible para esta canción' }));
         }
       } catch (err) {
-        console.error('[Download MP3] Error:', err.message);
+        console.error('[Download MP3] Error final:', err.message);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: err.message }));

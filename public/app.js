@@ -418,6 +418,33 @@ function setupEventListeners() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
+  // Botón Volver de la vista de Artista
+  const btnBackFromArtist = document.getElementById('btnBackFromArtist');
+  if (btnBackFromArtist) {
+    btnBackFromArtist.addEventListener('click', () => {
+      const artistDetailView = document.getElementById('artistDetailView');
+      if (artistDetailView) artistDetailView.classList.add('hidden');
+      if (state.previousMode === 'albums' || state.previousMode === 'tracks') {
+        if (catalogSection) catalogSection.classList.remove('hidden');
+      } else if (state.previousMode === 'album_detail') {
+        if (albumDetailView) albumDetailView.classList.remove('hidden');
+      } else {
+        if (homeSection) homeSection.classList.remove('hidden');
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+
+  // Clic en el nombre del artista en la barra fija
+  if (playerArtist) {
+    playerArtist.classList.add('artist-clickable');
+    playerArtist.addEventListener('click', () => {
+      if (state.currentTrack && state.currentTrack.artist) {
+        openArtistProfile(state.currentTrack.artist);
+      }
+    });
+  }
+
   // Botón Escuchar Canción Completa en la barra fija
   if (btnPlayFullSong) {
     btnPlayFullSong.addEventListener('click', () => {
@@ -782,25 +809,41 @@ function renderAlbums(albums) {
       : '';
 
     card.innerHTML = `
-      <div class="album-cover-wrapper">
+      <div class="album-cover-wrapper" title="Clic para ver el álbum completo">
         <img class="album-cover" src="${album.coverXl}" alt="${album.title}" loading="lazy" onerror="this.src='https://via.placeholder.com/400/1a0933/ff2a85?text=VICE'">
+        <div class="cover-overlay-hint"><span>💿 VER ÁLBUM</span></div>
         ${matchedPill}
         <span class="album-badge-tracks">${album.nbTracks} CANCIONES</span>
       </div>
       <div class="album-info">
         <h3 class="album-title" title="${album.title}">${album.title}</h3>
-        <p class="album-artist" title="${album.artist}">${album.artist}</p>
+        <p class="album-artist artist-clickable" data-artist="${album.artist}" title="Ver discografía y perfil de ${album.artist}">${album.artist}</p>
         <div class="btn-open-album">VER ÁLBUM COMPLETO ➔</div>
       </div>
     `;
 
-    card.addEventListener('click', () => openAlbumDetail(album.id));
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.artist-clickable')) return;
+      openAlbumDetail(album.id);
+    });
+
+    const artistLink = card.querySelector('.album-artist');
+    if (artistLink) {
+      artistLink.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openArtistProfile(album.artist);
+      });
+    }
+
     resultsGrid.appendChild(card);
   });
 }
 
 // Abrir Vista Detallada del Álbum con TODAS sus canciones y DESCARGA COMPLETA
 async function openAlbumDetail(albumId) {
+  state.previousMode = 'album_detail';
+  const artistDetailView = document.getElementById('artistDetailView');
+  if (artistDetailView) artistDetailView.classList.add('hidden');
   if (homeSection) homeSection.classList.add('hidden');
   catalogSection.classList.add('hidden');
   albumDetailView.classList.remove('hidden');
@@ -863,7 +906,7 @@ async function openAlbumDetail(albumId) {
       <div class="album-hero-meta">
         <span class="album-badge-type">DISCOGRAFÍA OFICIAL MASTER</span>
         <h2 class="album-hero-title">${album.title}</h2>
-        <p class="album-hero-artist">${album.artist}</p>
+        <p class="album-hero-artist artist-clickable" data-artist="${album.artist}" title="Ver discografía y perfil de ${album.artist}">Por <strong>${album.artist}</strong></p>
         <div class="album-hero-details">
           <span>📅 Lanzamiento: ${album.releaseDate}</span>
           <span>💿 ${album.nbTracks} Canciones</span>
@@ -901,6 +944,14 @@ async function openAlbumDetail(albumId) {
       downloadFile(album.coverXl, `Cover_${album.title.replace(/[^a-zA-Z0-9]/g, '_')}_1000px.jpg`);
       showToast('🖼️ Descargando carátula oficial del álbum en 1000x1000 px...');
     });
+
+    const heroArtistLink = albumHeroContent.querySelector('.album-hero-artist');
+    if (heroArtistLink) {
+      heroArtistLink.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openArtistProfile(album.artist);
+      });
+    }
 
     // Renderizar TODAS las canciones del álbum
     albumTracklist.innerHTML = '';
@@ -1007,67 +1058,103 @@ function renderTracks(tracks) {
 
   tracks.forEach(track => {
     const card = document.createElement('div');
-    card.className = 'album-card';
-
-    const goToAlbumBtn = track.albumId ? `
-      <button class="btn-go-to-album" style="
-        width: 100%;
-        margin-bottom: 0.6rem;
-        background: linear-gradient(90deg, #ff2a85, #9d00ff);
-        color: #fff;
-        border: none;
-        padding: 0.6rem;
-        border-radius: 10px;
-        font-family: var(--font-logo);
-        font-size: 0.78rem;
-        font-weight: 900;
-        font-style: italic;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.4rem;
-        box-shadow: 0 4px 15px rgba(255, 42, 133, 0.35);
-      ">
-        <span>💿 IR AL ÁLBUM COMPLETO ➔</span>
-      </button>
-    ` : '';
+    card.className = 'album-card track-card-modern';
 
     card.innerHTML = `
-      <div class="album-cover-wrapper">
+      <div class="album-cover-wrapper" title="Clic para escuchar o ver álbum completo">
         <img class="album-cover" src="${track.coverXl}" alt="${track.title}" loading="lazy" onerror="this.src='https://via.placeholder.com/400/1a0933/ff2a85?text=VICE'">
-        <span class="album-badge-tracks" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
-          💿 ${track.album}
-        </span>
+        <div class="cover-overlay-hint">
+          <span>${track.albumId ? '💿 VER ÁLBUM' : '▶ ESCUCHAR'}</span>
+        </div>
+        ${track.album ? `
+          <span class="album-badge-tracks" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
+            💿 ${track.album}
+          </span>
+        ` : ''}
       </div>
+
       <div class="album-info">
         <h3 class="album-title" title="${track.title}">${track.title}</h3>
-        <p class="album-artist" title="${track.artist}">${track.artist}</p>
+        <p class="album-artist artist-clickable" data-artist="${track.artist}" title="Ver discografía y perfil de ${track.artist}">${track.artist}</p>
         
-        <div style="margin-top: auto;">
-          ${goToAlbumBtn}
-          <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-            <button class="btn-track-action btn-single-full" style="flex: 1; min-width: 65px; padding: 0.55rem; font-size: 0.72rem; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
-              🎧 COMPLETA
+        <div class="track-card-actions">
+          <!-- Fila 1: Reproducción Instantánea -->
+          <div class="actions-row-play">
+            <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar muestra de 30s">
+              ▶ <span>PREVIEW</span>
             </button>
-            <button class="btn-track-action btn-single-mp3 btn-dl-mp3" style="padding: 0.55rem 0.6rem; font-size: 0.72rem;" title="Descargar MP3 320 kbps (YouTube Audio)">
-              📥 MP3
+            <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar canción completa">
+              🎧 <span>COMPLETA</span>
             </button>
-            <button class="btn-track-action btn-single-flac" style="padding: 0.55rem 0.6rem; font-size: 0.72rem;" title="Descargar FLAC Lossless">
-              ⚡ FLAC
+          </div>
+
+          <!-- Fila 2: Descargas y Acceso a Álbum -->
+          <div class="actions-row-dl">
+            <button class="btn-card-action btn-card-mp3 btn-single-mp3" title="Descargar MP3 320 kbps (VIP)">
+              📥 <span>MP3 320</span>
             </button>
-            <button class="btn-track-play btn-single-play" title="Muestra 30s">
-              <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            </button>
+            ${track.albumId ? `
+              <button class="btn-card-action btn-card-album btn-go-to-album" title="Ver álbum completo con todas sus canciones">
+                💿 <span>ÁLBUM</span>
+              </button>
+            ` : `
+              <button class="btn-card-action btn-card-flac btn-single-flac" title="Descargar FLAC Lossless">
+                ⚡ <span>FLAC</span>
+              </button>
+            `}
           </div>
         </div>
       </div>
     `;
 
-    if (track.albumId) {
-      card.querySelector('.btn-go-to-album').addEventListener('click', (e) => {
-        e.stopPropagation();
+    // Clic en la carátula: si tiene álbum abre el álbum, si no reproduce el preview
+    card.querySelector('.album-cover-wrapper').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (track.albumId) {
         openAlbumDetail(track.albumId);
+      } else {
+        loadTrack({
+          title: track.title,
+          artist: track.artist,
+          cover: track.coverXl,
+          audioUrl: track.preview,
+          album: track.album
+        });
+      }
+    });
+
+    // Clic en el nombre del artista: abre el perfil del artista
+    const artistEl = card.querySelector('.album-artist');
+    if (artistEl) {
+      artistEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openArtistProfile(track.artist);
+      });
+    }
+
+    if (track.albumId) {
+      const albumBtn = card.querySelector('.btn-go-to-album');
+      if (albumBtn) {
+        albumBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openAlbumDetail(track.albumId);
+        });
+      }
+    }
+
+    const flacBtn = card.querySelector('.btn-single-flac');
+    if (flacBtn) {
+      flacBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!isUserLoggedIn()) {
+          openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${track.title}".`, () => {
+            showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
+            window.open(track.lucidaUrl, '_blank');
+          });
+          return;
+        }
+        showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
+        window.open(track.lucidaUrl, '_blank');
       });
     }
 
@@ -1089,19 +1176,6 @@ function renderTracks(tracks) {
       }, e.currentTarget);
     });
 
-    card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!isUserLoggedIn()) {
-        openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${track.title}".`, () => {
-          showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
-          window.open(track.lucidaUrl, '_blank');
-        });
-        return;
-      }
-      showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
-      window.open(track.lucidaUrl, '_blank');
-    });
-
     card.querySelector('.btn-single-play').addEventListener('click', (e) => {
       e.stopPropagation();
       loadTrack({
@@ -1114,6 +1188,356 @@ function renderTracks(tracks) {
 
     resultsGrid.appendChild(card);
   });
+}
+
+// ========================================================
+// SISTEMA DE PERFIL DE ARTISTA (SPOTIFY / APPLE MUSIC STYLE)
+// ========================================================
+async function openArtistProfile(artistName) {
+  if (!artistName) return;
+  const cleanName = artistName.replace(/\s*(feat\.|ft\.|con|&|,).*/i, '').trim() || artistName.trim();
+
+  state.previousMode = state.currentMode;
+
+  const artistDetailView = document.getElementById('artistDetailView');
+  const artistHeroContent = document.getElementById('artistHeroContent');
+  const artistContentContainer = document.getElementById('artistContentContainer');
+
+  if (homeSection) homeSection.classList.add('hidden');
+  if (catalogSection) catalogSection.classList.add('hidden');
+  if (albumDetailView) albumDetailView.classList.add('hidden');
+  if (artistDetailView) artistDetailView.classList.remove('hidden');
+
+  window.scrollTo({ top: 120, behavior: 'smooth' });
+
+  if (artistHeroContent) {
+    artistHeroContent.innerHTML = `
+      <div style="text-align: center; width: 100%; padding: 3rem 0;">
+        <div class="vice-spinner"><div class="inner-vi">VI</div></div>
+        <p style="font-family: var(--font-mono); color: var(--vice-pink); margin-top: 1rem;">CARGANDO PERFIL OFICIAL DE ${cleanName.toUpperCase()}...</p>
+      </div>
+    `;
+  }
+  if (artistContentContainer) artistContentContainer.innerHTML = '';
+
+  try {
+    const artistSearch = await fetchDeezerJsonp(`/search/artist?q=${encodeURIComponent(cleanName)}&limit=1`);
+    const artistObj = (artistSearch && artistSearch.data && artistSearch.data.length > 0) ? artistSearch.data[0] : null;
+
+    const artistId = artistObj ? artistObj.id : null;
+    const artistPhoto = artistObj ? (artistObj.picture_xl || artistObj.picture_big) : 'https://via.placeholder.com/400/1a0933/ff2a85?text=VICE';
+    const artistFans = artistObj ? (artistObj.nb_fan ? `${artistObj.nb_fan.toLocaleString()} seguidores` : 'Oficial') : 'Leonida State';
+
+    if (artistHeroContent) {
+      artistHeroContent.innerHTML = `
+        <div class="artist-hero-card">
+          <div class="artist-hero-backdrop" style="background-image: url('${artistPhoto}');"></div>
+          <div class="artist-avatar-wrap">
+            <img src="${artistPhoto}" alt="${cleanName}" class="artist-avatar-img" onerror="this.src='https://via.placeholder.com/400/1a0933/ff2a85?text=VICE'">
+          </div>
+          <div class="artist-hero-info">
+            <div class="artist-badge-verified">
+              <span>✓ ARTISTA VERIFICADO 🇨🇴</span>
+            </div>
+            <h2 class="artist-hero-name">${cleanName}</h2>
+            <div class="artist-hero-stats">
+              <span>👥 ${artistFans}</span>
+              <span>📀 Audio Master Studio 1000px HD</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    setupArtistNavTabs(cleanName, artistId);
+    switchArtistTab('top', cleanName, artistId);
+
+  } catch (err) {
+    console.error('Error cargando perfil de artista:', err);
+    if (artistHeroContent) {
+      artistHeroContent.innerHTML = `<p style="color: #ff2a85; padding: 2rem;">Error al cargar perfil de ${cleanName}: ${err.message}</p>`;
+    }
+  }
+}
+
+function setupArtistNavTabs(artistName, artistId) {
+  const tabs = [
+    { id: 'btnArtistTabTop', mode: 'top' },
+    { id: 'btnArtistTabAlbums', mode: 'albums' },
+    { id: 'btnArtistTabRemixes', mode: 'remixes' },
+    { id: 'btnArtistTabAll', mode: 'all' }
+  ];
+
+  tabs.forEach(t => {
+    const btn = document.getElementById(t.id);
+    if (btn) {
+      btn.onclick = () => {
+        tabs.forEach(other => {
+          const ob = document.getElementById(other.id);
+          if (ob) ob.classList.remove('active');
+        });
+        btn.classList.add('active');
+        switchArtistTab(t.mode, artistName, artistId);
+      };
+    }
+  });
+
+  const btnTop = document.getElementById('btnArtistTabTop');
+  if (btnTop) btnTop.classList.add('active');
+}
+
+async function switchArtistTab(mode, artistName, artistId) {
+  const artistContentContainer = document.getElementById('artistContentContainer');
+  if (!artistContentContainer) return;
+
+  artistContentContainer.innerHTML = `
+    <div style="text-align: center; width: 100%; padding: 2.5rem 0;">
+      <div class="vice-spinner"><div class="inner-vi">VI</div></div>
+      <p style="font-family: var(--font-mono); color: var(--vice-cyan); margin-top: 1rem;">CARGANDO CONTENIDO...</p>
+    </div>
+  `;
+
+  try {
+    if (mode === 'top') {
+      let tracksData = null;
+      if (artistId) {
+        tracksData = await fetchDeezerJsonp(`/artist/${artistId}/top?limit=10`);
+      }
+      if (!tracksData || !tracksData.data || tracksData.data.length === 0) {
+        tracksData = await fetchDeezerJsonp(`/search?q=${encodeURIComponent(artistName)}&limit=10`);
+      }
+
+      const tracks = tracksData?.data || [];
+      if (tracks.length === 0) {
+        artistContentContainer.innerHTML = `<p style="padding: 2rem; color: var(--text-dim); text-align: center;">No se encontraron canciones destacadas.</p>`;
+        return;
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'top-ranking-wrapper';
+      wrapper.innerHTML = `
+        <h3 style="font-family: var(--font-logo); font-style: italic; font-size: 1.3rem; margin-bottom: 1rem; color: #fff;">
+          🔥 CANCIONES MÁS POPULARES DE ${artistName.toUpperCase()}
+        </h3>
+        <div class="top-ranking-list"></div>
+      `;
+      const listEl = wrapper.querySelector('.top-ranking-list');
+
+      tracks.forEach((track, index) => {
+        const row = document.createElement('div');
+        row.className = `ranking-row ${index === 0 ? 'rank-first' : ''}`;
+        const rankStr = index < 9 ? `0${index + 1}` : `${index + 1}`;
+        const cover = track.album ? (track.album.cover_xl || track.album.cover_big) : 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
+        const albumTitle = track.album ? track.album.title : 'Sencillo';
+        const albumId = track.album ? `deezer_${track.album.id}` : null;
+        const durationFormatted = formatTime(track.duration || 0);
+
+        row.innerHTML = `
+          <div class="ranking-num">${index === 0 ? '👑 01' : rankStr}</div>
+          <div class="ranking-track-cell">
+            <div class="ranking-thumb-wrap">
+              <img src="${cover}" alt="${track.title}" class="ranking-thumb-img" loading="lazy">
+              <div class="ranking-thumb-play">▶</div>
+            </div>
+            <div class="ranking-track-meta">
+              <span class="ranking-track-title" title="${track.title}">${track.title}</span>
+              <span class="ranking-track-artist">${track.artist ? track.artist.name : artistName}</span>
+            </div>
+          </div>
+          <div class="ranking-album-cell">
+            <span class="ranking-album-link" title="${albumTitle}">${albumTitle}</span>
+          </div>
+          <div class="ranking-time-cell">${durationFormatted}</div>
+          <div class="ranking-actions-cell">
+            <button class="btn-rank-action btn-rank-play" title="Escuchar preview">▶ <span>PREVIEW</span></button>
+            <button class="btn-rank-action btn-rank-full" title="Escuchar completa">🎧 <span>COMPLETA</span></button>
+            <button class="btn-rank-action btn-dl-vip" title="Descargar MP3 320 kbps (VIP)">📥 <span>MP3 320</span></button>
+          </div>
+        `;
+
+        const playPrev = () => {
+          loadTrack({
+            title: track.title,
+            artist: track.artist ? track.artist.name : artistName,
+            cover: cover,
+            audioUrl: track.preview,
+            album: albumTitle
+          });
+        };
+
+        row.querySelector('.ranking-thumb-wrap').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
+        row.querySelector('.btn-rank-play').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
+        row.querySelector('.btn-rank-full').addEventListener('click', (e) => {
+          e.stopPropagation();
+          playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle);
+        });
+        row.querySelector('.btn-dl-vip').addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadMp3_320(track.artist ? track.artist.name : artistName, track.title, track.preview, null, {
+            album: albumTitle,
+            coverUrl: cover
+          }, e.currentTarget);
+        });
+
+        if (albumId) {
+          const albLink = row.querySelector('.ranking-album-link');
+          if (albLink) {
+            albLink.style.cursor = 'pointer';
+            albLink.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openAlbumDetail(albumId);
+            });
+          }
+        }
+
+        listEl.appendChild(row);
+      });
+
+      artistContentContainer.innerHTML = '';
+      artistContentContainer.appendChild(wrapper);
+
+    } else if (mode === 'albums') {
+      const albData = await fetchDeezerJsonp(`/search/album?q=${encodeURIComponent(artistName)}&limit=25`);
+      const albums = albData?.data || [];
+
+      if (albums.length === 0) {
+        artistContentContainer.innerHTML = `<p style="padding: 2rem; color: var(--text-dim); text-align: center;">No se encontraron álbumes registrados para este artista.</p>`;
+        return;
+      }
+
+      const grid = document.createElement('div');
+      grid.className = 'results-grid';
+
+      albums.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'album-card';
+        const cover = a.cover_xl || a.cover_big || a.cover_medium;
+        card.innerHTML = `
+          <div class="album-cover-wrapper" title="Clic para ver discografía">
+            <img src="${cover}" alt="${a.title}" class="album-cover-img" loading="lazy">
+            <div class="cover-overlay-hint"><span>💿 ABRIR ÁLBUM</span></div>
+            <div class="cover-flac-badge">1000PX HD</div>
+          </div>
+          <div class="album-info">
+            <h4 class="album-title" title="${a.title}">${a.title}</h4>
+            <p class="album-artist">${a.artist ? a.artist.name : artistName}</p>
+            <div class="album-meta">
+              <span class="album-tracks-count">${a.nb_tracks || '—'} canciones</span>
+              <span class="album-type-badge">ÁLBUM</span>
+            </div>
+          </div>
+        `;
+        card.addEventListener('click', () => openAlbumDetail(`deezer_${a.id}`));
+        grid.appendChild(card);
+      });
+
+      artistContentContainer.innerHTML = `
+        <h3 style="font-family: var(--font-logo); font-style: italic; font-size: 1.3rem; margin-bottom: 0.5rem; color: #fff;">
+          📀 DISCOGRAFÍA Y ÁLBUMES DE ${artistName.toUpperCase()}
+        </h3>
+      `;
+      artistContentContainer.appendChild(grid);
+
+    } else if (mode === 'remixes') {
+      const remixData = await fetchDeezerJsonp(`/search?q=${encodeURIComponent(artistName + ' remix')}&limit=25`);
+      const tracks = remixData?.data || [];
+
+      if (tracks.length === 0) {
+        artistContentContainer.innerHTML = `<p style="padding: 2rem; color: var(--text-dim); text-align: center;">No se encontraron remixes oficiales de este artista.</p>`;
+        return;
+      }
+
+      renderArtistTrackCards(tracks, artistName, '🎛️ REMIXES OFICIALES DE', artistContentContainer);
+
+    } else if (mode === 'all') {
+      const allData = await fetchDeezerJsonp(`/search?q=${encodeURIComponent(artistName)}&limit=35`);
+      const tracks = allData?.data || [];
+
+      if (tracks.length === 0) {
+        artistContentContainer.innerHTML = `<p style="padding: 2rem; color: var(--text-dim); text-align: center;">No se encontraron canciones.</p>`;
+        return;
+      }
+
+      renderArtistTrackCards(tracks, artistName, '🎵 TODAS LAS CANCIONES DE', artistContentContainer);
+    }
+
+  } catch (tabErr) {
+    console.error('Error al cambiar pestaña de artista:', tabErr);
+    artistContentContainer.innerHTML = `<p style="padding: 2rem; color: var(--text-dim); text-align: center;">Error al cargar contenido.</p>`;
+  }
+}
+
+function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
+  container.innerHTML = `
+    <h3 style="font-family: var(--font-logo); font-style: italic; font-size: 1.3rem; margin-bottom: 0.5rem; color: #fff;">
+      ${titlePrefix} ${artistName.toUpperCase()}
+    </h3>
+  `;
+  const grid = document.createElement('div');
+  grid.className = 'results-grid';
+
+  tracks.forEach(track => {
+    const card = document.createElement('div');
+    card.className = 'album-card track-card-modern';
+    const cover = track.album ? (track.album.cover_xl || track.album.cover_big) : (track.artist ? track.artist.picture_xl : '');
+    const albumTitle = track.album ? track.album.title : 'Sencillo';
+    const albumId = track.album ? `deezer_${track.album.id}` : null;
+
+    card.innerHTML = `
+      <div class="album-cover-wrapper" title="Clic para escuchar o ver álbum">
+        <img class="album-cover" src="${cover}" alt="${track.title}" loading="lazy">
+        <div class="cover-overlay-hint"><span>${albumId ? '💿 VER ÁLBUM' : '▶ ESCUCHAR'}</span></div>
+      </div>
+      <div class="album-info">
+        <h3 class="album-title" title="${track.title}">${track.title}</h3>
+        <p class="album-artist">${track.artist ? track.artist.name : artistName}</p>
+        <div class="track-card-actions">
+          <div class="actions-row-play">
+            <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar muestra">▶ <span>PREVIEW</span></button>
+            <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar completa">🎧 <span>COMPLETA</span></button>
+          </div>
+          <div class="actions-row-dl">
+            <button class="btn-card-action btn-card-mp3 btn-single-mp3" title="Descargar MP3 320 kbps (VIP)">📥 <span>MP3 320</span></button>
+            ${albumId ? `
+              <button class="btn-card-action btn-card-album btn-go-to-album" title="Ver álbum">💿 <span>ÁLBUM</span></button>
+            ` : `
+              <button class="btn-card-action btn-card-flac btn-single-flac" title="Descargar en FLAC">⚡ <span>FLAC</span></button>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.album-cover-wrapper').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (albumId) openAlbumDetail(albumId);
+      else loadTrack({ title: track.title, artist: track.artist ? track.artist.name : artistName, cover, audioUrl: track.preview, album: albumTitle });
+    });
+
+    if (albumId) {
+      const albBtn = card.querySelector('.btn-go-to-album');
+      if (albBtn) albBtn.addEventListener('click', (e) => { e.stopPropagation(); openAlbumDetail(albumId); });
+    }
+
+    card.querySelector('.btn-single-play').addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadTrack({ title: track.title, artist: track.artist ? track.artist.name : artistName, cover, audioUrl: track.preview, album: albumTitle });
+    });
+
+    card.querySelector('.btn-single-full').addEventListener('click', (e) => {
+      e.stopPropagation();
+      playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle);
+    });
+
+    card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadMp3_320(track.artist ? track.artist.name : artistName, track.title, track.preview, null, { album: albumTitle, coverUrl: cover }, e.currentTarget);
+    });
+
+    grid.appendChild(card);
+  });
+
+  container.appendChild(grid);
 }
 
 // ========================================================
@@ -1719,7 +2143,7 @@ async function loadHomeContent() {
             </div>
             <div class="ranking-track-meta">
               <span class="ranking-track-title" title="${track.title}">${track.title}</span>
-              <span class="ranking-track-artist" title="${track.artist}">${track.artist}</span>
+              <span class="ranking-track-artist artist-clickable" data-artist="${track.artist}" title="Ver discografía y perfil de ${track.artist}">${track.artist}</span>
             </div>
           </div>
 
@@ -1779,6 +2203,14 @@ async function loadHomeContent() {
           }, e.currentTarget);
         });
 
+        const artistLink = row.querySelector('.ranking-track-artist');
+        if (artistLink) {
+          artistLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openArtistProfile(track.artist);
+          });
+        }
+
         const albumLink = row.querySelector('.ranking-album-link');
         if (albumLink && track.albumId) {
           albumLink.addEventListener('click', (e) => {
@@ -1819,7 +2251,7 @@ async function loadHomeContent() {
         const card = document.createElement('div');
         card.className = 'album-card';
         card.innerHTML = `
-          <div class="album-cover-wrapper">
+          <div class="album-cover-wrapper" title="Clic para ver discografía">
             <img src="${album.coverXl || 'https://via.placeholder.com/300/1a0933/ff2a85?text=VI'}" alt="${album.title}" class="album-cover-img" loading="lazy">
             <div class="cover-flac-badge">1000PX HD</div>
             <div class="album-hover-overlay">
@@ -1828,14 +2260,26 @@ async function loadHomeContent() {
           </div>
           <div class="album-info">
             <h4 class="album-title" title="${album.title}">${album.title}</h4>
-            <p class="album-artist" title="${album.artist}">${album.artist}</p>
+            <p class="album-artist artist-clickable" data-artist="${album.artist}" title="Ver discografía y perfil de ${album.artist}">${album.artist}</p>
             <div class="album-meta">
               <span class="album-tracks-count">${album.nbTracks} canciones</span>
               <span class="album-type-badge">ÁLBUM</span>
             </div>
           </div>
         `;
-        card.addEventListener('click', () => openAlbumDetail(album.id));
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.artist-clickable')) return;
+          openAlbumDetail(album.id);
+        });
+
+        const albArtistLink = card.querySelector('.album-artist');
+        if (albArtistLink) {
+          albArtistLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openArtistProfile(album.artist);
+          });
+        }
+
         homeTrendingGrid.appendChild(card);
       });
     }

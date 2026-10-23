@@ -269,8 +269,8 @@ async function getAlbumTracksItunes(itunesAlbumId) {
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -285,7 +285,40 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '4.3', status: 'online', engine: 'Vice Music Instant Audio + Locked HD MediaSession' }));
+      return res.end(JSON.stringify({ version: '4.4', status: 'online', engine: 'Vice Music VIP Auth + Instant Audio' }));
+    }
+
+    // 0.0 AUTENTICACIÓN VIP ADMIN
+    if (pathname === '/api/login' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const username = (parsed.username || '').trim();
+          const password = (parsed.password || '').trim();
+
+          if (username === 'admin' && password === 'admin') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              success: true,
+              user: 'admin',
+              role: 'VIP Admin',
+              token: 'vice_vip_admin_token_2026'
+            }));
+          } else {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              success: false,
+              error: 'Usuario o contraseña incorrectos. Verifica tus credenciales.'
+            }));
+          }
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: false, error: 'Petición inválida.' }));
+        }
+      });
+      return;
     }
 
     // 0.1 STREAM DIRECTO MP3 PARA REPRODUCTOR NATIVO (100% Cero YouTube)

@@ -2079,4 +2079,371 @@ body {
   }
 }
 
+/* ========================================================
+   SECCIÓN HOME // TOP 10 COLOMBIA & SPOTLIGHT (APPLE / SPOTIFY STYLE)
+   ======================================================== */
+
+.home-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  animation: fadeInHome 0.4s ease-out;
+}
+
+@keyframes fadeInHome {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.home-hero-banner {
+  background: linear-gradient(135deg, rgba(255, 42, 133, 0.18), rgba(0, 240, 255, 0.12), rgba(157, 0, 255, 0.2));
+  border: 1px solid rgba(255, 42, 133, 0.4);
+  border-radius: 20px;
+  padding: 2.2rem 2.5rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 25px rgba(255, 42, 133, 0.1);
+}
+
+.home-hero-banner::after {
+  content: '🇨🇴';
+  position: absolute;
+  right: 2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 7rem;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.home-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 42, 133, 0.2);
+  border: 1px solid var(--vice-pink);
+  border-radius: 999px;
+  padding: 0.25rem 0.8rem;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #fff;
+  margin-bottom: 0.8rem;
+  box-shadow: 0 0 12px rgba(255, 42, 133, 0.4);
+}
+
+.home-hero-title {
+  font-family: var(--font-logo);
+  font-size: 2.4rem;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, #ffffff, var(--vice-pink), var(--vice-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.6rem;
+}
+
+.home-hero-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  max-width: 680px;
+  line-height: 1.5;
+}
+
+/* Tabla Top 10 Ranking */
+.top-ranking-wrapper {
+  background: rgba(18, 7, 30, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 1.2rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+}
+
+.ranking-header {
+  display: grid;
+  grid-template-columns: 50px 1.8fr 1.2fr 80px 220px;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.top-ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.ranking-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  gap: 1rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.ranking-row {
+  display: grid;
+  grid-template-columns: 50px 1.8fr 1.2fr 80px 220px;
+  align-items: center;
+  padding: 0.65rem 1rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  transition: all 0.22s ease;
+  cursor: pointer;
+}
+
+.ranking-row:hover {
+  background: rgba(255, 42, 133, 0.12);
+  border-color: rgba(255, 42, 133, 0.35);
+  box-shadow: 0 0 20px rgba(255, 42, 133, 0.2);
+  transform: translateX(4px);
+}
+
+.ranking-row.rank-first {
+  background: linear-gradient(90deg, rgba(255, 184, 0, 0.14), rgba(255, 42, 133, 0.08));
+  border-color: rgba(255, 184, 0, 0.4);
+}
+
+.ranking-row.rank-first:hover {
+  box-shadow: 0 0 25px rgba(255, 184, 0, 0.3);
+}
+
+.ranking-num {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--text-muted);
+  letter-spacing: -0.5px;
+}
+
+.ranking-row.rank-first .ranking-num {
+  color: var(--vice-gold);
+  text-shadow: 0 0 10px rgba(255, 184, 0, 0.6);
+}
+
+.ranking-num-sub {
+  font-size: 0.65rem;
+  opacity: 0.6;
+}
+
+.ranking-track-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.ranking-thumb-wrap {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #110520;
+}
+
+.ranking-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+.ranking-row:hover .ranking-thumb-img {
+  transform: scale(1.08);
+}
+
+.ranking-thumb-play {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.ranking-row:hover .ranking-thumb-play {
+  opacity: 1;
+}
+
+.ranking-track-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ranking-track-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ranking-track-artist {
+  font-size: 0.78rem;
+  color: var(--vice-cyan);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.ranking-album-cell {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 0.8rem;
+}
+
+.ranking-album-link {
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.ranking-album-link:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.ranking-time-cell {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.ranking-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.btn-rank-action {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.btn-rank-action:hover {
+  background: rgba(255, 42, 133, 0.25);
+  border-color: var(--vice-pink);
+  box-shadow: 0 0 10px rgba(255, 42, 133, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-rank-action.btn-dl-vip {
+  background: linear-gradient(135deg, rgba(255, 42, 133, 0.25), rgba(0, 240, 255, 0.25));
+  border-color: var(--vice-cyan);
+}
+
+.btn-rank-action.btn-dl-vip:hover {
+  background: linear-gradient(135deg, var(--vice-pink), var(--vice-cyan));
+  color: #fff;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.6);
+}
+
+/* Sección Trending Álbumes de Colombia */
+.home-trending-albums {
+  margin-top: 1rem;
+}
+
+.trending-header {
+  margin-bottom: 1.2rem;
+}
+
+.trending-title {
+  font-family: var(--font-logo);
+  font-size: 1.4rem;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  background: linear-gradient(90deg, #fff, var(--vice-gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.25rem;
+}
+
+.trending-sub {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+@media (max-width: 900px) {
+  .ranking-header {
+    grid-template-columns: 40px 1.6fr 70px 140px;
+  }
+  .rh-album, .ranking-album-cell {
+    display: none;
+  }
+  .ranking-row {
+    grid-template-columns: 40px 1.6fr 70px 140px;
+  }
+  .btn-rank-action span {
+    display: none;
+  }
+  .btn-rank-action {
+    padding: 0.35rem 0.5rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .home-hero-banner {
+    padding: 1.4rem 1.2rem;
+  }
+  .home-hero-title {
+    font-size: 1.7rem;
+  }
+  .ranking-header {
+    grid-template-columns: 32px 1fr 100px;
+  }
+  .rh-time, .ranking-time-cell {
+    display: none;
+  }
+  .ranking-row {
+    grid-template-columns: 32px 1fr 100px;
+    padding: 0.5rem 0.6rem;
+  }
+  .ranking-thumb-wrap {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+
 

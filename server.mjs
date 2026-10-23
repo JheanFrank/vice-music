@@ -130,6 +130,70 @@ async function searchTracksDeezer(q) {
   }));
 }
 
+let cachedTopColombia = null;
+let cachedTopColombiaTime = 0;
+
+async function getTopColombia() {
+  const now = Date.now();
+  if (cachedTopColombia && (now - cachedTopColombiaTime < 1000 * 60 * 20)) {
+    return cachedTopColombia;
+  }
+
+  try {
+    const plData = await fetchDeezer('/playlist/1116188451');
+    const tracks = (plData && plData.tracks && Array.isArray(plData.tracks.data))
+      ? plData.tracks.data.slice(0, 10).map((t, idx) => ({
+          rank: idx + 1,
+          id: `deezer_${t.id}`,
+          deezerId: t.id,
+          title: t.title,
+          artist: t.artist ? t.artist.name : 'Artista',
+          album: t.album ? t.album.title : 'Álbum',
+          albumId: t.album ? `deezer_${t.album.id}` : null,
+          deezerAlbumId: t.album ? t.album.id : null,
+          coverXl: t.album ? (t.album.cover_xl || t.album.cover_big) : (t.artist ? t.artist.picture_xl : ''),
+          duration: t.duration || 0,
+          preview: t.preview || null,
+          link: t.link || `https://www.deezer.com/track/${t.id}`,
+          lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`,
+          source: 'deezer'
+        }))
+      : [];
+
+    let albums = [];
+    const albQueries = ['Blessd Superstar', 'Feid', 'Karol G'];
+    for (const q of albQueries) {
+      const albRes = await fetchDeezer(`/search/album?q=${encodeURIComponent(q)}&limit=2`);
+      if (albRes && Array.isArray(albRes.data)) {
+        albRes.data.forEach(a => {
+          if (!albums.some(existing => existing.deezerId === a.id)) {
+            albums.push({
+              id: `deezer_${a.id}`,
+              deezerId: a.id,
+              title: a.title,
+              artist: a.artist ? a.artist.name : 'Artista',
+              coverXl: a.cover_xl || a.cover_big || a.cover_medium,
+              nbTracks: a.nb_tracks || '—',
+              releaseDate: 'Oficial',
+              link: a.link || `https://www.deezer.com/album/${a.id}`,
+              lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.link || `https://www.deezer.com/album/${a.id}`)}`,
+              source: 'deezer'
+            });
+          }
+        });
+      }
+    }
+
+    cachedTopColombia = { tracks, albums };
+    cachedTopColombiaTime = now;
+    return cachedTopColombia;
+  } catch (err) {
+    console.error('Error al obtener Top Colombia:', err);
+    if (cachedTopColombia) return cachedTopColombia;
+    return { tracks: [], albums: [] };
+  }
+}
+
 async function getAlbumTracksDeezer(deezerAlbumId) {
   const album = await fetchDeezer(`/album/${deezerAlbumId}`);
   if (!album || album.error) return null;
@@ -285,7 +349,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '4.4', status: 'online', engine: 'Vice Music VIP Auth + Instant Audio' }));
+      return res.end(JSON.stringify({ version: '4.5', status: 'online', engine: 'Vice Music Home Top 10 Colombia + VIP Auth' }));
     }
 
     // 0.0 AUTENTICACIÓN VIP ADMIN
@@ -319,6 +383,21 @@ const server = http.createServer(async (req, res) => {
         }
       });
       return;
+    }
+
+    // 0.05 TOP 10 COLOMBIA EN VIVO
+    if (pathname === '/api/top-colombia') {
+      const topData = await getTopColombia();
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      return res.end(JSON.stringify({
+        success: true,
+        count: topData.tracks.length,
+        tracks: topData.tracks,
+        albums: topData.albums
+      }));
     }
 
     // 0.1 STREAM DIRECTO MP3 PARA REPRODUCTOR NATIVO (100% Cero YouTube)

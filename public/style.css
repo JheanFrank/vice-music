@@ -2445,5 +2445,313 @@ body {
   }
 }
 
+/* ========================================================
+   BOTONES LIMPIOS Y ESPACIOSOS EN TARJETAS DE PISTAS
+   ======================================================== */
+
+.track-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: auto;
+  width: 100%;
+}
+
+.actions-row-play,
+.actions-row-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.btn-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.45rem;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  transition: all 0.22s ease;
+  white-space: nowrap;
+}
+
+.btn-card-preview {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-card-preview:hover {
+  background: #fff;
+  color: #000;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-card-full {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--vice-cyan);
+  color: var(--vice-cyan);
+}
+
+.btn-card-full:hover {
+  background: var(--vice-cyan);
+  color: #000;
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-card-mp3 {
+  background: rgba(255, 184, 0, 0.15);
+  border-color: var(--vice-gold);
+  color: var(--vice-gold);
+}
+
+.btn-card-mp3:hover {
+  background: var(--vice-gold);
+  color: #000;
+  box-shadow: 0 0 15px rgba(255, 184, 0, 0.7);
+  transform: translateY(-1px);
+}
+
+.btn-card-album {
+  background: linear-gradient(135deg, rgba(255, 42, 133, 0.25), rgba(157, 0, 255, 0.25));
+  border-color: var(--vice-pink);
+  color: #fff;
+}
+
+.btn-card-album:hover {
+  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
+  box-shadow: 0 0 16px rgba(255, 42, 133, 0.7);
+  transform: translateY(-1px);
+}
+
+.btn-card-flac {
+  background: rgba(157, 0, 255, 0.2);
+  border-color: var(--vice-purple);
+  color: #fff;
+}
+
+.btn-card-flac:hover {
+  background: var(--vice-purple);
+  box-shadow: 0 0 14px rgba(157, 0, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+/* Enlace a perfil de artista */
+.artist-clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  display: inline-block;
+}
+
+.artist-clickable:hover {
+  color: var(--vice-cyan) !important;
+  text-shadow: 0 0 12px rgba(0, 240, 255, 0.8);
+  transform: scale(1.02);
+}
+
+/* Indicador visual de clic en carátula */
+.album-cover-wrapper {
+  cursor: pointer;
+  position: relative;
+}
+
+.cover-overlay-hint {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 4, 18, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #fff;
+  border-radius: 14px;
+}
+
+.album-cover-wrapper:hover .cover-overlay-hint {
+  opacity: 1;
+}
+
+/* ========================================================
+   VISTA DE PERFIL DE ARTISTA (SPOTIFY / APPLE STYLE)
+   ======================================================== */
+
+.artist-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  animation: fadeInHome 0.35s ease-out;
+}
+
+.artist-hero-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(28, 10, 48, 0.9), rgba(10, 4, 18, 0.95));
+  border: 1.5px solid rgba(255, 42, 133, 0.4);
+  border-radius: 24px;
+  padding: 2.5rem;
+  display: flex;
+  align-items: center;
+  gap: 2.2rem;
+  overflow: hidden;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 42, 133, 0.2);
+}
+
+.artist-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.12;
+  filter: blur(25px);
+  pointer-events: none;
+}
+
+.artist-avatar-wrap {
+  position: relative;
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  border: 3px solid var(--vice-pink);
+  overflow: hidden;
+  box-shadow: 0 0 35px rgba(255, 42, 133, 0.6);
+  flex-shrink: 0;
+  background: #150824;
+}
+
+.artist-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artist-hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1;
+}
+
+.artist-badge-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--vice-cyan);
+  color: var(--vice-cyan);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  width: fit-content;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+}
+
+.artist-hero-name {
+  font-family: var(--font-logo);
+  font-size: 2.8rem;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, #fff, var(--vice-pink), var(--vice-gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.1;
+}
+
+.artist-hero-stats {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  display: flex;
+  gap: 1.2rem;
+  margin-top: 0.3rem;
+}
+
+/* Pestañas de Navegación del Artista */
+.artist-nav-tabs {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.8rem;
+}
+
+.artist-tab-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+}
+
+.artist-tab-btn:hover {
+  background: rgba(255, 42, 133, 0.2);
+  border-color: var(--vice-pink);
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.artist-tab-btn.active {
+  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 0 20px rgba(255, 42, 133, 0.5);
+}
+
+.artist-content-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .artist-hero-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.8rem 1.2rem;
+    gap: 1.4rem;
+  }
+  .artist-hero-info {
+    align-items: center;
+  }
+  .artist-hero-name {
+    font-size: 2.1rem;
+  }
+  .artist-hero-stats {
+    justify-content: center;
+  }
+  .artist-nav-tabs {
+    justify-content: center;
+  }
+  .artist-tab-btn {
+    font-size: 0.7rem;
+    padding: 0.45rem 0.85rem;
+  }
+}
+
+
 
 

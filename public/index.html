@@ -34,13 +34,26 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v4.3</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v4.4</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
     </div>
     
     <div class="header-status">
+      <!-- Sistema de Autenticación VIP Header -->
+      <div id="authStatusWrapper" class="auth-status-wrapper">
+        <button id="btnOpenLogin" class="btn-auth-header" title="Iniciar sesión VIP para descargas">
+          <span class="auth-icon">🔑</span>
+          <span>INICIAR SESIÓN</span>
+        </button>
+        <div id="authUserInfo" class="auth-user-badge hidden">
+          <span class="vip-crown">👑</span>
+          <span class="vip-name">VIP: <strong id="authUserName">admin</strong></span>
+          <button id="btnLogout" class="btn-logout" title="Cerrar sesión VIP">SALIR</button>
+        </div>
+      </div>
+
       <span class="pulse-pink"></span>
       <span class="status-text">DISCOGRAFÍAS COMPLETAS 1000PX</span>
       <span class="badge-gold">ESTUDIO MASTER</span>
@@ -270,8 +283,51 @@
     <div id="ytPlayerSlot"></div>
   </div>
 
+  <!-- Modal de Autenticación VIP Vice City -->
+  <div id="loginModal" class="login-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+    <div class="login-modal-backdrop" id="loginModalBackdrop"></div>
+    <div class="login-modal-box">
+      <button class="login-modal-close" id="btnCloseLoginModal" aria-label="Cerrar">&times;</button>
+      <div class="login-modal-header">
+        <div class="login-badge-neon">⚡ ACCESO VIP ⚡</div>
+        <h3 id="loginModalTitle" class="login-title">INICIAR SESIÓN</h3>
+        <p class="login-subtitle" id="loginModalSubtitle">Accede con tu cuenta VIP para descargar MP3 a 320 kbps y discografías completas.</p>
+      </div>
+
+      <form id="loginForm" class="login-form" autocomplete="on">
+        <div id="loginAlert" class="login-alert hidden"></div>
+
+        <div class="login-field-group">
+          <label for="loginUsername">USUARIO</label>
+          <div class="login-input-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="loginUsername" name="username" placeholder="Ingresa tu usuario (admin)" required autocomplete="username">
+          </div>
+        </div>
+
+        <div class="login-field-group">
+          <label for="loginPassword">CONTRASEÑA</label>
+          <div class="login-input-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="loginPassword" name="password" placeholder="Ingresa tu contraseña (admin)" required autocomplete="current-password">
+            <button type="button" id="btnTogglePassword" class="btn-toggle-pwd" title="Mostrar/ocultar contraseña">👁️</button>
+          </div>
+        </div>
+
+        <button type="submit" id="btnLoginSubmit" class="btn-login-submit">
+          <span id="loginBtnText">INGRESAR AL SISTEMA</span>
+          <div id="loginBtnSpinner" class="login-spinner hidden"></div>
+        </button>
+
+        <div class="login-footer-hint">
+          <span>🌴 Acceso exclusivo Vice City // Credenciales demo: <code>admin</code> / <code>admin</code></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=430"></script>
+  <script src="app.js?v=440"></script>
 </body>
 </html>

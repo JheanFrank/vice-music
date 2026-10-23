@@ -651,8 +651,20 @@ function stripOldId3(mp3Buffer) {
               signal: AbortSignal.timeout(8000)
             });
             const html = await ytRes.text();
-            const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-            if (match) targetVideoId = match[1];
+            const regex = /"videoRenderer":\{"videoId":"([^"]+)".+?"title":\{"runs":\[\{"text":"([^"]+)"\}\]/g;
+            let m;
+            while ((m = regex.exec(html)) !== null) {
+              if (m[1] && m[1].length === 11) {
+                targetVideoId = m[1];
+                break;
+              }
+            }
+            if (!targetVideoId) {
+              const idx = html.indexOf('watch?v=');
+              if (idx !== -1) {
+                targetVideoId = html.substring(idx + 8, idx + 19);
+              }
+            }
           } catch (e) {
             console.warn('[Native Engine] Búsqueda de videoId falló:', e.message);
           }
@@ -713,6 +725,10 @@ function stripOldId3(mp3Buffer) {
             ffmpeg.on('error', reject);
           });
 
+          if (!rawMp3 || rawMp3.length < 100000) {
+            throw new Error(`Extracción insuficiente: ${rawMp3 ? rawMp3.length : 0} bytes`);
+          }
+
           console.log(`[Native MP3 Engine] Extracción local exitosa: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
         } catch (localErr) {
           console.warn(`[Native MP3 Engine] Extracción local no disponible (${localErr.message}). Activando motor en la nube con proxies anti-bot...`);
@@ -757,6 +773,11 @@ function stripOldId3(mp3Buffer) {
 
           const cloudBuffer = Buffer.from(await fileRes.arrayBuffer());
           rawMp3 = stripOldId3(cloudBuffer);
+
+          if (!rawMp3 || rawMp3.length < 100000) {
+            throw new Error(`Audio en la nube corrupto o insuficiente (${rawMp3 ? rawMp3.length : 0} bytes)`);
+          }
+
           console.log(`[Native MP3 Engine] Audio recibido desde la nube: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
         }
 

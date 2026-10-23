@@ -4,6 +4,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
+import { spawn } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
+import { Ytdl, Client } from '@distube/ytdl-core';
+
+const ytdl = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded] });
 
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {
@@ -622,9 +627,10 @@ function stripOldId3(mp3Buffer) {
   return mp3Buffer;
 }
 
-    // 6. DESCARGA MP3 320 KBPS CON ETIQUETAS ID3V2 Y CARÁTULA HD 1000PX INCORPORADA
+    // 6. MOTOR NATIVO DEFINITIVO: DESCARGA MP3 320 KBPS CON METADATOS Y CARÁTULA HD 1000PX
     if (pathname === '/api/download-mp3') {
-      const downloadUrl = (reqUrl.searchParams.get('url') || '').trim();
+      const q = (reqUrl.searchParams.get('q') || '').trim();
+      const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
       const title = (reqUrl.searchParams.get('title') || '').trim();
       const artist = (reqUrl.searchParams.get('artist') || '').trim();
@@ -632,53 +638,80 @@ function stripOldId3(mp3Buffer) {
       const year = (reqUrl.searchParams.get('year') || '').trim();
       const coverUrl = (reqUrl.searchParams.get('cover') || '').trim();
 
-      if (!downloadUrl) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'URL de descarga vacía' }));
-      }
-
       const safeFilename = filename.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
       const encodedFilename = encodeURIComponent(safeFilename);
 
       try {
-        console.log(`[Download MP3] Descargando audio para "${safeFilename}" desde CDN...`);
-        const audioFetch = await fetch(downloadUrl, {
-          headers: { 
-            'User-Agent': USER_AGENT,
-            'Referer': 'https://p.savenow.to/'
-          },
-          signal: AbortSignal.timeout(90000)
-        });
+        let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
 
-        if (!audioFetch.ok) {
-          throw new Error(`El CDN respondió con error HTTP ${audioFetch.status} ${audioFetch.statusText}`);
-        }
-
-        const rawAudioBuf = Buffer.from(await audioFetch.arrayBuffer());
-        if (rawAudioBuf.length < 10000) {
-          const previewText = rawAudioBuf.toString('utf8', 0, 300);
-          throw new Error(`Buffer muy pequeño (${rawAudioBuf.length} bytes): ${previewText}`);
-        }
-
-        // Descargar carátula oficial si viene proporcionada
-        let coverBuf = null;
-        if (coverUrl) {
+        if (!targetVideoId && q) {
           try {
-            const coverRes = await fetch(coverUrl, {
+            const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' audio')}`, {
               headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(10000)
+              signal: AbortSignal.timeout(8000)
             });
-            if (coverRes.ok) {
-              coverBuf = Buffer.from(await coverRes.arrayBuffer());
-            }
-          } catch (cErr) {
-            console.warn('[Download MP3] Falló descarga de carátula:', cErr.message);
+            const html = await ytRes.text();
+            const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+            if (match) targetVideoId = match[1];
+          } catch (e) {
+            console.warn('[Native Engine] Búsqueda de videoId falló:', e.message);
           }
         }
 
-        // Limpiar metadatos viejos de YouTube y generar ID3v2.3 oficial
-        const cleanAudio = stripOldId3(rawAudioBuf);
-        const id3Tag = createId3Tag({
+        if (!targetVideoId) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'No se encontró el video en YouTube' }));
+        }
+
+        console.log(`[Native MP3 Engine] Generando MP3 320 kbps para "${safeFilename}" (${targetVideoId})...`);
+
+        // Descarga de audio directo oficial sin anuncios
+        const stream = await ytdl.download(targetVideoId, {
+          filter: f => f.hasAudio && !f.hasVideo,
+          quality: 'highestaudio'
+        });
+
+        // Transcodificación profesional a MP3 320 kbps
+        const ffmpeg = spawn(ffmpegPath, [
+          '-i', 'pipe:0',
+          '-vn',
+          '-c:a', 'libmp3lame',
+          '-b:a', '320k',
+          '-f', 'mp3',
+          'pipe:1'
+        ]);
+
+        stream.pipe(ffmpeg.stdin);
+
+        const chunks = [];
+        ffmpeg.stdout.on('data', c => chunks.push(c));
+
+        // Descarga de carátula oficial 1000x1000 en paralelo
+        let coverBuf = null;
+        if (coverUrl) {
+          try {
+            const cRes = await fetch(coverUrl, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(10000)
+            });
+            if (cRes.ok) coverBuf = Buffer.from(await cRes.arrayBuffer());
+          } catch (cErr) {
+            console.warn('[Native MP3 Engine] Falló carátula:', cErr.message);
+          }
+        }
+
+        const rawMp3 = await new Promise((resolve, reject) => {
+          ffmpeg.on('close', code => {
+            if (code === 0) resolve(Buffer.concat(chunks));
+            else reject(new Error('FFmpeg finalizó con código ' + code));
+          });
+          ffmpeg.stderr.on('data', () => {});
+          stream.on('error', reject);
+          ffmpeg.on('error', reject);
+        });
+
+        // Inyectar metadatos ID3v2.3 limpios y carátula oficial
+        const tag = createId3Tag({
           title: title || safeFilename,
           artist: artist || 'Artista',
           album: album || title || 'Álbum',
@@ -686,7 +719,7 @@ function stripOldId3(mp3Buffer) {
           imageBuffer: coverBuf
         });
 
-        const finalMp3 = Buffer.concat([id3Tag, cleanAudio]);
+        const finalMp3 = Buffer.concat([tag, rawMp3]);
 
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg',
@@ -696,10 +729,10 @@ function stripOldId3(mp3Buffer) {
         });
 
         res.end(finalMp3);
-        console.log(`[Download MP3] ✅ Enviado exitosamente: "${safeFilename}.mp3" (${(finalMp3.length / (1024 * 1024)).toFixed(2)} MB)`);
+        console.log(`[Native MP3 Engine] ✅ Enviado exitosamente: "${safeFilename}.mp3" (${(finalMp3.length / (1024 * 1024)).toFixed(2)} MB)`);
         return;
       } catch (err) {
-        console.error('[Download MP3 Proxy] Error:', err.message);
+        console.error('[Native MP3 Engine] Error:', err.message);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: err.message }));

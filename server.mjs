@@ -247,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.8', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + MP3 Verified Download' }));
+      return res.end(JSON.stringify({ version: '2.9', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + MP3 Async Polling' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -457,8 +457,8 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 5. OBTENER URL DE DESCARGA MP3 COMPLETA VÍA LOADER.TO (Canción completa, no preview)
-    if (pathname === '/api/get-mp3-url') {
+    // 5. INICIAR CONVERSIÓN MP3 COMPLETA (Responde inmediatamente sin bloquear)
+    if (pathname === '/api/start-mp3-conversion') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
 
@@ -468,7 +468,6 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        // Paso 1: Encontrar videoId de YouTube
         let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
 
         if (!targetVideoId && q) {
@@ -481,7 +480,7 @@ const server = http.createServer(async (req, res) => {
             const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
             if (match) targetVideoId = match[1];
           } catch (e) {
-            console.warn('[MP3 URL] Búsqueda de videoId falló:', e.message);
+            console.warn('[Start MP3] Búsqueda de videoId falló:', e.message);
           }
         }
 
@@ -490,9 +489,8 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'No se encontró el video en YouTube' }));
         }
 
-        console.log(`[MP3 URL] Iniciando conversión para videoId: ${targetVideoId}`);
+        console.log(`[Start MP3] Iniciando conversión para: ${targetVideoId}`);
 
-        // Paso 2: Iniciar conversión con loader.to
         const startRes = await fetch(`https://loader.to/ajax/download.php?format=mp3&url=https://www.youtube.com/watch?v=${targetVideoId}`, {
           headers: { 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(15000)
@@ -500,51 +498,20 @@ const server = http.createServer(async (req, res) => {
         const startData = await startRes.json();
 
         if (!startData.success || !startData.progress_url) {
-          console.warn('[MP3 URL] loader.to no pudo iniciar conversión:', JSON.stringify(startData).substring(0, 200));
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'No se pudo iniciar la conversión del audio' }));
+          return res.end(JSON.stringify({ error: 'El servidor de conversión no respondió adecuadamente' }));
         }
-
-        console.log(`[MP3 URL] Conversión iniciada, ID: ${startData.id}, esperando...`);
-
-        // Paso 3: Pollear progress_url hasta obtener download_url REAL (cuando progress === 1000)
-        let downloadUrl = null;
-        for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-            const progRes = await fetch(startData.progress_url, {
-              headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(15000)
-            });
-            const progData = await progRes.json();
-            console.log(`[MP3 URL] Poll ${i}: progress=${progData.progress}, text=${progData.text || ''}, dl=${progData.download_url ? progData.download_url.substring(0, 45) : 'null'}`);
-
-            // Solo aceptar la URL cuando la conversión haya terminado de verdad (progreso 1000 y URL real de savenow)
-            if (progData.progress === 1000 && progData.download_url && !progData.download_url.includes('affadaffa')) {
-              downloadUrl = progData.download_url;
-              break;
-            }
-          } catch (e) {
-            console.warn(`[MP3 URL] Poll ${i} error:`, e.message);
-          }
-        }
-
-        if (!downloadUrl) {
-          res.writeHead(504, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'La conversión tardó más de lo esperado. Intenta nuevamente.' }));
-        }
-
-        console.log(`[MP3 URL] ✅ URL de descarga legítima obtenida: ${downloadUrl}`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
-          downloadUrl,
+          success: true,
+          id: startData.id,
+          progressUrl: startData.progress_url,
           title: startData.title || startData.info?.title || 'cancion',
           videoId: targetVideoId
         }));
-
       } catch (err) {
-        console.error('[MP3 URL] Error:', err.message);
+        console.error('[Start MP3] Error:', err.message);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: err.message }));
@@ -553,7 +520,37 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 6. PROXY DE DESCARGA MP3 (Descarga desde loader.to CDN y entrega al usuario con nombre correcto)
+    // 5.1 VERIFICAR PROGRESO DE CONVERSIÓN
+    if (pathname === '/api/check-mp3-progress') {
+      const progressUrl = (reqUrl.searchParams.get('url') || '').trim();
+      if (!progressUrl) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'URL de progreso requerida' }));
+      }
+
+      try {
+        const progRes = await fetch(progressUrl, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(10000)
+        });
+        const progData = await progRes.json();
+
+        const isFinished = progData.progress === 1000 && progData.download_url && !progData.download_url.includes('affadaffa');
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          progress: progData.progress || 0,
+          text: progData.text || '',
+          isFinished: !!isFinished,
+          downloadUrl: isFinished ? progData.download_url : null
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    }
+
+    // 6. PROXY DE DESCARGA MP3 (Descarga desde savenow CDN con validación de audio)
     if (pathname === '/api/download-mp3') {
       const downloadUrl = (reqUrl.searchParams.get('url') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
@@ -573,12 +570,12 @@ const server = http.createServer(async (req, res) => {
         });
 
         if (!audioFetch.ok) {
-          throw new Error('CDN respondió con status ' + audioFetch.status);
+          throw new Error('El servidor de almacenamiento respondió con status ' + audioFetch.status);
         }
 
         const contentType = audioFetch.headers.get('content-type') || '';
         if (contentType.includes('text') || contentType.includes('html')) {
-          throw new Error('El enlace generado no contiene un archivo de audio válido.');
+          throw new Error('El archivo aún se está procesando o no es válido.');
         }
 
         const contentLength = audioFetch.headers.get('content-length');
@@ -593,7 +590,6 @@ const server = http.createServer(async (req, res) => {
 
         res.writeHead(200, headers);
 
-        // Pipe directo del CDN al usuario
         const reader = audioFetch.body.getReader();
         const pump = async () => {
           while (true) {

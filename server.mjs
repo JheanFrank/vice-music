@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client } from '@distube/ytdl-core';
 
-const ytdl = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded] });
+const ytdl = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
 
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {

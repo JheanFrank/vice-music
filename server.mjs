@@ -665,27 +665,6 @@ function stripOldId3(mp3Buffer) {
 
         console.log(`[Native MP3 Engine] Generando MP3 320 kbps para "${safeFilename}" (${targetVideoId})...`);
 
-        // Descarga de audio directo oficial sin anuncios
-        const stream = await ytdl.download(targetVideoId, {
-          filter: f => f.hasAudio && !f.hasVideo,
-          quality: 'highestaudio'
-        });
-
-        // Transcodificación profesional a MP3 320 kbps
-        const ffmpeg = spawn(ffmpegPath, [
-          '-i', 'pipe:0',
-          '-vn',
-          '-c:a', 'libmp3lame',
-          '-b:a', '320k',
-          '-f', 'mp3',
-          'pipe:1'
-        ]);
-
-        stream.pipe(ffmpeg.stdin);
-
-        const chunks = [];
-        ffmpeg.stdout.on('data', c => chunks.push(c));
-
         // Descarga de carátula oficial 1000x1000 en paralelo
         let coverBuf = null;
         if (coverUrl) {
@@ -696,21 +675,96 @@ function stripOldId3(mp3Buffer) {
             });
             if (cRes.ok) coverBuf = Buffer.from(await cRes.arrayBuffer());
           } catch (cErr) {
-            console.warn('[Native MP3 Engine] Falló carátula:', cErr.message);
+            console.warn('[Native MP3 Engine] Falló descarga de carátula:', cErr.message);
           }
         }
 
-        const rawMp3 = await new Promise((resolve, reject) => {
-          ffmpeg.on('close', code => {
-            if (code === 0) resolve(Buffer.concat(chunks));
-            else reject(new Error('FFmpeg finalizó con código ' + code));
-          });
-          ffmpeg.stderr.on('data', () => {});
-          stream.on('error', reject);
-          ffmpeg.on('error', reject);
-        });
+        let rawMp3 = null;
 
-        // Inyectar metadatos ID3v2.3 limpios y carátula oficial
+        // ESTRATEGIA 1: Transcodificación directa local de alta fidelidad 320 kbps
+        try {
+          console.log(`[Native MP3 Engine] Intentando extracción local directa para ${targetVideoId}...`);
+          const stream = await ytdl.download(targetVideoId, {
+            filter: f => f.hasAudio && !f.hasVideo,
+            quality: 'highestaudio'
+          });
+
+          const ffmpeg = spawn(ffmpegPath, [
+            '-i', 'pipe:0',
+            '-vn',
+            '-c:a', 'libmp3lame',
+            '-b:a', '320k',
+            '-f', 'mp3',
+            'pipe:1'
+          ]);
+
+          stream.pipe(ffmpeg.stdin);
+
+          const chunks = [];
+          ffmpeg.stdout.on('data', c => chunks.push(c));
+
+          rawMp3 = await new Promise((resolve, reject) => {
+            ffmpeg.on('close', code => {
+              if (code === 0) resolve(Buffer.concat(chunks));
+              else reject(new Error('FFmpeg finalizó con código ' + code));
+            });
+            ffmpeg.stderr.on('data', () => {});
+            stream.on('error', reject);
+            ffmpeg.on('error', reject);
+          });
+
+          console.log(`[Native MP3 Engine] Extracción local exitosa: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
+        } catch (localErr) {
+          console.warn(`[Native MP3 Engine] Extracción local no disponible (${localErr.message}). Activando motor en la nube con proxies anti-bot...`);
+
+          // ESTRATEGIA 2: Motor en la nube con proxies rotativos (para Render y servidores cloud)
+          const startRes = await fetch(`https://p.savenow.to/ajax/download.php?format=mp3&audio_quality=320&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${targetVideoId}`)}`, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(15000)
+          });
+          const startData = await startRes.json();
+
+          if (!startData.success || !startData.progress_url) {
+            throw new Error('Servidor de conversión en la nube no disponible temporalmente');
+          }
+
+          let downloadUrl = null;
+          for (let i = 0; i < 28; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const pr = await fetch(startData.progress_url, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(10000)
+            });
+            const pd = await pr.json();
+            if (pd.download_url && pd.progress === 1000) {
+              downloadUrl = pd.download_url;
+              break;
+            }
+            if (pd.error) throw new Error(pd.error);
+          }
+
+          if (!downloadUrl) {
+            throw new Error('Tiempo de espera agotado al procesar audio en la nube');
+          }
+
+          console.log(`[Native MP3 Engine] Descargando audio desde servidor de alta velocidad...`);
+          const fileRes = await fetch(downloadUrl, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(45000)
+          });
+
+          if (!fileRes.ok) throw new Error(`Error ${fileRes.status} al descargar archivo de audio`);
+
+          const cloudBuffer = Buffer.from(await fileRes.arrayBuffer());
+          rawMp3 = stripOldId3(cloudBuffer);
+          console.log(`[Native MP3 Engine] Audio recibido desde la nube: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
+        }
+
+        if (!rawMp3 || rawMp3.length === 0) {
+          throw new Error('No se pudo obtener el archivo de audio');
+        }
+
+        // Inyectar metadatos ID3v2.3 oficiales y carátula HD 1000px
         const tag = createId3Tag({
           title: title || safeFilename,
           artist: artist || 'Artista',
@@ -729,7 +783,7 @@ function stripOldId3(mp3Buffer) {
         });
 
         res.end(finalMp3);
-        console.log(`[Native MP3 Engine] ✅ Enviado exitosamente: "${safeFilename}.mp3" (${(finalMp3.length / (1024 * 1024)).toFixed(2)} MB)`);
+        console.log(`[Native MP3 Engine] ✅ Enviado exitosamente al cliente: "${safeFilename}.mp3" (${(finalMp3.length / (1024 * 1024)).toFixed(2)} MB)`);
         return;
       } catch (err) {
         console.error('[Native MP3 Engine] Error:', err.message);

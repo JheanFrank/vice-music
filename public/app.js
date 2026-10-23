@@ -247,13 +247,13 @@ function setupEventListeners() {
   // Botón Descargar MP3 320 en la barra fija
   const btnPlayerDlMp3 = document.getElementById('btnPlayerDlMp3');
   if (btnPlayerDlMp3) {
-    btnPlayerDlMp3.addEventListener('click', () => {
+    btnPlayerDlMp3.addEventListener('click', (e) => {
       if (state.currentTrack) {
         downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
           album: state.currentTrack.album,
           coverUrl: state.currentTrack.cover,
           year: state.currentTrack.releaseDate
-        });
+        }, e.currentTarget);
       } else {
         showToast('Selecciona primero una canción para descargar en MP3 320.');
       }
@@ -263,15 +263,15 @@ function setupEventListeners() {
   // Botones movil en btn-group (📥 y 🎧)
   const btnPlayerDlMp3Mobile = document.getElementById('btnPlayerDlMp3Mobile');
   if (btnPlayerDlMp3Mobile) {
-    btnPlayerDlMp3Mobile.addEventListener('click', () => {
+    btnPlayerDlMp3Mobile.addEventListener('click', (e) => {
       if (state.currentTrack) {
         downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
           album: state.currentTrack.album,
           coverUrl: state.currentTrack.cover,
           year: state.currentTrack.releaseDate
-        });
+        }, e.currentTarget);
       } else {
-        showToast('Selecciona primero una cancion para descargar en MP3.');
+        showToast('Selecciona primero una canción para descargar en MP3.');
       }
     });
   }
@@ -692,12 +692,12 @@ async function openAlbumDetail(albumId) {
       });
 
       // Descargar MP3 320 kbps oficial vía stream
-      trackRow.querySelector('.btn-dl-mp3').addEventListener('click', () => {
+      trackRow.querySelector('.btn-dl-mp3').addEventListener('click', (e) => {
         downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
           album: album.title,
           coverUrl: album.coverXl,
           year: album.releaseDate
-        });
+        }, e.currentTarget);
       });
 
       // Descargar pista individual
@@ -801,7 +801,7 @@ function renderTracks(tracks) {
         album: track.album,
         coverUrl: track.coverXl,
         year: track.releaseDate
-      });
+      }, e.currentTarget);
     });
 
     card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
@@ -923,11 +923,20 @@ async function playFullSong(artist, title, cover = null) {
 
 // ========================================================
 // DESCARGAR AUDIO 320 KBPS CON METADATOS OFICIALES Y CARÁTULA HD 1000PX
-// (100% EN LA MISMA PÁGINA, SIN ABRIR PESTAÑAS NUEVAS)
+// (100% EN LA MISMA PÁGINA, SIN ABRIR PESTAÑAS NUEVAS Y CON FEEDBACK VISUAL)
 // ========================================================
-async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}) {
+async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}, triggerBtn = null) {
   const displayTitle = title || 'Canción';
-  showToast(`⚡ Generando MP3 320 kbps con carátula 1000px: ${displayTitle}...`);
+  const originalBtnHtml = triggerBtn ? triggerBtn.innerHTML : null;
+
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.innerHTML = `<span>⏳ 320K...</span>`;
+    triggerBtn.style.opacity = '0.7';
+  }
+
+  showToast(`⚡ Procesando MP3 320 kbps con carátula 1000px: ${displayTitle}... Por favor espera.`);
+
   try {
     const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
     const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
@@ -945,18 +954,38 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 
-    // Disparar descarga directa en la misma ventana (sin abrir pestañas nuevas)
+    // Petición asíncrona directa para asegurar descarga limpia en la misma página
+    const res = await fetch(downloadApiUrl);
+    if (!res.ok) {
+      let msg = 'Error en el servidor al generar el archivo';
+      try {
+        const errJson = await res.json();
+        if (errJson.error) msg = errJson.error;
+      } catch (_) {}
+      throw new Error(msg);
+    }
+
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
     const a = document.createElement('a');
-    a.href = downloadApiUrl;
+    a.href = blobUrl;
     a.download = `${safeName}.mp3`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
-    showToast(`✅ Descarga iniciada: ${title}`);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+    showToast(`✅ ¡Descarga completada con éxito: ${safeName}.mp3!`);
   } catch (err) {
     console.error('[downloadMp3_320]', err);
     showToast('❌ Error al descargar MP3: ' + err.message);
+  } finally {
+    if (triggerBtn && originalBtnHtml !== null) {
+      triggerBtn.disabled = false;
+      triggerBtn.innerHTML = originalBtnHtml;
+      triggerBtn.style.opacity = '1';
+    }
   }
 }
 

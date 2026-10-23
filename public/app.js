@@ -907,29 +907,43 @@ async function playFullSong(artist, title, cover = null) {
 
 // DESCARGAR AUDIO EN MP3 DIRECTO DESDE NUESTRA PROPIA PAGINA (CANCIÓN COMPLETA)
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
-  showToast('📥 Descargando canción completa: ' + title + '...');
+  showToast('⏳ Preparando conversión MP3 completa para: ' + title + '... Espera unos segundos.');
   
-  const q = encodeURIComponent(artist + ' ' + title);
-  const filename = encodeURIComponent(title + ' - ' + artist);
-  let downloadUrl = '/api/download-mp3?q=' + q + '&filename=' + filename;
   const targetVid = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : null);
+  const q = encodeURIComponent(artist + ' ' + title);
+  let getUrlEndpoint = '/api/get-mp3-url?q=' + q;
   if (targetVid) {
-    downloadUrl += '&videoId=' + encodeURIComponent(targetVid);
-  }
-  if (audioUrl) {
-    downloadUrl += '&url=' + encodeURIComponent(audioUrl);
+    getUrlEndpoint += '&videoId=' + encodeURIComponent(targetVid);
   }
 
-  const a = document.createElement('a');
-  a.href = downloadUrl;
-  a.setAttribute('download', title + ' - ' + artist + '.mp3');
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    if (document.body.contains(a)) {
-      document.body.removeChild(a);
+  try {
+    const res = await fetch(getUrlEndpoint);
+    const data = await res.json();
+
+    if (!res.ok || !data.downloadUrl) {
+      throw new Error(data.error || 'No se pudo generar el enlace de descarga');
     }
-  }, 2000);
+
+    showToast('🚀 Descarga lista. Iniciando transferencia de ' + title + '...');
+    
+    // Descargar a través de nuestro proxy de stream para forzar el nombre de archivo limpio y extensión mp3
+    const filename = encodeURIComponent(title + ' - ' + artist);
+    const downloadEndpoint = '/api/download-mp3?url=' + encodeURIComponent(data.downloadUrl) + '&filename=' + filename;
+
+    const a = document.createElement('a');
+    a.href = downloadEndpoint;
+    a.setAttribute('download', `${title} - ${artist}.mp3`);
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (document.body.contains(a)) {
+        document.body.removeChild(a);
+      }
+    }, 2000);
+  } catch (err) {
+    console.error('Error al descargar MP3 completo:', err);
+    showToast('❌ Error al preparar descarga MP3: ' + err.message);
+  }
 }
 
 function togglePlayPause() {

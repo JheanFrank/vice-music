@@ -1,11 +1,9 @@
-// Build trigger: 2026-10-22T21:03:47.6666062Z
+// Build trigger: 2026-10-23T00:30:00.0000000Z
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
-import { Ytdl, Client } from '@distube/ytdl-core';
-const ytdl = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded] });
 
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {
@@ -249,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.6', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song Direct Download' }));
+      return res.end(JSON.stringify({ version: '2.7', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + MP3 Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -459,158 +457,160 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 5. DESCARGA DIRECTA MP3 DESDE YOUTUBE (Sin redirigir, desde nuestro servidor)
-        if (pathname === '/api/debug-ytdl') {
-      const v = (reqUrl.searchParams.get('v') || 'zZ_xuLlZ_t4').trim();
-      try {
-        const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${v}`, {
-                  });
-        const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo).map(f => ({
-          container: f.container,
-          bitrate: f.audioBitrate,
-          hasUrl: !!f.url
-        }));
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ status: 'ok', title: info.videoDetails.title, audioFormats }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ status: 'error', message: err.message }));
-      }
-    }
-
-    if (pathname === '/api/download-mp3') {
+    // 5. OBTENER URL DE DESCARGA MP3 COMPLETA VÍA LOADER.TO (Canción completa, no preview)
+    if (pathname === '/api/get-mp3-url') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
-      const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
-      const directUrl = (reqUrl.searchParams.get('url') || '').trim();
       const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
 
-      if (!q && !directUrl && !videoIdParam) {
+      if (!q && !videoIdParam) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
       }
 
-      const safeFilename = filename.replace(/[^\w\s\-\.]/g, '').trim() || 'cancion';
-      const encodedFilename = encodeURIComponent(safeFilename);
-
-      // 1. INTENTAR PRIMERO DESCARGAR LA CANCIÓN 100% COMPLETA VÍA YOUTUBE AUDIO
-      let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
-
-      if (!targetVideoId && q) {
-        try {
-          const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' audio')}`, {
-            headers: { 'User-Agent': USER_AGENT },
-            signal: AbortSignal.timeout(5000)
-          });
-          const html = await ytRes.text();
-          const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-          if (match) targetVideoId = match[1];
-        } catch (e) {
-          console.warn('[Download MP3] Búsqueda de videoId falló:', e.message);
-        }
-      }
-
-      if (targetVideoId) {
-        try {
-          const stream = ytdl.download(`https://www.youtube.com/watch?v=${targetVideoId}`, {
-            filter: f => f.hasAudio && !f.hasVideo,
-            quality: 'highestaudio'
-          });
-
-          let streamSent = false;
-          await new Promise((resolve, reject) => {
-            stream.once('data', (chunk) => {
-              streamSent = true;
-              res.writeHead(200, {
-                'Content-Type': 'audio/mpeg',
-                'Content-Disposition': 'attachment; filename="' + safeFilename + '.mp3"; filename*=UTF-8\'\'' + encodedFilename + '.mp3',
-                'Cache-Control': 'no-cache'
-              });
-              res.write(chunk);
-              stream.pipe(res);
-              res.on('close', () => {
-                try { stream.destroy(); } catch (e) {}
-              });
-              resolve();
-            });
-
-            stream.once('error', (err) => {
-              if (!streamSent) reject(err);
-            });
-
-            setTimeout(() => {
-              if (!streamSent) {
-                try { stream.destroy(); } catch (e) {}
-                reject(new Error('YouTube stream timeout'));
-              }
-            }, 25000);
-          });
-
-          if (streamSent) return;
-        } catch (ytErr) {
-          console.warn('[Download MP3] YouTube full audio falló, activando respaldo:', ytErr.message);
-        }
-      }
-
-      // 2. RESPALDO / PREVIEW SI YOUTUBE NO ESTUVO DISPONIBLE
       try {
-        let audioUrl = null;
+        // Paso 1: Encontrar videoId de YouTube
+        let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
 
-        if (directUrl && (directUrl.includes('dzcdn.net') || directUrl.includes('apple.com'))) {
+        if (!targetVideoId && q) {
           try {
-            const probe = await fetch(directUrl, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
-            if (probe.ok) {
-              audioUrl = directUrl;
-            }
-          } catch (e) {}
-        }
-
-        if (!audioUrl && q) {
-          try {
-            const dzData = await fetchDeezer(`/search?q=${encodeURIComponent(q)}&limit=1`);
-            if (dzData && Array.isArray(dzData.data) && dzData.data[0] && dzData.data[0].preview) {
-              audioUrl = dzData.data[0].preview;
-            }
+            const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' audio')}`, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(8000)
+            });
+            const html = await ytRes.text();
+            const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+            if (match) targetVideoId = match[1];
           } catch (e) {
-            console.warn('[Download MP3] Falló Deezer:', e.message);
+            console.warn('[MP3 URL] Búsqueda de videoId falló:', e.message);
           }
         }
 
-        if (!audioUrl && q) {
-          try {
-            const itData = await fetchItunes(`/search?term=${encodeURIComponent(q)}&entity=song&limit=1&country=US`);
-            if (itData && Array.isArray(itData.results) && itData.results[0] && itData.results[0].previewUrl) {
-              audioUrl = itData.results[0].previewUrl;
-            }
-          } catch (e) {
-            console.warn('[Download MP3] Falló iTunes:', e.message);
-          }
-        }
-
-        if (audioUrl) {
-          const audioFetch = await fetch(audioUrl, { signal: AbortSignal.timeout(9000) });
-          if (!audioFetch.ok) throw new Error('CDN status ' + audioFetch.status);
-          const buf = Buffer.from(await audioFetch.arrayBuffer());
-
-          res.writeHead(200, {
-            'Content-Type': 'audio/mpeg',
-            'Content-Disposition': 'attachment; filename="' + safeFilename + '.mp3"; filename*=UTF-8\'\'' + encodedFilename + '.mp3',
-            'Content-Length': buf.length,
-            'Cache-Control': 'no-cache'
-          });
-          return res.end(buf);
-        } else {
+        if (!targetVideoId) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Audio no disponible para esta canción' }));
+          return res.end(JSON.stringify({ error: 'No se encontró el video en YouTube' }));
         }
+
+        console.log(`[MP3 URL] Iniciando conversión para videoId: ${targetVideoId}`);
+
+        // Paso 2: Iniciar conversión con loader.to
+        const startRes = await fetch(`https://loader.to/ajax/download.php?format=mp3&url=https://www.youtube.com/watch?v=${targetVideoId}`, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(15000)
+        });
+        const startData = await startRes.json();
+
+        if (!startData.success || !startData.progress_url) {
+          console.warn('[MP3 URL] loader.to no pudo iniciar conversión:', JSON.stringify(startData).substring(0, 200));
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'No se pudo iniciar la conversión del audio' }));
+        }
+
+        console.log(`[MP3 URL] Conversión iniciada, ID: ${startData.id}, esperando...`);
+
+        // Paso 3: Pollear progress_url hasta obtener download_url (max ~40 segundos)
+        let downloadUrl = null;
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const progRes = await fetch(startData.progress_url, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(15000)
+            });
+            const progData = await progRes.json();
+            console.log(`[MP3 URL] Poll ${i}: progress=${progData.progress}, text=${progData.text || ''}`);
+
+            if (progData.download_url) {
+              downloadUrl = progData.download_url;
+              break;
+            }
+          } catch (e) {
+            console.warn(`[MP3 URL] Poll ${i} error:`, e.message);
+          }
+        }
+
+        if (!downloadUrl) {
+          res.writeHead(504, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Tiempo agotado esperando la conversión del audio' }));
+        }
+
+        console.log(`[MP3 URL] ✅ URL de descarga obtenida: ${downloadUrl}`);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          downloadUrl,
+          title: startData.title || startData.info?.title || 'cancion',
+          videoId: targetVideoId
+        }));
+
       } catch (err) {
-        console.error('[Download MP3] Error final:', err.message);
+        console.error('[MP3 URL] Error:', err.message);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: err.message }));
         }
         return;
       }
-      return;
+    }
+
+    // 6. PROXY DE DESCARGA MP3 (Descarga desde loader.to CDN y entrega al usuario con nombre correcto)
+    if (pathname === '/api/download-mp3') {
+      const downloadUrl = (reqUrl.searchParams.get('url') || '').trim();
+      const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
+
+      if (!downloadUrl) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'URL de descarga vacía' }));
+      }
+
+      const safeFilename = filename.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
+      const encodedFilename = encodeURIComponent(safeFilename);
+
+      try {
+        const audioFetch = await fetch(downloadUrl, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(60000)
+        });
+
+        if (!audioFetch.ok) {
+          throw new Error('CDN respondió con status ' + audioFetch.status);
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+          'Cache-Control': 'no-cache',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        // Pipe directo del CDN al usuario
+        const reader = audioFetch.body.getReader();
+        const pump = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              res.end();
+              break;
+            }
+            if (!res.write(value)) {
+              await new Promise(resolve => res.once('drain', resolve));
+            }
+          }
+        };
+
+        res.on('close', () => {
+          try { reader.cancel(); } catch (e) {}
+        });
+
+        await pump();
+        return;
+      } catch (err) {
+        console.error('[Download MP3 Proxy] Error:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
     }
 
     // Servir archivos estáticos del frontend
@@ -641,15 +641,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌴 VICE MUSIC // MOTOR DUAL: DEEZER + ITUNES + AUDIO STREAM`);
   console.log(`🌐 Puerto: ${PORT}`);
   console.log(`======================================================\n`);
-
-  // Pre-calentar el motor de descarga en segundo plano para que la primera descarga sea instantánea
-  setTimeout(async () => {
-    try {
-      console.log('⏳ [Ytdl] Pre-calentando motor de YouTube...');
-      await ytdl.getInfo('https://www.youtube.com/watch?v=zZ_xuLlZ_t4');
-      console.log('✅ [Ytdl] Motor de audio completo listo y en caché');
-    } catch (e) {
-      console.warn('⚠️ [Ytdl] Pre-calentamiento diferido:', e.message);
-    }
-  }, 2500);
 });

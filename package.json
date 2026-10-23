@@ -5,7 +5,8 @@
   "main": "server.mjs",
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "postinstall": "node patch_ytdl.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

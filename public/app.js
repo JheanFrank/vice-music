@@ -907,16 +907,44 @@ async function playFullSong(artist, title, cover = null) {
 
 // DESCARGAR AUDIO
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
-  // Para evitar archivos corruptos de anuncios (962B) o cortes de 30 segundos:
-  // Ofrecemos la descarga de la canción completa en alta fidelidad
-  showToast('⚡ Preparando descarga completa oficial para: ' + title + '...');
-  
-  if (state.currentTrack && state.currentTrack.lucidaUrl) {
-    window.open(state.currentTrack.lucidaUrl, '_blank');
-  } else {
-    // Si no tiene lucidaUrl directa, abrir con la búsqueda de pista oficial
-    const searchTarget = encodeURIComponent(`${artist} ${title}`);
-    window.open(`https://lucida.to/?url=https://www.deezer.com/search/${searchTarget}`, '_blank');
+  // Descarga MP3 320 kbps completa evitando el archivo de 962 B y el preview de 30 s
+  showToast(`⚡ Preparando descarga 320 kbps para: ${title} …`);
+  try {
+    // Iniciar conversión mediante el backend limpio
+    const query = `${artist} ${title}`;
+    const startRes = await fetch(`/api/start-mp3-conversion?q=${encodeURIComponent(query)}`);
+    const startData = await startRes.json();
+    if (!startData.success) {
+      throw new Error(startData.error || 'Error al iniciar la conversión');
+    }
+    const progressUrl = startData.progressUrl;
+    // Polling del progreso
+    while (true) {
+      await new Promise(r => setTimeout(r, 1500));
+      const progRes = await fetch(`/api/check-mp3-progress?url=${encodeURIComponent(progressUrl)}`);
+      const progData = await progRes.json();
+      if (progData.isFinished) {
+        const downloadUrl = progData.downloadUrl;
+        // Construir URL del proxy de descarga con nombre de archivo seguro
+        const safeName = `${artist}-${title}`.replace(/[^\w\s\-\.]/g, '_');
+        const finalUrl = `/api/download-mp3?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(safeName)}`;
+        // Disparar descarga mediante enlace temporal
+        const a = document.createElement('a');
+        a.href = finalUrl;
+        a.download = `${safeName}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast(`✅ Descarga iniciada: ${title}`);
+        break;
+      } else {
+        const pct = progData.progress || 0;
+        showToast(`⏳ Conversión en progreso… ${pct}%`);
+      }
+    }
+  } catch (err) {
+    console.error('[downloadMp3_320]', err);
+    showToast('❌ Error al descargar MP3: ' + err.message);
   }
 }
 

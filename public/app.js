@@ -152,17 +152,21 @@ if (window.YT && window.YT.Player) {
 }
 
 function onYtStateChange(event) {
-  if (state.playbackSource !== 'full') return;
+  if (state.playbackSource !== 'full' && state.playbackSource !== 'full_yt') return;
 
   if (event.data === 1) { // PLAYING
     setPlayingState(true);
     startYtProgress();
+    if (state.currentTrack) updateMediaSession(state.currentTrack);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   } else if (event.data === 2) { // PAUSED
     setPlayingState(false);
     stopYtProgress();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   } else if (event.data === 0) { // ENDED
     setPlayingState(false);
     stopYtProgress();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
     currentTimeLabel.innerText = '00:00';
     progressFill.style.width = '0%';
     progressThumb.style.left = '0%';
@@ -182,6 +186,7 @@ function startYtProgress() {
       const pct = (cur / dur) * 100;
       progressFill.style.width = `${pct}%`;
       progressThumb.style.left = `${pct}%`;
+      updateMediaSessionPosition(cur, dur);
     }
   }, 250);
 }
@@ -237,7 +242,7 @@ function setupEventListeners() {
   if (btnPlayFullSong) {
     btnPlayFullSong.addEventListener('click', () => {
       if (state.currentTrack) {
-        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover);
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album);
       } else {
         showToast('Selecciona primero una canción para escucharla completa.');
       }
@@ -279,7 +284,7 @@ function setupEventListeners() {
   if (btnPlayFullSongMobile) {
     btnPlayFullSongMobile.addEventListener('click', () => {
       if (state.currentTrack) {
-        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover);
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album);
       } else {
         showToast('Selecciona primero una cancion para escucharla completa.');
       }
@@ -306,29 +311,41 @@ function setupEventListeners() {
     const rect = progressTrack.getBoundingClientRect();
     const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
 
-    if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getDuration === 'function') {
+    if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.getDuration === 'function') {
       const dur = ytPlayer.getDuration();
       if (dur > 0) {
         ytPlayer.seekTo(pos * dur, true);
+        updateMediaSessionPosition(pos * dur, dur);
       }
     } else if (state.audio.duration) {
       state.audio.currentTime = pos * state.audio.duration;
+      updateMediaSessionPosition(state.audio.currentTime, state.audio.duration);
     }
   });
 
   state.audio.addEventListener('timeupdate', () => {
-    if (state.playbackSource === 'preview') {
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
       updateProgress();
     }
   });
   state.audio.addEventListener('ended', () => {
-    if (state.playbackSource === 'preview') setPlayingState(false);
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      setPlayingState(false);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+    }
   });
   state.audio.addEventListener('play', () => {
-    if (state.playbackSource === 'preview') setPlayingState(true);
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      setPlayingState(true);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      if (state.currentTrack) updateMediaSession(state.currentTrack);
+    }
   });
   state.audio.addEventListener('pause', () => {
-    if (state.playbackSource === 'preview') setPlayingState(false);
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      setPlayingState(false);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+    }
   });
 }
 
@@ -675,20 +692,21 @@ async function openAlbumDetail(albumId) {
       trackRow.querySelector('.btn-track-play').addEventListener('click', () => {
         if (!track.preview) {
           showToast('⚠️ Muestra de 30s no disponible. Reproduciendo canción completa oficial...');
-          playFullSong(track.artist, track.title, album.coverXl);
+          playFullSong(track.artist, track.title, album.coverXl, album.title);
           return;
         }
         loadTrack({
           title: track.title,
           artist: track.artist,
           cover: album.coverXl,
+          album: album.title,
           audioUrl: track.preview
         });
       });
 
-      // Escuchar Canción Completa (YouTube Audio Oficial en segundo plano)
+      // Escuchar Canción Completa (Audio Oficial en segundo plano)
       trackRow.querySelector('.btn-play-full').addEventListener('click', () => {
-        playFullSong(track.artist, track.title, album.coverXl);
+        playFullSong(track.artist, track.title, album.coverXl, album.title);
       });
 
       // Descargar MP3 320 kbps oficial vía stream
@@ -799,7 +817,7 @@ function renderTracks(tracks) {
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
-      playFullSong(track.artist, track.title, track.coverXl);
+      playFullSong(track.artist, track.title, track.coverXl, track.album);
     });
 
     card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
@@ -835,12 +853,111 @@ function renderTracks(tracks) {
 }
 
 // ========================================================
+// SISTEMA OFICIAL MEDIA SESSION (Control Nativo Móvil, Pantalla de Bloqueo y Chrome)
+// Oculta 100% cualquier rastro o procedencia de YouTube
+// ========================================================
+let mediaSessionActionsConfigured = false;
+
+function setupMediaSessionActions() {
+  if (mediaSessionActionsConfigured || !('mediaSession' in navigator)) return;
+  mediaSessionActionsConfigured = true;
+
+  const handlers = [
+    ['play', () => {
+      togglePlayPause();
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    }],
+    ['pause', () => {
+      togglePlayPause();
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+    }],
+    ['previoustrack', () => {
+      seekDelta(-10);
+    }],
+    ['nexttrack', () => {
+      seekDelta(10);
+    }],
+    ['seekbackward', (details) => {
+      seekDelta(-(details.seekOffset || 10));
+    }],
+    ['seekforward', (details) => {
+      seekDelta(details.seekOffset || 10);
+    }],
+    ['seekto', (details) => {
+      if (details.seekTime !== undefined) {
+        if ((state.playbackSource === 'full_yt' || state.playbackSource === 'full') && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+          ytPlayer.seekTo(details.seekTime, true);
+        } else if (state.audio) {
+          state.audio.currentTime = details.seekTime;
+        }
+      }
+    }]
+  ];
+
+  for (const [action, handler] of handlers) {
+    try {
+      navigator.mediaSession.setActionHandler(action, handler);
+    } catch (e) {
+      // Ignorar si el navegador no soporta alguna acción específica
+    }
+  }
+}
+
+function updateMediaSession(track) {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const rawCover = (track && track.cover) || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl) || 'https://via.placeholder.com/512/1a0933/ff2a85?text=VI';
+    let coverUrl = rawCover;
+    if (coverUrl && coverUrl.startsWith('http://')) {
+      coverUrl = coverUrl.replace('http://', 'https://');
+    }
+
+    const title = (track && track.title) || (state.currentTrack && state.currentTrack.title) || 'Vice Music';
+    const artist = (track && track.artist) || (state.currentTrack && state.currentTrack.artist) || 'Vice Music Official';
+    const album = (track && track.album) || (state.currentAlbum && state.currentAlbum.title) || title;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: title,
+      artist: artist,
+      album: album,
+      artwork: [
+        { src: coverUrl, sizes: '96x96', type: 'image/jpeg' },
+        { src: coverUrl, sizes: '128x128', type: 'image/jpeg' },
+        { src: coverUrl, sizes: '192x192', type: 'image/jpeg' },
+        { src: coverUrl, sizes: '256x256', type: 'image/jpeg' },
+        { src: coverUrl, sizes: '384x384', type: 'image/jpeg' },
+        { src: coverUrl, sizes: '512x512', type: 'image/jpeg' },
+        { src: coverUrl, sizes: '1000x1000', type: 'image/jpeg' }
+      ]
+    });
+
+    navigator.mediaSession.playbackState = state.isPlaying ? 'playing' : 'paused';
+    setupMediaSessionActions();
+  } catch (err) {
+    console.warn('[MediaSession] Error al sincronizar metadatos:', err.message);
+  }
+}
+
+function updateMediaSessionPosition(position, duration) {
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+  try {
+    if (duration > 0 && position >= 0 && position <= duration) {
+      navigator.mediaSession.setPositionState({
+        duration: duration,
+        playbackRate: state.currentSpeed || 1,
+        position: position
+      });
+    }
+  } catch (e) {}
+}
+
+// ========================================================
 // REPRODUCTOR UNIFICADO (PREVIEW 30S + CANCIÓN COMPLETA)
 // ========================================================
 
 function loadTrack(track) {
   // Detener YouTube si estaba sonando
-  if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+  if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
     ytPlayer.pauseVideo();
     stopYtProgress();
   }
@@ -854,29 +971,42 @@ function loadTrack(track) {
   playerModeBadge.innerText = 'PREVIEW 30S';
   playerModeBadge.className = 'spec-pill';
 
+  updateMediaSession(track);
+
   if (track.audioUrl) {
     state.audio.src = track.audioUrl;
     state.audio.playbackRate = state.currentSpeed;
-    state.audio.play().then(() => setPlayingState(true)).catch(() => setPlayingState(false));
+    state.audio.play().then(() => {
+      setPlayingState(true);
+      updateMediaSession(track);
+    }).catch(() => setPlayingState(false));
   }
 }
 
-// REPRODUCIR CANCIÓN 100% COMPLETA (SIN VIDEO MOLESTO EN PANTALLA)
-async function playFullSong(artist, title, cover = null) {
-  // Pausar audio de muestra si está sonando
+// REPRODUCIR CANCIÓN 100% COMPLETA (STREAM LIMPIO NATIVO SIN RASTROS DE YOUTUBE)
+async function playFullSong(artist, title, cover = null, album = null) {
+  // Pausar audio previo
   if (state.audio) {
     state.audio.pause();
   }
+  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    ytPlayer.pauseVideo();
+    stopYtProgress();
+  }
 
-  state.playbackSource = 'full';
-  state.currentTrack = (state.currentTrack && state.currentTrack.title === title)
-    ? { ...state.currentTrack, title, artist, cover }
-    : { title, artist, cover };
+  const trackObj = {
+    title,
+    artist,
+    cover: cover || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl),
+    album: album || (state.currentAlbum && state.currentAlbum.title) || title
+  };
+
+  state.currentTrack = trackObj;
 
   playerTitle.innerText = title;
   playerArtist.innerText = artist;
-  if (cover) {
-    playerCover.src = cover;
+  if (trackObj.cover) {
+    playerCover.src = trackObj.cover;
   }
   playerModeBadge.innerText = '🎧 CANCIÓN COMPLETA';
   playerModeBadge.className = 'spec-pill gold';
@@ -885,50 +1015,86 @@ async function playFullSong(artist, title, cover = null) {
   progressFill.style.width = '0%';
   progressThumb.style.left = '0%';
 
-  showToast('🎧 Sintonizando canción completa: ' + title + '...');
+  // Actualizar MediaSession inmediatamente para el navegador y celular (Cero YouTube)
+  updateMediaSession(trackObj);
+
+  showToast('🎧 Sintonizando canción completa oficial: ' + title + '...');
 
   try {
     const res = await fetch('/api/fullaudio?q=' + encodeURIComponent(artist + ' ' + title));
     const data = await res.json();
 
-    if (data.videoId) {
-      if (state.currentTrack) {
-        state.currentTrack.videoId = data.videoId;
-      }
-      initYtPlayer();
+    if (data.streamUrl) {
+      // 1. INTENTO PRIORITARIO: Stream directo nativo en <audio> (Sin rastros de YouTube)
+      state.playbackSource = 'full_stream';
+      state.audio.src = data.streamUrl;
+      state.audio.playbackRate = state.currentSpeed;
 
-      const tryPlay = () => {
-        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-          ytPlayer.loadVideoById(data.videoId);
-          ytPlayer.playVideo();
-          if (typeof ytPlayer.setPlaybackRate === 'function') {
-            ytPlayer.setPlaybackRate(state.currentSpeed);
-          }
+      let playedSuccessfully = false;
+      const playPromise = state.audio.play();
+
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          playedSuccessfully = true;
           setPlayingState(true);
-          startYtProgress();
+          updateMediaSession(trackObj);
           showToast('🎧 Reproduciendo canción completa oficial: ' + title);
-          return true;
-        }
-        return false;
-      };
-
-      if (!tryPlay()) {
-        ytPendingVideoId = data.videoId;
-        showToast('⏳ Sintonizando reproductor...');
-        let retries = 0;
-        const interval = setInterval(() => {
-          retries++;
-          if (tryPlay() || retries > 12) {
-            clearInterval(interval);
+        }).catch((err) => {
+          console.warn('[Reproductor] Stream directo no pudo arrancar, activando respaldo:', err.message);
+          if (data.videoId) {
+            fallbackToYt(data.videoId, trackObj);
           }
-        }, 350);
+        });
       }
+
+      // Si el stream demora más de 4s en empezar a sonar, activar respaldo transparente
+      setTimeout(() => {
+        if (!playedSuccessfully && state.playbackSource === 'full_stream' && state.audio.paused && data.videoId) {
+          console.log('[Reproductor] Timeout de stream nativo, cambiando a respaldo transparente');
+          fallbackToYt(data.videoId, trackObj);
+        }
+      }, 4000);
+
+    } else if (data.videoId) {
+      fallbackToYt(data.videoId, trackObj);
     } else {
       showToast('❌ No se encontró el stream oficial para esta canción.');
     }
   } catch (err) {
     console.error('Error al conectar con stream:', err);
     showToast('Error al sintonizar stream completo: ' + err.message);
+  }
+}
+
+function fallbackToYt(videoId, trackObj) {
+  state.playbackSource = 'full_yt';
+  initYtPlayer();
+
+  const tryPlay = () => {
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+      ytPlayer.loadVideoById(videoId);
+      ytPlayer.playVideo();
+      if (typeof ytPlayer.setPlaybackRate === 'function') {
+        ytPlayer.setPlaybackRate(state.currentSpeed);
+      }
+      setPlayingState(true);
+      startYtProgress();
+      updateMediaSession(trackObj);
+      showToast('🎧 Reproduciendo canción completa oficial: ' + trackObj.title);
+      return true;
+    }
+    return false;
+  };
+
+  if (!tryPlay()) {
+    ytPendingVideoId = videoId;
+    let retries = 0;
+    const interval = setInterval(() => {
+      retries++;
+      if (tryPlay() || retries > 12) {
+        clearInterval(interval);
+      }
+    }, 350);
   }
 }
 
@@ -1112,36 +1278,44 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
 }
 
 function togglePlayPause() {
-  if (state.playbackSource === 'full') {
+  if (state.playbackSource === 'full_yt' || (state.playbackSource === 'full' && ytPlayer)) {
     if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
     const ytState = ytPlayer.getPlayerState();
     if (ytState === 1) { // está reproduciendo
       ytPlayer.pauseVideo();
       setPlayingState(false);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     } else {
       ytPlayer.playVideo();
       setPlayingState(true);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      if (state.currentTrack) updateMediaSession(state.currentTrack);
     }
   } else {
     if (!state.audio.src) return;
     if (state.audio.paused) {
       state.audio.play();
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      if (state.currentTrack) updateMediaSession(state.currentTrack);
     } else {
       state.audio.pause();
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     }
   }
 }
 
 function seekDelta(seconds) {
-  if (state.playbackSource === 'full') {
+  if (state.playbackSource === 'full_yt' || (state.playbackSource === 'full' && ytPlayer)) {
     if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
     const cur = ytPlayer.getCurrentTime() || 0;
     const dur = ytPlayer.getDuration() || 0;
     const target = Math.max(0, Math.min(dur, cur + seconds));
     ytPlayer.seekTo(target, true);
+    updateMediaSessionPosition(target, dur);
   } else {
     if (!state.audio.duration) return;
     state.audio.currentTime = Math.max(0, Math.min(state.audio.duration, state.audio.currentTime + seconds));
+    updateMediaSessionPosition(state.audio.currentTime, state.audio.duration);
   }
 }
 
@@ -1157,7 +1331,7 @@ function cyclePlaybackSpeed() {
   }
 
   // Aplicar a YouTube
-  if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
+  if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
     ytPlayer.setPlaybackRate(state.currentSpeed);
   }
 
@@ -1193,6 +1367,7 @@ function updateProgress() {
     const percent = (current / total) * 100;
     progressFill.style.width = `${percent}%`;
     progressThumb.style.left = `${percent}%`;
+    updateMediaSessionPosition(current, total);
   }
 }
 

@@ -958,22 +958,20 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
       throw new Error('La conversión tardó más de lo esperado. Por favor presiona descargar nuevamente.');
     }
 
-    showToast('🚀 ¡Audio listo! Descargando canción completa de ' + title + '...');
+    showToast('🚀 ¡Audio listo! Descargando canción completa: ' + title + '...');
 
-    // 3. Descargar a través de nuestro proxy seguro para nombre limpio de archivo
-    const safeFilename = encodeURIComponent(title + ' - ' + artist);
-    const proxyDlUrl = '/api/download-mp3?url=' + encodeURIComponent(downloadUrl) + '&filename=' + safeFilename;
-
+    // 3. Descarga directa en el navegador desde el CDN de audio verificado (sin cortes de Render)
     const a = document.createElement('a');
-    a.href = proxyDlUrl;
+    a.href = downloadUrl;
     a.setAttribute('download', `${title} - ${artist}.mp3`);
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
       if (document.body.contains(a)) {
         document.body.removeChild(a);
       }
-    }, 3000);
+    }, 4000);
 
   } catch (err) {
     console.error('Error al descargar MP3 completo:', err);

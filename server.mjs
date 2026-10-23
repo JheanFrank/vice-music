@@ -184,6 +184,73 @@ async function getTopColombia() {
       }
     }
 
+    // Fallback Apple Music Oficial Colombia (100% libre de restricciones en cualquier nube)
+    if (tracks.length === 0) {
+      try {
+        const itunesRes = await fetch('https://itunes.apple.com/co/rss/topsongs/limit=10/json', {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(6000)
+        });
+        const itunesData = await itunesRes.json();
+        const entries = itunesData.feed?.entry || [];
+        tracks = entries.map((e, idx) => {
+          const previewObj = Array.isArray(e.link) ? e.link.find(l => l.attributes && l.attributes['im:assetType'] === 'preview') : null;
+          const imgObj = (e['im:image'] && e['im:image'].length) ? e['im:image'][e['im:image'].length - 1] : null;
+          const rawImg = imgObj ? imgObj.label : '';
+          const coverXl = rawImg ? rawImg.replace(/\/\d+x\d+bb\./, '/1000x1000bb.') : '';
+          const trackId = e.id?.attributes?.['im:id'] || `itunes_${idx}`;
+
+          return {
+            rank: idx + 1,
+            id: `itunes_${trackId}`,
+            deezerId: null,
+            title: e['im:name']?.label || 'Canción',
+            artist: e['im:artist']?.label || 'Artista',
+            album: e['im:collection']?.['im:name']?.label || 'Álbum',
+            albumId: null,
+            deezerAlbumId: null,
+            coverXl: coverXl,
+            duration: 30,
+            preview: previewObj ? previewObj.attributes?.href : null,
+            link: e.id?.label || '',
+            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(e.id?.label || '')}`,
+            source: 'itunes'
+          };
+        });
+      } catch (itunesErr) {
+        console.warn('Fallback iTunes Top Songs falló:', itunesErr.message);
+      }
+    }
+
+    if (albums.length === 0) {
+      try {
+        const itunesAlbRes = await fetch('https://itunes.apple.com/co/rss/topalbums/limit=6/json', {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(6000)
+        });
+        const itunesAlbData = await itunesAlbRes.json();
+        const albEntries = itunesAlbData.feed?.entry || [];
+        albums = albEntries.map(a => {
+          const imgObj = (a['im:image'] && a['im:image'].length) ? a['im:image'][a['im:image'].length - 1] : null;
+          const rawImg = imgObj ? imgObj.label : '';
+          const coverXl = rawImg ? rawImg.replace(/\/\d+x\d+bb\./, '/1000x1000bb.') : '';
+          const albId = a.id?.attributes?.['im:id'] || 'itunes_alb';
+          return {
+            id: `itunes_${albId}`,
+            title: a['im:name']?.label || 'Álbum',
+            artist: a['im:artist']?.label || 'Artista',
+            coverXl: coverXl,
+            nbTracks: a['im:itemCount']?.label || '—',
+            releaseDate: 'Oficial',
+            link: a.link?.attributes?.href || '',
+            source: 'itunes'
+          };
+        });
+      } catch (itunesAlbErr) {
+        console.warn('Fallback iTunes Top Albums falló:', itunesAlbErr.message);
+      }
+    }
+
     cachedTopColombia = { tracks, albums };
     cachedTopColombiaTime = now;
     return cachedTopColombia;

@@ -206,10 +206,173 @@ function stopYtProgress() {
 }
 
 // ========================================================
+// SISTEMA DE AUTENTICACIÓN VIP (ADMIN / ADMIN)
+// ========================================================
+const AUTH_STORAGE_KEY = 'vice_vip_session_v1';
+let pendingPostAuthAction = null;
+
+function getAuthUser() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (session && session.user === 'admin') {
+      return session;
+    }
+  } catch (e) {
+    console.error('Error al leer sesión VIP:', e);
+  }
+  return null;
+}
+
+function isUserLoggedIn() {
+  return !!getAuthUser();
+}
+
+function updateAuthUI() {
+  const user = getAuthUser();
+  const btnOpenLogin = document.getElementById('btnOpenLogin');
+  const authUserInfo = document.getElementById('authUserInfo');
+  const authUserName = document.getElementById('authUserName');
+
+  if (user) {
+    if (btnOpenLogin) btnOpenLogin.classList.add('hidden');
+    if (authUserInfo) authUserInfo.classList.remove('hidden');
+    if (authUserName) authUserName.textContent = user.user || 'admin';
+  } else {
+    if (btnOpenLogin) btnOpenLogin.classList.remove('hidden');
+    if (authUserInfo) authUserInfo.classList.add('hidden');
+  }
+}
+
+function openLoginModal(subtitle = null, onLoginSuccess = null) {
+  pendingPostAuthAction = (typeof onLoginSuccess === 'function') ? onLoginSuccess : null;
+  const modal = document.getElementById('loginModal');
+  const subtitleEl = document.getElementById('loginModalSubtitle');
+  const alertEl = document.getElementById('loginAlert');
+  const userInput = document.getElementById('loginUsername');
+  const pwdInput = document.getElementById('loginPassword');
+
+  if (alertEl) {
+    alertEl.classList.add('hidden');
+    alertEl.textContent = '';
+  }
+  if (subtitleEl && subtitle) {
+    subtitleEl.textContent = subtitle;
+  } else if (subtitleEl) {
+    subtitleEl.textContent = 'Accede con tu cuenta VIP para descargar MP3 a 320 kbps y discografías completas.';
+  }
+
+  if (userInput) userInput.value = '';
+  if (pwdInput) pwdInput.value = '';
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      if (userInput) userInput.focus();
+    }, 120);
+  }
+}
+
+function closeLoginModal() {
+  const modal = document.getElementById('loginModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleLoginSubmit(e) {
+  if (e) e.preventDefault();
+  const userInput = document.getElementById('loginUsername');
+  const pwdInput = document.getElementById('loginPassword');
+  const alertEl = document.getElementById('loginAlert');
+  const btnSubmit = document.getElementById('btnLoginSubmit');
+  const btnText = document.getElementById('loginBtnText');
+  const spinner = document.getElementById('loginBtnSpinner');
+
+  const username = (userInput ? userInput.value : '').trim();
+  const password = (pwdInput ? pwdInput.value : '').trim();
+
+  if (!username || !password) {
+    if (alertEl) {
+      alertEl.textContent = 'Por favor ingresa usuario y contraseña.';
+      alertEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (btnSubmit) btnSubmit.disabled = true;
+  if (btnText) btnText.textContent = 'VERIFICANDO...';
+  if (spinner) spinner.classList.remove('hidden');
+  if (alertEl) alertEl.classList.add('hidden');
+
+  try {
+    let data = null;
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      data = await res.json();
+    } catch (netErr) {
+      // Fallback si la petición de red falla momentáneamente
+      if (username === 'admin' && password === 'admin') {
+        data = { success: true, user: 'admin', role: 'VIP Admin' };
+      } else {
+        data = { success: false, error: 'Credenciales inválidas.' };
+      }
+    }
+
+    if (data && data.success) {
+      const session = {
+        user: data.user || username,
+        role: data.role || 'VIP Admin',
+        token: data.token || 'vice_vip_admin_token_2026',
+        timestamp: Date.now()
+      };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+      updateAuthUI();
+      closeLoginModal();
+      showToast(`👑 ¡Sesión iniciada con éxito! Bienvenido, VIP ${session.user}.`);
+
+      if (pendingPostAuthAction) {
+        const action = pendingPostAuthAction;
+        pendingPostAuthAction = null;
+        try {
+          action();
+        } catch (actErr) {
+          console.error('Error al ejecutar descarga tras login:', actErr);
+        }
+      }
+    } else {
+      if (alertEl) {
+        alertEl.textContent = (data && data.error) || 'Usuario o contraseña incorrectos. Usa admin / admin.';
+        alertEl.classList.remove('hidden');
+      }
+    }
+  } catch (err) {
+    if (alertEl) {
+      alertEl.textContent = 'Error al comunicarse con el servidor.';
+      alertEl.classList.remove('hidden');
+    }
+  } finally {
+    if (btnSubmit) btnSubmit.disabled = false;
+    if (btnText) btnText.textContent = 'INGRESAR AL SISTEMA';
+    if (spinner) spinner.classList.add('hidden');
+  }
+}
+
+function handleLogout() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  updateAuthUI();
+  showToast('🔒 Sesión cerrada. Se requerirá login para descargar.');
+}
+
+// ========================================================
 // INICIALIZACIÓN
 // ========================================================
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  updateAuthUI();
   startVisualizer();
   
   // Búsqueda inicial por defecto
@@ -353,6 +516,42 @@ function setupEventListeners() {
       setPlayingState(false);
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     }
+  });
+
+  // Eventos de Autenticación VIP
+  const btnOpenLogin = document.getElementById('btnOpenLogin');
+  if (btnOpenLogin) btnOpenLogin.addEventListener('click', () => openLoginModal());
+
+  const btnCloseLoginModal = document.getElementById('btnCloseLoginModal');
+  if (btnCloseLoginModal) btnCloseLoginModal.addEventListener('click', closeLoginModal);
+
+  const loginModalBackdrop = document.getElementById('loginModalBackdrop');
+  if (loginModalBackdrop) loginModalBackdrop.addEventListener('click', closeLoginModal);
+
+  const loginForm = document.getElementById('loginForm');
+  if (loginForm) loginForm.addEventListener('submit', handleLoginSubmit);
+
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) btnLogout.addEventListener('click', handleLogout);
+
+  const btnTogglePassword = document.getElementById('btnTogglePassword');
+  if (btnTogglePassword) {
+    btnTogglePassword.addEventListener('click', () => {
+      const pwdInput = document.getElementById('loginPassword');
+      if (!pwdInput) return;
+      if (pwdInput.type === 'password') {
+        pwdInput.type = 'text';
+        btnTogglePassword.textContent = '🙈';
+      } else {
+        pwdInput.type = 'password';
+        btnTogglePassword.textContent = '👁️';
+      }
+    });
+  }
+
+  // Cerrar modal VIP con tecla Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeLoginModal();
   });
 }
 
@@ -650,6 +849,13 @@ async function openAlbumDetail(albumId) {
 
     // Acción: Descargar Álbum Completo (.ZIP en FLAC con Lucida)
     albumHeroContent.querySelector('.btn-download-full-album').addEventListener('click', () => {
+      if (!isUserLoggedIn()) {
+        openLoginModal(`Inicia sesión como VIP para descargar el álbum completo "${album.title}".`, () => {
+          showToast(`📦 Abriendo descarga del álbum completo en ZIP / FLAC para: ${album.title}`);
+          window.open(album.lucidaAlbumZipUrl, '_blank');
+        });
+        return;
+      }
       showToast(`📦 Abriendo descarga del álbum completo en ZIP / FLAC para: ${album.title}`);
       window.open(album.lucidaAlbumZipUrl, '_blank');
     });
@@ -734,6 +940,13 @@ async function openAlbumDetail(albumId) {
 
       // Descargar pista individual
       trackRow.querySelector('.btn-dl-flac').addEventListener('click', () => {
+        if (!isUserLoggedIn()) {
+          openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${track.title}".`, () => {
+            showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
+            window.open(track.lucidaUrl, '_blank');
+          });
+          return;
+        }
         showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
         window.open(track.lucidaUrl, '_blank');
       });
@@ -842,6 +1055,14 @@ function renderTracks(tracks) {
 
     card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
       e.stopPropagation();
+      if (!isUserLoggedIn()) {
+        openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${track.title}".`, () => {
+          showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
+          window.open(track.lucidaUrl, '_blank');
+        });
+        return;
+      }
+      showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
       window.open(track.lucidaUrl, '_blank');
     });
 
@@ -1146,13 +1367,22 @@ function hideDownloadProgress() {
 // (100% EN LA MISMA PÁGINA, CON BARRA DE PROGRESO EN VIVO Y CONTROL ANTI-SPAM)
 // ========================================================
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}, triggerBtn = null) {
+  const displayTitle = title || 'Canción';
+
+  // Verificación de credenciales VIP para descargar
+  if (!isUserLoggedIn()) {
+    openLoginModal(`Inicia sesión como VIP para descargar "${artist} - ${displayTitle}" en MP3 320 kbps.`, () => {
+      downloadMp3_320(artist, title, audioUrl, videoId, extraMeta, triggerBtn);
+    });
+    return;
+  }
+
   if (isDownloadingMp3) {
     showToast(`⏳ Ya hay una descarga en curso. Espera unos segundos para no saturar tu conexión.`);
     return;
   }
 
   isDownloadingMp3 = true;
-  const displayTitle = title || 'Canción';
   const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
   const originalBtnHtml = triggerBtn ? triggerBtn.innerHTML : null;
 

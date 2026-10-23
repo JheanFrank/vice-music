@@ -247,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '2.7', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + MP3 Download' }));
+      return res.end(JSON.stringify({ version: '2.8', status: 'online', engine: 'Hybrid Deezer + Apple Music + YouTube Full Song + MP3 Verified Download' }));
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
@@ -507,9 +507,9 @@ const server = http.createServer(async (req, res) => {
 
         console.log(`[MP3 URL] Conversión iniciada, ID: ${startData.id}, esperando...`);
 
-        // Paso 3: Pollear progress_url hasta obtener download_url (max ~40 segundos)
+        // Paso 3: Pollear progress_url hasta obtener download_url REAL (cuando progress === 1000)
         let downloadUrl = null;
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 2000));
           try {
             const progRes = await fetch(startData.progress_url, {
@@ -517,9 +517,10 @@ const server = http.createServer(async (req, res) => {
               signal: AbortSignal.timeout(15000)
             });
             const progData = await progRes.json();
-            console.log(`[MP3 URL] Poll ${i}: progress=${progData.progress}, text=${progData.text || ''}`);
+            console.log(`[MP3 URL] Poll ${i}: progress=${progData.progress}, text=${progData.text || ''}, dl=${progData.download_url ? progData.download_url.substring(0, 45) : 'null'}`);
 
-            if (progData.download_url) {
+            // Solo aceptar la URL cuando la conversión haya terminado de verdad (progreso 1000 y URL real de savenow)
+            if (progData.progress === 1000 && progData.download_url && !progData.download_url.includes('affadaffa')) {
               downloadUrl = progData.download_url;
               break;
             }
@@ -530,10 +531,10 @@ const server = http.createServer(async (req, res) => {
 
         if (!downloadUrl) {
           res.writeHead(504, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Tiempo agotado esperando la conversión del audio' }));
+          return res.end(JSON.stringify({ error: 'La conversión tardó más de lo esperado. Intenta nuevamente.' }));
         }
 
-        console.log(`[MP3 URL] ✅ URL de descarga obtenida: ${downloadUrl}`);
+        console.log(`[MP3 URL] ✅ URL de descarga legítima obtenida: ${downloadUrl}`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
@@ -575,12 +576,22 @@ const server = http.createServer(async (req, res) => {
           throw new Error('CDN respondió con status ' + audioFetch.status);
         }
 
-        res.writeHead(200, {
+        const contentType = audioFetch.headers.get('content-type') || '';
+        if (contentType.includes('text') || contentType.includes('html')) {
+          throw new Error('El enlace generado no contiene un archivo de audio válido.');
+        }
+
+        const contentLength = audioFetch.headers.get('content-length');
+        const headers = {
           'Content-Type': 'audio/mpeg',
           'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-          'Cache-Control': 'no-cache',
-          'Transfer-Encoding': 'chunked'
-        });
+          'Cache-Control': 'no-cache'
+        };
+        if (contentLength) {
+          headers['Content-Length'] = contentLength;
+        }
+
+        res.writeHead(200, headers);
 
         // Pipe directo del CDN al usuario
         const reader = audioFetch.body.getReader();

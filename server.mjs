@@ -476,7 +476,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ isAlbum: false, data: combinedTracks }));
     }
 
-    // 4. AUDIO COMPLETO VÍA YOUTUBE (Transmisión oficial controlable)
+    // 4. AUDIO COMPLETO VÍA YOUTUBE (Filtro Estricto Anti-Canales Piratas / FusaUrbano)
     if (pathname === '/api/fullaudio') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       if (!q) {
@@ -492,28 +492,63 @@ const server = http.createServer(async (req, res) => {
         });
         const html = await ytRes.text();
 
-        // Extraer el primer videoId válido de los resultados de YouTube
-        const regex = /"videoRenderer":\{"videoId":"([^"]+)".+?"title":\{"runs":\[\{"text":"([^"]+)"\}\]/g;
-        let match;
         let videoId = null;
         let videoTitle = null;
 
-        while ((match = regex.exec(html)) !== null) {
-          const id = match[1];
-          const title = match[2];
-          // Evitar shorts o IDs inválidos
-          if (id && id.length === 11) {
-            videoId = id;
-            videoTitle = title;
-            break;
+        const startIdx = html.indexOf('var ytInitialData = ');
+        if (startIdx !== -1) {
+          try {
+            const endIdx = html.indexOf(';</script>', startIdx);
+            const jsonStr = html.substring(startIdx + 20, endIdx);
+            const data = JSON.parse(jsonStr);
+            const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+
+            const JUNK_KEYWORDS = [
+              'lyrics', 'letra', 'letras', 'fusa', 'cantoyo', 'karaoke',
+              'clean hits', 'latinhype', 'player one', 'dj ', 'type beat',
+              'instrumental', 'remix', 'mix', 'trapurbano', 'boyz club',
+              'speed up', 'chicano', 'stringo', 'baila', 'extended'
+            ];
+
+            const candidates = [];
+            for (const s of sections) {
+              const items = s.itemSectionRenderer?.contents || [];
+              for (const it of items) {
+                const v = it.videoRenderer;
+                if (v && v.videoId && v.videoId.length === 11) {
+                  const title = v.title?.runs?.[0]?.text || '';
+                  const channel = v.ownerText?.runs?.[0]?.text || '';
+                  const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
+                  const isVerified = badges.some(b => b.includes('VERIFIED'));
+                  const isTopic = channel.includes('Topic');
+                  candidates.push({ id: v.videoId, title, channel, isVerified, isTopic });
+                }
+              }
+            }
+
+            // Filtrar canales piratas / no oficiales
+            const clean = candidates.filter(c => {
+              const ch = c.channel.toLowerCase();
+              return !JUNK_KEYWORDS.some(k => ch.includes(k));
+            });
+
+            // Priorizar canal oficial verificado o canal Topic
+            const best = clean.find(c => c.isVerified || c.isTopic || q.toLowerCase().split(' ').some(w => w.length > 3 && c.channel.toLowerCase().includes(w))) || clean[0] || candidates[0];
+
+            if (best) {
+              videoId = best.id;
+              videoTitle = best.title;
+              console.log(`[FullAudio] Video oficial filtrado seleccionado: [${videoId}] "${videoTitle}" (Canal: ${best.channel})`);
+            }
+          } catch (pe) {
+            console.warn('[FullAudio] Falló parseo ytInitialData:', pe.message);
           }
         }
 
+        // Fallback básico si ytInitialData no estuviera presente
         if (!videoId) {
-          const idx = html.indexOf('watch?v=');
-          if (idx !== -1) {
-            videoId = html.substring(idx + 8, idx + 19);
-          }
+          const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+          if (match) videoId = match[1];
         }
 
         if (videoId) {

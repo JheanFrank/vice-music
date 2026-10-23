@@ -640,22 +640,21 @@ function createId3Tag({ title, artist, albumArtist, album, composer, publisher, 
     frames.push(makeTextFrame('TCON', genre));
   }
 
-  // Año estándar TYER (4 dígitos YYYY)
+  // Año estándar TYER (4 dígitos YYYY limpio para evitar caracteres '\\' en Mp3tag)
   const cleanYear = (year || releaseDate || '').match(/\b(19\d{2}|20\d{2})\b/);
   if (cleanYear) {
     frames.push(makeTextFrame('TYER', cleanYear[0]));
   }
 
-  // Fecha completa exacta con día y mes (TDRC / TDAT)
+  // Fecha día y mes (TDAT DDMM) estándar en ID3v2.3
   if (releaseDate && releaseDate.includes('-')) {
-    frames.push(makeTextFrame('TDRC', releaseDate));
     const parts = releaseDate.split('-');
     if (parts.length >= 3) {
       frames.push(makeTextFrame('TDAT', parts[2].slice(0, 2) + parts[1].slice(0, 2)));
     }
   }
 
-  if (comment) frames.push(makeCommentFrame(comment));
+  // Sin comentarios molestos para dejar el campo Comentario 100% limpio
   if (imageBuffer) frames.push(makeApicFrame(imageBuffer, 'image/jpeg'));
 
   const totalFrames = Buffer.concat(frames);
@@ -907,7 +906,7 @@ function stripOldId3(mp3Buffer) {
           throw new Error('No se pudo obtener el archivo de audio');
         }
 
-        // Inyectar metadatos ID3v2.3 completos estilo Apple Music (Disquera, Copyright, ISRC, Compositor, Pista, Género, Carátula 1000px HD)
+        // Inyectar metadatos ID3v2.3 completos estilo Apple Music (Disquera, Copyright, ISRC, Compositor, Pista, Género, Carátula 1000px HD, sin comentarios)
         const cleanYear = (year || releaseDate || '').match(/\b(19\d{2}|20\d{2})\b/)?.[0] || String(new Date().getFullYear());
         const tag = createId3Tag({
           title: title || safeFilename,
@@ -918,8 +917,6 @@ function stripOldId3(mp3Buffer) {
           publisher: publisher || null,
           copyright: copyright || (publisher ? `℗ ${cleanYear} ${publisher}` : `℗ ${cleanYear} ${artist}`),
           isrc: isrc || null,
-          encodedBy: 'Apple Music / Vice Music Studio Master',
-          comment: 'Vice Music Studio Master 320 kbps',
           year: cleanYear,
           releaseDate: releaseDate || year,
           track: track,

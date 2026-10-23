@@ -255,6 +255,29 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ version: '4.1', status: 'online', engine: 'Vice Music Audio Stream + Apple Music HD Metadata' }));
     }
 
+    if (pathname === '/api/test-ytdl') {
+      const videoId = reqUrl.searchParams.get('videoId') || 'zZ_xuLlZ_t4';
+      try {
+        const info = await ytdl.getInfo(videoId);
+        const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          title: info.videoDetails?.title,
+          formatsCount: audioFormats.length,
+          firstFormatUrl: audioFormats[0]?.url ? 'PRESENT' : 'NONE'
+        }));
+      } catch (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: false,
+          errorName: err.name,
+          errorMessage: err.message,
+          errorCode: err.code
+        }));
+      }
+    }
+
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)
     if (pathname === '/api/albums/search') {
       const q = (reqUrl.searchParams.get('q') || '').trim();

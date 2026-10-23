@@ -249,7 +249,11 @@ function setupEventListeners() {
   if (btnPlayerDlMp3) {
     btnPlayerDlMp3.addEventListener('click', () => {
       if (state.currentTrack) {
-        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl);
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
+          album: state.currentTrack.album,
+          coverUrl: state.currentTrack.cover,
+          year: state.currentTrack.releaseDate
+        });
       } else {
         showToast('Selecciona primero una canción para descargar en MP3 320.');
       }
@@ -261,7 +265,11 @@ function setupEventListeners() {
   if (btnPlayerDlMp3Mobile) {
     btnPlayerDlMp3Mobile.addEventListener('click', () => {
       if (state.currentTrack) {
-        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl);
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
+          album: state.currentTrack.album,
+          coverUrl: state.currentTrack.cover,
+          year: state.currentTrack.releaseDate
+        });
       } else {
         showToast('Selecciona primero una cancion para descargar en MP3.');
       }
@@ -685,7 +693,11 @@ async function openAlbumDetail(albumId) {
 
       // Descargar MP3 320 kbps oficial vía stream
       trackRow.querySelector('.btn-dl-mp3').addEventListener('click', () => {
-        downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl);
+        downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
+          album: album.title,
+          coverUrl: album.coverXl,
+          year: album.releaseDate
+        });
       });
 
       // Descargar pista individual
@@ -785,7 +797,11 @@ function renderTracks(tracks) {
 
     card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
       e.stopPropagation();
-      downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl);
+      downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
+        album: track.album,
+        coverUrl: track.coverXl,
+        year: track.releaseDate
+      });
     });
 
     card.querySelector('.btn-single-flac').addEventListener('click', (e) => {
@@ -905,12 +921,119 @@ async function playFullSong(artist, title, cover = null) {
   }
 }
 
-// DESCARGAR AUDIO
-async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
-  // Descarga MP3 320 kbps completa evitando el archivo de 962 B y el preview de 30 s
-  showToast(`⚡ Preparando descarga 320 kbps para: ${title} …`);
+// ========================================================
+// GENERADOR DE METADATOS ID3v2.3 EN CLIENTE (CARÁTULA 1000PX + METADATOS OFICIALES)
+// ========================================================
+function createId3TagBytes({ title, artist, album, year, imageBytes }) {
+  const frames = [];
+
+  function encodeSyncSafe(size) {
+    return [
+      (size >> 21) & 0x7f,
+      (size >> 14) & 0x7f,
+      (size >> 7) & 0x7f,
+      size & 0x7f
+    ];
+  }
+
+  function makeTextFrame(id, text) {
+    if (!text) return null;
+    const utf16 = [];
+    utf16.push(0x01); // UTF-16 con BOM
+    utf16.push(0xff, 0xfe); // Little Endian BOM
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      utf16.push(code & 0xff, (code >> 8) & 0xff);
+    }
+    const content = new Uint8Array(utf16);
+    const frame = new Uint8Array(10 + content.length);
+    for (let i = 0; i < 4; i++) frame[i] = id.charCodeAt(i);
+    const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+    view.setUint32(4, content.length, false); // Big endian size en ID3v2.3
+    frame.set(content, 10);
+    return frame;
+  }
+
+  function makeApicFrame(imageBytes, mimeType = 'image/jpeg') {
+    if (!imageBytes || imageBytes.length === 0) return null;
+    const mimeArr = [];
+    for (let i = 0; i < mimeType.length; i++) mimeArr.push(mimeType.charCodeAt(i));
+    mimeArr.push(0);
+
+    const content = new Uint8Array(1 + mimeArr.length + 1 + 1 + imageBytes.length);
+    content[0] = 0x00; // ISO-8859-1 para MIME y descripción
+    content.set(mimeArr, 1);
+    const afterMime = 1 + mimeArr.length;
+    content[afterMime] = 0x03; // Picture Type: 0x03 = Cover (front)
+    content[afterMime + 1] = 0x00; // Descripción vacía null
+    content.set(imageBytes, afterMime + 2);
+
+    const frame = new Uint8Array(10 + content.length);
+    for (let i = 0; i < 4; i++) frame[i] = 'APIC'.charCodeAt(i);
+    const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+    view.setUint32(4, content.length, false);
+    frame.set(content, 10);
+    return frame;
+  }
+
+  const fTitle = makeTextFrame('TIT2', title);
+  if (fTitle) frames.push(fTitle);
+  const fArtist = makeTextFrame('TPE1', artist);
+  if (fArtist) frames.push(fArtist);
+  const fAlbum = makeTextFrame('TALB', album);
+  if (fAlbum) frames.push(fAlbum);
+  const fYear = makeTextFrame('TYER', year ? String(year).substring(0, 4) : '');
+  if (fYear) frames.push(fYear);
+  const fCover = makeApicFrame(imageBytes);
+  if (fCover) frames.push(fCover);
+
+  let totalFramesLen = 0;
+  for (const f of frames) totalFramesLen += f.length;
+
+  const tag = new Uint8Array(10 + totalFramesLen);
+  tag[0] = 0x49; // 'I'
+  tag[1] = 0x44; // 'D'
+  tag[2] = 0x33; // '3'
+  tag[3] = 0x03; // ID3v2.3
+  tag[4] = 0x00;
+  tag[5] = 0x00; // flags
+  const syncSafe = encodeSyncSafe(totalFramesLen);
+  tag[6] = syncSafe[0];
+  tag[7] = syncSafe[1];
+  tag[8] = syncSafe[2];
+  tag[9] = syncSafe[3];
+
+  let offset = 10;
+  for (const f of frames) {
+    tag.set(f, offset);
+    offset += f.length;
+  }
+  return tag;
+}
+
+function stripOldId3Bytes(mp3Uint8) {
+  if (mp3Uint8.length > 10 && mp3Uint8[0] === 0x49 && mp3Uint8[1] === 0x44 && mp3Uint8[2] === 0x33) {
+    const size = (mp3Uint8[6] << 21) | (mp3Uint8[7] << 14) | (mp3Uint8[8] << 7) | mp3Uint8[9];
+    const totalHeader = size + 10;
+    return mp3Uint8.subarray(totalHeader);
+  }
+  return mp3Uint8;
+}
+
+function injectId3IntoMp3(rawMp3Bytes, meta) {
+  const audioOnly = stripOldId3Bytes(rawMp3Bytes);
+  const tagBytes = createId3TagBytes(meta);
+  const finalBuf = new Uint8Array(tagBytes.length + audioOnly.length);
+  finalBuf.set(tagBytes, 0);
+  finalBuf.set(audioOnly, tagBytes.length);
+  return finalBuf;
+}
+
+// DESCARGAR AUDIO 320 KBPS CON METADATOS OFICIALES Y CARÁTULA HD 1000PX
+async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, extraMeta = {}) {
+  const displayTitle = title || 'Canción';
+  showToast(`⚡ Preparando descarga 320 kbps para: ${displayTitle}…`);
   try {
-    // Iniciar conversión mediante el backend limpio
     const query = `${artist} ${title}`;
     const startRes = await fetch(`/api/start-mp3-conversion?q=${encodeURIComponent(query)}`);
     const startData = await startRes.json();
@@ -918,30 +1041,91 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
       throw new Error(startData.error || 'Error al iniciar la conversión');
     }
     const progressUrl = startData.progressUrl;
+
     // Polling del progreso
-    while (true) {
+    let downloadUrl = null;
+    let attempts = 0;
+    while (!downloadUrl && attempts < 35) {
+      attempts++;
       await new Promise(r => setTimeout(r, 1500));
       const progRes = await fetch(`/api/check-mp3-progress?url=${encodeURIComponent(progressUrl)}`);
       const progData = await progRes.json();
-      if (progData.isFinished) {
-        const downloadUrl = progData.downloadUrl;
-        // Construir URL del proxy de descarga con nombre de archivo seguro
-        const safeName = `${artist}-${title}`.replace(/[^\w\s\-\.]/g, '_');
-        const finalUrl = `/api/download-mp3?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(safeName)}`;
-        // Disparar descarga mediante enlace temporal
-        const a = document.createElement('a');
-        a.href = finalUrl;
-        a.download = `${safeName}.mp3`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        showToast(`✅ Descarga iniciada: ${title}`);
+
+      if (progData.isFinished && progData.downloadUrl) {
+        downloadUrl = progData.downloadUrl;
         break;
       } else {
         const pct = progData.progress || 0;
-        showToast(`⏳ Conversión en progreso… ${pct}%`);
+        showToast(`⏳ Procesando audio 320 kbps... ${pct > 0 ? pct + '%' : ''}`);
       }
     }
+
+    if (!downloadUrl) {
+      throw new Error('Tiempo de espera agotado al convertir el audio.');
+    }
+
+    const safeName = `${artist} - ${title}`.replace(/[^\w\s\-\.áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'cancion';
+
+    // Descargar audio y carátula para incrustar ID3 oficiales directamente en el navegador
+    showToast(`📥 Descargando audio oficial 320 kbps...`);
+    try {
+      const audioRes = await fetch(downloadUrl);
+      if (!audioRes.ok) throw new Error('Status ' + audioRes.status);
+      const rawAudioBuf = await audioRes.arrayBuffer();
+      const rawAudioBytes = new Uint8Array(rawAudioBuf);
+
+      showToast(`🎨 Incrustando carátula HD 1000px y metadatos oficiales...`);
+
+      // Obtener carátula oficial en HD de la plataforma
+      let coverBytes = null;
+      const coverTarget = extraMeta.coverUrl || (state.currentTrack ? state.currentTrack.cover : null);
+      if (coverTarget) {
+        try {
+          const coverRes = await fetch(coverTarget);
+          if (coverRes.ok) {
+            coverBytes = new Uint8Array(await coverRes.arrayBuffer());
+          }
+        } catch (cErr) {
+          console.warn('[Cover fetch]', cErr);
+        }
+      }
+
+      const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
+      const releaseYear = extraMeta.year || (state.currentTrack ? state.currentTrack.releaseDate : '') || new Date().getFullYear();
+
+      // Incrustar ID3v2.3 tags
+      const taggedBytes = injectId3IntoMp3(rawAudioBytes, {
+        title: title,
+        artist: artist,
+        album: albumName,
+        year: releaseYear,
+        imageBytes: coverBytes
+      });
+
+      const blob = new Blob([taggedBytes], { type: 'audio/mpeg' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${safeName}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+
+      showToast(`✅ ¡Descarga completada con carátula 1000px y metadatos!`);
+    } catch (streamErr) {
+      console.warn('[Direct Blob fetch falló, usando descarga directa de enlace]:', streamErr);
+      // Fallback directo que nunca se cae
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `${safeName}.mp3`;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast(`✅ Descarga iniciada: ${title}`);
+    }
+
   } catch (err) {
     console.error('[downloadMp3_320]', err);
     showToast('❌ Error al descargar MP3: ' + err.message);

@@ -64,8 +64,53 @@ const totalTimeLabel = document.getElementById('totalTime');
 const waveIndicator = document.getElementById('waveIndicator');
 const visualizerCanvas = document.getElementById('visualizerCanvas');
 const btnPlayFullSong = document.getElementById('btnPlayFullSong');
+const btnOpenAppleMusic = document.getElementById('btnOpenAppleMusic');
+const playerCoverWrapper = document.getElementById('playerCoverWrapper');
 
 const vCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
+
+// ========================================================
+// APPLE MUSIC MODAL & DYNAMIC COVER / LYRICS DOM
+// ========================================================
+const appleMusicModal = document.getElementById('appleMusicModal');
+const btnMinimizeAm = document.getElementById('btnMinimizeAm');
+const amAmbientBg = document.getElementById('amAmbientBg');
+const btnAmTabCover = document.getElementById('btnAmTabCover');
+const btnAmTabLyrics = document.getElementById('btnAmTabLyrics');
+const amCoverSection = document.getElementById('amCoverSection');
+const amLyricsSection = document.getElementById('amLyricsSection');
+const amCoverStage = document.querySelector('.am-cover-stage');
+const amCoverCard = document.getElementById('amCoverCard');
+const amCoverImg = document.getElementById('amCoverImg');
+const amCoverGlow = document.getElementById('amCoverGlow');
+const amVinylDisc = document.getElementById('amVinylDisc');
+const amVinylCenter = document.getElementById('amVinylCenter');
+const amTrackTitle = document.getElementById('amTrackTitle');
+const amTrackArtist = document.getElementById('amTrackArtist');
+const amTrackAlbum = document.getElementById('amTrackAlbum');
+const amLyricsBadge = document.getElementById('amLyricsBadge');
+const amLyricsContainer = document.getElementById('amLyricsContainer');
+const amProgressTrack = document.getElementById('amProgressTrack');
+const amProgressFill = document.getElementById('amProgressFill');
+const amProgressThumb = document.getElementById('amProgressThumb');
+const amTimeCurrent = document.getElementById('amTimeCurrent');
+const amTimeTotal = document.getElementById('amTimeTotal');
+const amBtnSpeed = document.getElementById('amBtnSpeed');
+const amBtnBackward = document.getElementById('amBtnBackward');
+const amBtnPlayPause = document.getElementById('amBtnPlayPause');
+const amIconPlay = document.getElementById('amIconPlay');
+const amIconPause = document.getElementById('amIconPause');
+const amBtnForward = document.getElementById('amBtnForward');
+const amBtnDownload = document.getElementById('amBtnDownload');
+
+const appleMusicState = {
+  isOpen: false,
+  activeTab: 'cover', // 'cover' | 'lyrics'
+  trackKey: null,
+  lyrics: [], // [ { time: number, text: string, el: HTMLElement } ]
+  activeLyricIndex: -1,
+  isFetchingLyrics: false
+};
 
 // ========================================================
 // MOTOR CLIENT-SIDE DEEZER JSONP (SIN RESTRICCIÓN DE NUBE)
@@ -195,6 +240,8 @@ function startYtProgress() {
       progressThumb.style.left = `${pct}%`;
       updateMediaSessionPosition(cur, dur);
     }
+
+    updateAppleMusicProgress(cur, dur);
 
     if (state.currentTrack && 'mediaSession' in navigator) {
       if (!navigator.mediaSession.metadata || navigator.mediaSession.metadata.title !== state.currentTrack.title) {
@@ -586,9 +633,110 @@ function setupEventListeners() {
     });
   }
 
-  // Cerrar modal VIP con tecla Escape
+  // ========================================================
+  // EVENTOS REPRODUCTOR APPLE MUSIC (FULLSCREEN / MODAL)
+  // ========================================================
+  if (btnOpenAppleMusic) {
+    btnOpenAppleMusic.addEventListener('click', openAppleMusicModal);
+  }
+  if (playerCoverWrapper) {
+    playerCoverWrapper.addEventListener('click', openAppleMusicModal);
+  }
+  const playerTrackEl = document.querySelector('.player-track');
+  if (playerTrackEl) {
+    playerTrackEl.addEventListener('click', (e) => {
+      if (e.target.closest('#playerArtist')) return; // No interceptar clic en artista
+      openAppleMusicModal();
+    });
+  }
+
+  if (btnMinimizeAm) {
+    btnMinimizeAm.addEventListener('click', closeAppleMusicModal);
+  }
+  if (btnAmTabCover) {
+    btnAmTabCover.addEventListener('click', () => switchAppleMusicTab('cover'));
+  }
+  if (btnAmTabLyrics) {
+    btnAmTabLyrics.addEventListener('click', () => switchAppleMusicTab('lyrics'));
+  }
+  if (amBtnPlayPause) {
+    amBtnPlayPause.addEventListener('click', togglePlayPause);
+  }
+  if (amBtnBackward) {
+    amBtnBackward.addEventListener('click', () => seekDelta(-5));
+  }
+  if (amBtnForward) {
+    amBtnForward.addEventListener('click', () => seekDelta(5));
+  }
+  if (amBtnSpeed) {
+    amBtnSpeed.addEventListener('click', () => {
+      cyclePlaybackSpeed();
+      if (amBtnSpeed) amBtnSpeed.innerText = `${state.currentSpeed}x`;
+    });
+  }
+  if (amBtnDownload) {
+    amBtnDownload.addEventListener('click', (e) => {
+      if (state.currentTrack) {
+        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
+          album: state.currentTrack.album,
+          coverUrl: state.currentTrack.cover,
+          year: state.currentTrack.releaseDate
+        }, e.currentTarget);
+      } else {
+        showToast('Selecciona primero una canción para descargar en MP3.');
+      }
+    });
+  }
+  if (amTrackArtist) {
+    amTrackArtist.addEventListener('click', () => {
+      if (state.currentTrack && state.currentTrack.artist) {
+        closeAppleMusicModal();
+        openArtistProfile(state.currentTrack.artist);
+      }
+    });
+  }
+  if (amProgressTrack) {
+    amProgressTrack.addEventListener('click', (e) => {
+      const rect = amProgressTrack.getBoundingClientRect();
+      const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+      if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.getDuration === 'function') {
+        const dur = ytPlayer.getDuration();
+        if (dur > 0) {
+          ytPlayer.seekTo(pos * dur, true);
+          updateMediaSessionPosition(pos * dur, dur);
+        }
+      } else if (state.audio && state.audio.duration) {
+        state.audio.currentTime = pos * state.audio.duration;
+        updateMediaSessionPosition(state.audio.currentTime, state.audio.duration);
+      }
+    });
+  }
+
+  // Efecto dinámico 3D tilt en carátula flotante
+  if (amCoverStage && amCoverCard) {
+    amCoverStage.addEventListener('mousemove', (e) => {
+      const rect = amCoverStage.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      const tiltX = -(y / (rect.height / 2)) * 14;
+      const tiltY = (x / (rect.width / 2)) * 14;
+      amCoverCard.style.transform = `perspective(800px) rotateX(${tiltX.toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg) scale(1.04)`;
+    });
+    amCoverStage.addEventListener('mouseleave', () => {
+      amCoverCard.style.transform = '';
+    });
+  }
+
+  // Cerrar modales con tecla Escape
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeLoginModal();
+    if (e.key === 'Escape') {
+      if (appleMusicState.isOpen) {
+        closeAppleMusicModal();
+      } else {
+        closeLoginModal();
+      }
+    }
   });
 }
 
@@ -1670,6 +1818,7 @@ function loadTrack(track) {
   }
 
   updateMediaSession(track);
+  updateAppleMusicTrackInfo(track);
 
   if (track.audioUrl) {
     state.audio.src = track.audioUrl;
@@ -1721,6 +1870,7 @@ async function playFullSong(artist, title, cover = null, album = null) {
   progressThumb.style.left = '0%';
 
   updateMediaSession(trackObj);
+  updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
   try {
@@ -2027,10 +2177,16 @@ function setPlayingState(playing) {
     iconPlay.classList.add('hidden');
     iconPause.classList.remove('hidden');
     waveIndicator.classList.add('playing');
+    if (amIconPlay) amIconPlay.classList.add('hidden');
+    if (amIconPause) amIconPause.classList.remove('hidden');
+    if (amVinylDisc) amVinylDisc.classList.add('playing');
   } else {
     iconPlay.classList.remove('hidden');
     iconPause.classList.add('hidden');
     waveIndicator.classList.remove('playing');
+    if (amIconPlay) amIconPlay.classList.remove('hidden');
+    if (amIconPause) amIconPause.classList.add('hidden');
+    if (amVinylDisc) amVinylDisc.classList.remove('playing');
   }
 }
 
@@ -2047,6 +2203,8 @@ function updateProgress() {
     progressThumb.style.left = `${percent}%`;
     updateMediaSessionPosition(current, total);
   }
+
+  updateAppleMusicProgress(current, total);
 }
 
 function formatTime(seconds) {
@@ -2321,4 +2479,336 @@ function startVisualizer() {
   }
 
   draw();
+}
+
+// ========================================================
+// CONTROLADOR APPLE MUSIC // MOVING COVER & LIVE LYRICS
+// ========================================================
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function openAppleMusicModal() {
+  if (!appleMusicModal) return;
+  if (!state.currentTrack) {
+    showToast('⚠️ Reproduce primero una canción para abrir la interfaz Apple Music.');
+    return;
+  }
+
+  appleMusicState.isOpen = true;
+  appleMusicModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+
+  // Sincronizar metadatos y carátula
+  updateAppleMusicTrackInfo(state.currentTrack);
+
+  // Sincronizar estado de reproducción y vinilo
+  setPlayingState(state.isPlaying);
+
+  // Sincronizar velocidad
+  if (amBtnSpeed) {
+    amBtnSpeed.innerText = `${state.currentSpeed || 1}x`;
+  }
+
+  // Sincronizar progreso actual
+  const cur = (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getCurrentTime === 'function')
+    ? (ytPlayer.getCurrentTime() || 0)
+    : (state.audio ? state.audio.currentTime || 0 : 0);
+  const dur = (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getDuration === 'function')
+    ? (ytPlayer.getDuration() || 0)
+    : (state.audio ? state.audio.duration || 0 : 0);
+  updateAppleMusicProgress(cur, dur);
+}
+
+function closeAppleMusicModal() {
+  if (!appleMusicModal) return;
+  appleMusicState.isOpen = false;
+  appleMusicModal.classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+function switchAppleMusicTab(tab) {
+  appleMusicState.activeTab = tab;
+  if (tab === 'cover') {
+    if (btnAmTabCover) btnAmTabCover.classList.add('active');
+    if (btnAmTabLyrics) btnAmTabLyrics.classList.remove('active');
+    if (amCoverSection) amCoverSection.classList.remove('hidden');
+    if (amLyricsSection) amLyricsSection.classList.add('hidden');
+  } else {
+    if (btnAmTabLyrics) btnAmTabLyrics.classList.add('active');
+    if (btnAmTabCover) btnAmTabCover.classList.remove('active');
+    if (amLyricsSection) amLyricsSection.classList.remove('hidden');
+    if (amCoverSection) amCoverSection.classList.add('hidden');
+    
+    // Si aún no se han cargado letras para la pista actual, cargarlas
+    if (state.currentTrack && (!appleMusicState.lyrics || appleMusicState.lyrics.length === 0)) {
+      fetchAppleMusicLyrics(state.currentTrack.artist, state.currentTrack.title);
+    }
+  }
+}
+
+function updateAppleMusicTrackInfo(track) {
+  if (!track) return;
+
+  if (amTrackTitle) amTrackTitle.innerText = track.title || 'Pista de Audio';
+  if (amTrackArtist) amTrackArtist.innerText = track.artist || 'Artista';
+  if (amTrackAlbum) amTrackAlbum.innerText = track.album || (state.currentAlbum ? state.currentAlbum.title : 'Álbum Oficial');
+
+  const coverUrl = track.cover || (state.currentAlbum && state.currentAlbum.coverXl) || 'https://via.placeholder.com/500/1a0933/ff2a85?text=VI';
+
+  if (amCoverImg) amCoverImg.src = coverUrl;
+  if (amCoverGlow) {
+    amCoverGlow.style.backgroundImage = `url('${coverUrl}')`;
+  }
+  if (amAmbientBg) {
+    amAmbientBg.style.backgroundImage = `radial-gradient(circle at 50% 35%, rgba(255, 42, 133, 0.42) 0%, rgba(0, 240, 255, 0.32) 40%, rgba(10, 4, 18, 0.95) 85%), url('${coverUrl}')`;
+  }
+  if (amVinylCenter) {
+    amVinylCenter.style.backgroundImage = `url('${coverUrl}')`;
+  }
+
+  // Si cambia la pista, resetear letras y buscar nuevas
+  const trackKey = `${track.artist}::${track.title}`;
+  if (appleMusicState.trackKey !== trackKey) {
+    appleMusicState.trackKey = trackKey;
+    appleMusicState.lyrics = [];
+    appleMusicState.activeLyricIndex = -1;
+    fetchAppleMusicLyrics(track.artist, track.title);
+  }
+}
+
+function updateAppleMusicProgress(current, total) {
+  if (amTimeCurrent) amTimeCurrent.innerText = formatTime(current);
+  if (amTimeTotal) amTimeTotal.innerText = total > 0 ? formatTime(total) : '00:00';
+
+  if (total > 0 && amProgressFill && amProgressThumb) {
+    const percent = Math.min(100, Math.max(0, (current / total) * 100));
+    amProgressFill.style.width = `${percent}%`;
+    amProgressThumb.style.left = `${percent}%`;
+  }
+
+  updateLyricsSync(current);
+}
+
+function parseLrc(lrcText) {
+  if (!lrcText || typeof lrcText !== 'string') return [];
+  const lines = lrcText.split('\n');
+  const result = [];
+  const timeRegex = /\[(\d{2}):(\d{2}(?:\.\d{1,3})?)\]/g;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let match;
+    const timestamps = [];
+    while ((match = timeRegex.exec(trimmed)) !== null) {
+      const min = parseInt(match[1], 10);
+      const sec = parseFloat(match[2]);
+      timestamps.push(min * 60 + sec);
+    }
+
+    const text = trimmed.replace(/\[\d{2}:\d{2}(?:\.\d{1,3})?\]/g, '').trim();
+    if (timestamps.length > 0) {
+      for (const t of timestamps) {
+        result.push({ time: t, text: text || '♪' });
+      }
+    }
+  }
+
+  result.sort((a, b) => a.time - b.time);
+  return result;
+}
+
+function seekToTimestamp(targetTime) {
+  if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+    ytPlayer.seekTo(targetTime, true);
+    updateMediaSessionPosition(targetTime, ytPlayer.getDuration() || 0);
+  } else if (state.audio) {
+    state.audio.currentTime = targetTime;
+    updateMediaSessionPosition(targetTime, state.audio.duration || 0);
+  }
+}
+
+async function fetchAppleMusicLyrics(artist, title) {
+  if (!amLyricsContainer) return;
+
+  amLyricsContainer.innerHTML = `
+    <div class="am-lyrics-loader">
+      <div class="vice-spinner"><div class="inner-vi">VI</div></div>
+      <p>Sincronizando letra en vivo de <strong>${escapeHtml(title)}</strong>...</p>
+    </div>
+  `;
+  if (amLyricsBadge) {
+    amLyricsBadge.innerText = 'BUSCANDO...';
+    amLyricsBadge.className = 'am-lyrics-badge';
+  }
+
+  const cleanTitle = title
+    .replace(/\s*[\(\[](?:Official|Video|Audio|Visualizer|Lyric|Letra|Explicit|Version|En Vivo|Live).*?[\)\]]/gi, '')
+    .replace(/\s*-\s*(?:Official|Video|Visualizer).*$/gi, '')
+    .replace(/\s*feat\..*$/gi, '')
+    .trim();
+  const cleanArtist = artist.split(/[,&/]/)[0].trim();
+
+  let lyricsData = null;
+
+  try {
+    const getUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(cleanArtist)}&track_name=${encodeURIComponent(cleanTitle)}`;
+    const res = await fetch(getUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (data.syncedLyrics || data.plainLyrics)) {
+        lyricsData = data;
+      }
+    }
+  } catch (err) {
+    console.warn('LrcLib get error:', err.message);
+  }
+
+  if (!lyricsData) {
+    try {
+      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanArtist + ' ' + cleanTitle)}`;
+      const sRes = await fetch(searchUrl);
+      if (sRes.ok) {
+        const arr = await sRes.json();
+        if (Array.isArray(arr) && arr.length > 0) {
+          lyricsData = arr.find(x => x.syncedLyrics) || arr[0];
+        }
+      }
+    } catch (err) {
+      console.warn('LrcLib search error:', err.message);
+    }
+  }
+
+  renderLyrics(lyricsData, title, artist);
+}
+
+function renderLyrics(data, title, artist) {
+  if (!amLyricsContainer) return;
+  amLyricsContainer.innerHTML = '';
+  appleMusicState.lyrics = [];
+  appleMusicState.activeLyricIndex = -1;
+
+  if (!data || (!data.syncedLyrics && !data.plainLyrics)) {
+    if (amLyricsBadge) {
+      amLyricsBadge.innerText = 'INSTRUMENTAL';
+      amLyricsBadge.className = 'am-lyrics-badge';
+    }
+    amLyricsContainer.innerHTML = `
+      <div class="am-lyrics-empty">
+        <div style="font-size: 2.8rem; margin-bottom: 0.8rem; opacity: 0.6;">🎵</div>
+        <p style="font-size: 1.15rem; font-weight: 700; color: #fff;">Letra no disponible aún</p>
+        <p style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.4rem; max-width: 320px; line-height: 1.5;">
+          Disfruta la melodía de <strong>${escapeHtml(title)}</strong> por <strong>${escapeHtml(artist)}</strong>.
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  if (data.syncedLyrics && data.syncedLyrics.trim().length > 0) {
+    if (amLyricsBadge) {
+      amLyricsBadge.innerText = 'SINCRONIZADA';
+      amLyricsBadge.className = 'am-lyrics-badge live';
+    }
+
+    const parsed = parseLrc(data.syncedLyrics);
+    if (parsed.length === 0) {
+      renderPlainLyrics(data.plainLyrics || data.syncedLyrics);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+
+    parsed.forEach((item) => {
+      const p = document.createElement('p');
+      p.className = 'am-lyric-line';
+      p.setAttribute('data-time', item.time);
+      p.innerText = item.text;
+      p.title = `Saltar al segundo ${formatTime(item.time)}`;
+
+      p.addEventListener('click', () => {
+        seekToTimestamp(item.time);
+        showToast(`⏩ Saltando a ${formatTime(item.time)}`);
+      });
+
+      frag.appendChild(p);
+      appleMusicState.lyrics.push({
+        time: item.time,
+        text: item.text,
+        el: p
+      });
+    });
+
+    amLyricsContainer.appendChild(frag);
+
+    const cur = (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getCurrentTime === 'function')
+      ? (ytPlayer.getCurrentTime() || 0)
+      : (state.audio ? state.audio.currentTime || 0 : 0);
+    updateLyricsSync(cur);
+    return;
+  }
+
+  if (data.plainLyrics) {
+    renderPlainLyrics(data.plainLyrics);
+  }
+}
+
+function renderPlainLyrics(plainText) {
+  if (!amLyricsContainer) return;
+  if (amLyricsBadge) {
+    amLyricsBadge.innerText = 'TEXTO COMPLETO';
+    amLyricsBadge.className = 'am-lyrics-badge';
+  }
+
+  const lines = plainText.split('\n');
+  const frag = document.createDocumentFragment();
+
+  lines.forEach(line => {
+    const p = document.createElement('p');
+    p.className = 'am-lyric-line plain';
+    p.innerText = line.trim() || ' ';
+    frag.appendChild(p);
+  });
+
+  amLyricsContainer.appendChild(frag);
+}
+
+function updateLyricsSync(currentTime) {
+  if (!appleMusicState.lyrics || appleMusicState.lyrics.length === 0) return;
+
+  let activeIdx = -1;
+  const offsetTime = currentTime + 0.25;
+
+  for (let i = 0; i < appleMusicState.lyrics.length; i++) {
+    if (offsetTime >= appleMusicState.lyrics[i].time) {
+      activeIdx = i;
+    } else {
+      break;
+    }
+  }
+
+  if (activeIdx !== appleMusicState.activeLyricIndex) {
+    if (appleMusicState.activeLyricIndex >= 0 && appleMusicState.lyrics[appleMusicState.activeLyricIndex]) {
+      const prevEl = appleMusicState.lyrics[appleMusicState.activeLyricIndex].el;
+      if (prevEl) prevEl.classList.remove('active');
+    }
+
+    appleMusicState.activeLyricIndex = activeIdx;
+
+    if (activeIdx >= 0 && appleMusicState.lyrics[activeIdx]) {
+      const activeEl = appleMusicState.lyrics[activeIdx].el;
+      if (activeEl) {
+        activeEl.classList.add('active');
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
 }

@@ -418,7 +418,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '4.5', status: 'online', engine: 'Vice Music Home Top 10 Colombia + VIP Auth' }));
+      return res.end(JSON.stringify({ version: '4.6', status: 'online', engine: 'Vice Music Artist Profile + Clean UI + Top Colombia' }));
     }
 
     // 0.0 AUTENTICACIÓN VIP ADMIN

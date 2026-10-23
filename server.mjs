@@ -285,7 +285,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '4.2', status: 'online', engine: 'Vice Music Pure Native Audio (Zero YouTube Iframe)' }));
+      return res.end(JSON.stringify({ version: '4.3', status: 'online', engine: 'Vice Music Instant Audio + Locked HD MediaSession' }));
     }
 
     // 0.1 STREAM DIRECTO MP3 PARA REPRODUCTOR NATIVO (100% Cero YouTube)

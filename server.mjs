@@ -4,8 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dns from 'dns';
-import { Ytdl } from '@distube/ytdl-core';
-const ytdl = new Ytdl();
+import { Ytdl, Client } from '@distube/ytdl-core';
+const ytdl = new Ytdl({ clients: [Client.VisionOS] });
 
 // Prevenir caídas del servidor ante errores imprevistos
 process.on('uncaughtException', (err) => {
@@ -527,6 +527,9 @@ const server = http.createServer(async (req, res) => {
               });
               res.write(chunk);
               stream.pipe(res);
+              res.on('close', () => {
+                try { stream.destroy(); } catch (e) {}
+              });
               resolve();
             });
 

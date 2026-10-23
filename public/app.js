@@ -907,31 +907,65 @@ async function playFullSong(artist, title, cover = null) {
 
 // DESCARGAR AUDIO EN MP3 DIRECTO DESDE NUESTRA PROPIA PAGINA (CANCIÓN COMPLETA)
 async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
-  showToast('⏳ Preparando conversión MP3 completa para: ' + title + '... Espera unos segundos.');
+  showToast('⏳ Sintonizando audio de: ' + title + '...');
   
   const targetVid = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : null);
   const q = encodeURIComponent(artist + ' ' + title);
-  let getUrlEndpoint = '/api/get-mp3-url?q=' + q;
+  let startEndpoint = '/api/start-mp3-conversion?q=' + q;
   if (targetVid) {
-    getUrlEndpoint += '&videoId=' + encodeURIComponent(targetVid);
+    startEndpoint += '&videoId=' + encodeURIComponent(targetVid);
   }
 
   try {
-    const res = await fetch(getUrlEndpoint);
+    // 1. Iniciar conversión en el servidor
+    const res = await fetch(startEndpoint);
     const data = await res.json();
 
-    if (!res.ok || !data.downloadUrl) {
-      throw new Error(data.error || 'No se pudo generar el enlace de descarga');
+    if (!res.ok || !data.progressUrl) {
+      throw new Error(data.error || 'No se pudo iniciar la conversión');
     }
 
-    showToast('🚀 Descarga lista. Iniciando transferencia de ' + title + '...');
-    
-    // Descargar a través de nuestro proxy de stream para forzar el nombre de archivo limpio y extensión mp3
-    const filename = encodeURIComponent(title + ' - ' + artist);
-    const downloadEndpoint = '/api/download-mp3?url=' + encodeURIComponent(data.downloadUrl) + '&filename=' + filename;
+    const progressUrl = data.progressUrl;
+    showToast('⚙️ Convirtiendo canción completa a MP3 320 kbps...');
+
+    // 2. Pollear el progreso desde el navegador para evitar cortes de conexión de Render
+    let attempts = 0;
+    const maxAttempts = 35; // hasta 70 segundos máximo
+    let downloadUrl = null;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      await new Promise(r => setTimeout(r, 2000));
+
+      try {
+        const checkRes = await fetch('/api/check-mp3-progress?url=' + encodeURIComponent(progressUrl));
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData.isFinished && checkData.downloadUrl) {
+            downloadUrl = checkData.downloadUrl;
+            break;
+          } else {
+            const stepText = checkData.text || 'Procesando';
+            showToast(`⚙️ Convirtiendo: ${stepText}... (${Math.min(95, attempts * 5)}%)`);
+          }
+        }
+      } catch (pollErr) {
+        console.warn('Reintento de sondeo:', pollErr.message);
+      }
+    }
+
+    if (!downloadUrl) {
+      throw new Error('La conversión tardó más de lo esperado. Por favor presiona descargar nuevamente.');
+    }
+
+    showToast('🚀 ¡Audio listo! Descargando canción completa de ' + title + '...');
+
+    // 3. Descargar a través de nuestro proxy seguro para nombre limpio de archivo
+    const safeFilename = encodeURIComponent(title + ' - ' + artist);
+    const proxyDlUrl = '/api/download-mp3?url=' + encodeURIComponent(downloadUrl) + '&filename=' + safeFilename;
 
     const a = document.createElement('a');
-    a.href = downloadEndpoint;
+    a.href = proxyDlUrl;
     a.setAttribute('download', `${title} - ${artist}.mp3`);
     document.body.appendChild(a);
     a.click();
@@ -939,7 +973,8 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null) {
       if (document.body.contains(a)) {
         document.body.removeChild(a);
       }
-    }, 2000);
+    }, 3000);
+
   } catch (err) {
     console.error('Error al descargar MP3 completo:', err);
     showToast('❌ Error al preparar descarga MP3: ' + err.message);

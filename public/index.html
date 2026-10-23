@@ -34,7 +34,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v4.5</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v4.6</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -174,6 +174,34 @@
         <div class="album-tracklist" id="albumTracklist">
           <!-- Render dinámico de todas las canciones del álbum -->
         </div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN VISTA DE ARTISTA DETALLADO (FOTOS, DESTACADAS, ÁLBUMES, REMIXES) -->
+    <section id="artistDetailView" class="artist-detail-section hidden">
+      <button id="btnBackFromArtist" class="btn-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>VOLVER</span>
+      </button>
+
+      <div class="artist-hero" id="artistHeroContent">
+        <!-- Render dinámico del Artista -->
+      </div>
+
+      <!-- Filtros / Pestañas del Artista -->
+      <div class="artist-nav-tabs">
+        <button class="artist-tab-btn active" id="btnArtistTabTop">🔥 DESTACADAS</button>
+        <button class="artist-tab-btn" id="btnArtistTabAlbums">📀 DISCOGRAFÍA</button>
+        <button class="artist-tab-btn" id="btnArtistTabRemixes">🎛️ REMIXES</button>
+        <button class="artist-tab-btn" id="btnArtistTabAll">🎵 TODAS LAS PISTAS</button>
+      </div>
+
+      <!-- Contenedor dinámico de contenido del Artista -->
+      <div id="artistContentContainer" class="artist-content-container">
+        <!-- Render dinámico -->
       </div>
     </section>
 
@@ -381,6 +409,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=450"></script>
+  <script src="app.js?v=460"></script>
 </body>
 </html>

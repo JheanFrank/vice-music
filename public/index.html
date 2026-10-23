@@ -34,7 +34,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v4.1</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v4.2</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -264,13 +264,8 @@
     </div>
   </footer>
 
-  <!-- Motor de Audio Completo Oculto (Invisible, sin video en pantalla) -->
-  <div id="hiddenYtWrapper" style="position: fixed; bottom: 0; right: 0; width: 120px; height: 80px; opacity: 0.001; pointer-events: none; z-index: 10;">
-    <div id="ytPlayerSlot"></div>
-  </div>
-
-  <audio id="audioElement" preload="none"></audio>
-  <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=410"></script>
+  <!-- Reproductor Nativo HTML5 HD (100% Cero Rastro de YouTube) -->
+  <audio id="audioElement" preload="auto"></audio>
+  <script src="app.js?v=420"></script>
 </body>
 </html>

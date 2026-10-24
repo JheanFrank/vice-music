@@ -2453,27 +2453,6 @@ function playNextTrack() {
     }
   }
 
-  // Si no queda nada en la cola: Fin de la reproducción limpia sin reiniciar en bucle
-  stopCurrentPlayback();
-  showTopRightToast('Fin de la Lista', 'Has escuchado todas las canciones programadas', 'info');
-}
-      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album);
-      return;
-    }
-  }
-
-  // 4. Si se está en resultados de catálogo de pistas
-  if (state.results && state.results.length > 0 && state.currentMode === 'tracks') {
-    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
-    const curIdx = state.results.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
-    if (curIdx !== -1 && curIdx + 1 < state.results.length) {
-      const nextTrack = state.results[curIdx + 1];
-      showToast(`⏭️ Siguiente canción: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle);
-      return;
-    }
-  }
-
   // 5. Fallback aleatorio inteligente: elegir una canción del catálogo o ranking
   const pool = (state.rankingTracks && state.rankingTracks.length > 0) 
     ? state.rankingTracks 

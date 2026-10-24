@@ -3,7 +3,7 @@
 // ========================================================
 
 const state = {
-  currentMode: 'home', // 'home' | 'albums' | 'tracks'
+  currentMode: 'home', // 'home' | 'albums' | 'tracks' | 'playlist'
   currentTrack: null,
   currentAlbum: null,
   isPlaying: false,
@@ -14,7 +14,10 @@ const state = {
   rankingTracks: [],
   queue: [],
   history: [],
-  smartDjEnabled: true
+  smartDjEnabled: true,
+  userPlaylist: [],
+  activeCoverflowIndex: 0,
+  authMode: 'login' // 'login' | 'register'
 };
 
 // DOM Elements
@@ -294,7 +297,7 @@ function getAuthUser() {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
-    if (session && session.user === 'admin') {
+    if (session && session.user) {
       return session;
     }
   } catch (e) {
@@ -383,9 +386,11 @@ async function handleLoginSubmit(e) {
   if (alertEl) alertEl.classList.add('hidden');
 
   try {
+    const isReg = state.authMode === 'register';
+    const targetEndpoint = isReg ? '/api/register' : '/api/login';
     let data = null;
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(targetEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -393,24 +398,28 @@ async function handleLoginSubmit(e) {
       data = await res.json();
     } catch (netErr) {
       // Fallback si la petición de red falla momentáneamente
-      if (username === 'admin' && password === 'admin') {
+      if (!isReg && username === 'admin' && password === 'admin') {
         data = { success: true, user: 'admin', role: 'VIP Admin' };
       } else {
-        data = { success: false, error: 'Credenciales inválidas.' };
+        data = { success: false, error: 'Error de conexión con el servidor.' };
       }
     }
 
     if (data && data.success) {
       const session = {
         user: data.user || username,
-        role: data.role || 'VIP Admin',
+        role: data.role || (isReg ? 'VIP Member' : 'VIP Admin'),
         token: data.token || 'vice_vip_admin_token_2026',
         timestamp: Date.now()
       };
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
       updateAuthUI();
       closeLoginModal();
-      showToast(`👑 ¡Sesión iniciada con éxito! Bienvenido, VIP ${session.user}.`);
+      showToast(isReg ? `🎉 ¡Cuenta creada con éxito! Bienvenido, VIP ${session.user}.` : `👑 ¡Sesión iniciada con éxito! Bienvenido, VIP ${session.user}.`);
+
+      if (state.currentMode === 'playlist') {
+        loadUserPlaylist();
+      }
 
       if (pendingPostAuthAction) {
         const action = pendingPostAuthAction;
@@ -423,7 +432,7 @@ async function handleLoginSubmit(e) {
       }
     } else {
       if (alertEl) {
-        alertEl.textContent = (data && data.error) || 'Usuario o contraseña incorrectos. Verifica tus credenciales.';
+        alertEl.textContent = (data && data.error) || (isReg ? 'No se pudo crear la cuenta.' : 'Usuario o contraseña incorrectos.');
         alertEl.classList.remove('hidden');
       }
     }
@@ -434,7 +443,7 @@ async function handleLoginSubmit(e) {
     }
   } finally {
     if (btnSubmit) btnSubmit.disabled = false;
-    if (btnText) btnText.textContent = 'INGRESAR AL SISTEMA';
+    if (btnText) btnText.textContent = state.authMode === 'register' ? 'REGISTRARME GRATIS' : 'INGRESAR AL SISTEMA';
     if (spinner) spinner.classList.add('hidden');
   }
 }
@@ -460,8 +469,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupEventListeners() {
   if (tabHome) tabHome.addEventListener('click', () => switchViewMode('home'));
+  const tabPlaylist = document.getElementById('tabPlaylist');
+  if (tabPlaylist) tabPlaylist.addEventListener('click', () => switchViewMode('playlist'));
   tabAlbums.addEventListener('click', () => switchViewMode('albums'));
   tabTracks.addEventListener('click', () => switchViewMode('tracks'));
+
+  setupPlaylistControls();
 
   searchBtn.addEventListener('click', () => performSearch(searchInput.value));
   searchInput.addEventListener('keydown', (e) => {
@@ -836,6 +849,18 @@ function setupEventListeners() {
       }
     });
   }
+  const amMenuBtnAddPlaylist = document.getElementById('amMenuBtnAddPlaylist');
+  if (amMenuBtnAddPlaylist) {
+    amMenuBtnAddPlaylist.addEventListener('click', () => {
+      closeMoreMenu();
+      const t = state.contextTrack || state.currentTrack;
+      if (t) {
+        addToUserPlaylist(t);
+      } else {
+        showToast('Selecciona una pista primero para añadir a tu playlist.');
+      }
+    });
+  }
   if (amTrackArtist) {
     amTrackArtist.addEventListener('click', () => {
       if (state.currentTrack && state.currentTrack.artist) {
@@ -882,20 +907,40 @@ function setupEventListeners() {
 function switchViewMode(mode) {
   state.currentMode = mode;
   albumDetailView.classList.add('hidden');
+  const playlistSection = document.getElementById('playlistSection');
+  const tabPlaylist = document.getElementById('tabPlaylist');
 
   if (mode === 'home') {
     if (tabHome) tabHome.classList.add('active');
     if (tabAlbums) tabAlbums.classList.remove('active');
     if (tabTracks) tabTracks.classList.remove('active');
+    if (tabPlaylist) tabPlaylist.classList.remove('active');
     if (homeSection) homeSection.classList.remove('hidden');
     if (catalogSection) catalogSection.classList.add('hidden');
+    if (playlistSection) playlistSection.classList.add('hidden');
     searchHeaderTitle.innerText = 'BUSCA CUALQUIER ARTISTA O CANCIÓN';
     searchHeaderSub.innerHTML = 'Escribe cualquier artista o canción para explorar discografías completas y sencillos en alta calidad.';
     searchInput.placeholder = 'Busca cualquier artista o canción...';
     return;
   }
 
+  if (mode === 'playlist') {
+    if (tabPlaylist) tabPlaylist.classList.add('active');
+    if (tabHome) tabHome.classList.remove('active');
+    if (tabAlbums) tabAlbums.classList.remove('active');
+    if (tabTracks) tabTracks.classList.remove('active');
+    if (homeSection) homeSection.classList.add('hidden');
+    if (catalogSection) catalogSection.classList.add('hidden');
+    if (playlistSection) playlistSection.classList.remove('hidden');
+    searchHeaderTitle.innerText = 'TU COLECCIÓN PRIVADA EN 3D';
+    searchHeaderSub.innerHTML = 'Disfruta de tus canciones guardadas en el carrusel Coverflow 3D interactivo.';
+    loadUserPlaylist();
+    return;
+  }
+
   if (homeSection) homeSection.classList.add('hidden');
+  if (playlistSection) playlistSection.classList.add('hidden');
+  if (tabPlaylist) tabPlaylist.classList.remove('active');
   catalogSection.classList.remove('hidden');
 
   if (mode === 'albums') {
@@ -3221,4 +3266,513 @@ function updateLyricsSync(currentTime) {
       }
     }
   }
+}
+
+// ========================================================
+// SISTEMA DE PLAYLIST PRIVADA & 3D COVERFLOW (APPLE STYLE)
+// ========================================================
+
+function toggleAuthMode() {
+  state.authMode = state.authMode === 'login' ? 'register' : 'login';
+  const modalTitle = document.querySelector('#loginModal .login-modal-title');
+  const modalSubtitle = document.getElementById('loginModalSubtitle');
+  const btnText = document.getElementById('loginBtnText');
+  const toggleBtn = document.getElementById('btnToggleAuthMode');
+  const alertEl = document.getElementById('loginAlert');
+  if (alertEl) alertEl.classList.add('hidden');
+
+  if (state.authMode === 'register') {
+    if (modalTitle) modalTitle.innerHTML = '✨ CREAR CUENTA VIP GRATIS ✨';
+    if (modalSubtitle) modalSubtitle.textContent = 'Crea tu usuario para sincronizar tu Playlist 3D y disfrutar descargas a 320 kbps.';
+    if (btnText) btnText.textContent = 'REGISTRARME GRATIS';
+    if (toggleBtn) toggleBtn.innerHTML = '¿Ya tienes cuenta? <strong style="color: var(--vice-cyan);">Inicia sesión aquí</strong>';
+  } else {
+    if (modalTitle) modalTitle.innerHTML = '👑 ACCESO VIP VICE MUSIC 👑';
+    if (modalSubtitle) modalSubtitle.textContent = 'Accede con tu cuenta VIP para descargar MP3 a 320 kbps y discografías completas.';
+    if (btnText) btnText.textContent = 'INGRESAR AL SISTEMA';
+    if (toggleBtn) toggleBtn.innerHTML = '¿No tienes cuenta? <strong style="color: var(--vice-cyan);">Regístrate gratis aquí</strong>';
+  }
+}
+
+function setupPlaylistControls() {
+  const btnCoverflowPrev = document.getElementById('btnCoverflowPrev');
+  const btnCoverflowNext = document.getElementById('btnCoverflowNext');
+  const btnDockPrev = document.getElementById('btnDockPrev');
+  const btnDockPlay = document.getElementById('btnDockPlay');
+  const btnDockNext = document.getElementById('btnDockNext');
+  const btnDockRemove = document.getElementById('btnDockRemove');
+  const btnDockMore = document.getElementById('btnDockMore');
+  const dockTrackCenter = document.getElementById('dockTrackCenter');
+  const btnToggleAuthMode = document.getElementById('btnToggleAuthMode');
+
+  if (btnToggleAuthMode) {
+    btnToggleAuthMode.addEventListener('click', toggleAuthMode);
+  }
+
+  if (btnCoverflowPrev) {
+    btnCoverflowPrev.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      if (state.activeCoverflowIndex > 0) {
+        state.activeCoverflowIndex--;
+      } else {
+        state.activeCoverflowIndex = state.userPlaylist.length - 1;
+      }
+      renderCoverflow();
+      renderPlaylistTracklist();
+    });
+  }
+
+  if (btnCoverflowNext) {
+    btnCoverflowNext.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      if (state.activeCoverflowIndex < state.userPlaylist.length - 1) {
+        state.activeCoverflowIndex++;
+      } else {
+        state.activeCoverflowIndex = 0;
+      }
+      renderCoverflow();
+      renderPlaylistTracklist();
+    });
+  }
+
+  if (btnDockPrev) {
+    btnDockPrev.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      state.activeCoverflowIndex = (state.activeCoverflowIndex > 0) ? state.activeCoverflowIndex - 1 : state.userPlaylist.length - 1;
+      renderCoverflow();
+      renderPlaylistTracklist();
+      const trk = state.userPlaylist[state.activeCoverflowIndex];
+      if (trk) playPlaylistTrack(trk);
+    });
+  }
+
+  if (btnDockNext) {
+    btnDockNext.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      state.activeCoverflowIndex = (state.activeCoverflowIndex < state.userPlaylist.length - 1) ? state.activeCoverflowIndex + 1 : 0;
+      renderCoverflow();
+      renderPlaylistTracklist();
+      const trk = state.userPlaylist[state.activeCoverflowIndex];
+      if (trk) playPlaylistTrack(trk);
+    });
+  }
+
+  if (btnDockPlay) {
+    btnDockPlay.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) {
+        showToast('Agrega canciones a tu Playlist 3D primero.');
+        return;
+      }
+      const activeTrack = state.userPlaylist[state.activeCoverflowIndex];
+      if (!activeTrack) return;
+
+      if (state.isPlaying) {
+        if (state.audio) state.audio.pause();
+        if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo();
+        setPlayingState(false);
+        updateDockPlayState(false);
+      } else {
+        playPlaylistTrack(activeTrack);
+      }
+    });
+  }
+
+  if (dockTrackCenter) {
+    dockTrackCenter.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      const activeTrack = state.userPlaylist[state.activeCoverflowIndex];
+      if (activeTrack) {
+        playFullSong(activeTrack.artist, activeTrack.title, activeTrack.cover, activeTrack.album);
+      }
+    });
+  }
+
+  if (btnDockRemove) {
+    btnDockRemove.addEventListener('click', () => {
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      const activeTrack = state.userPlaylist[state.activeCoverflowIndex];
+      if (activeTrack) {
+        removeFromUserPlaylist(activeTrack);
+      }
+    });
+  }
+
+  if (btnDockMore) {
+    btnDockMore.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.userPlaylist || state.userPlaylist.length === 0) return;
+      const activeTrack = state.userPlaylist[state.activeCoverflowIndex];
+      if (activeTrack) {
+        state.contextTrack = activeTrack;
+        openMoreMenu(e, activeTrack);
+      }
+    });
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (state.currentMode !== 'playlist') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowLeft') {
+      if (btnCoverflowPrev) btnCoverflowPrev.click();
+    } else if (e.key === 'ArrowRight') {
+      if (btnCoverflowNext) btnCoverflowNext.click();
+    }
+  });
+}
+
+function updateDockPlayState(isPlaying) {
+  const dockIconPlay = document.getElementById('dockIconPlay');
+  const dockIconPause = document.getElementById('dockIconPause');
+  const dockWave = document.getElementById('dockWaveIndicator');
+
+  if (dockIconPlay && dockIconPause) {
+    if (isPlaying) {
+      dockIconPlay.classList.add('hidden');
+      dockIconPause.classList.remove('hidden');
+    } else {
+      dockIconPlay.classList.remove('hidden');
+      dockIconPause.classList.add('hidden');
+    }
+  }
+
+  if (dockWave) {
+    if (isPlaying) {
+      dockWave.classList.add('active');
+    } else {
+      dockWave.classList.remove('active');
+    }
+  }
+}
+
+async function loadUserPlaylist() {
+  const user = getAuthUser();
+  const username = user ? user.user : 'guest';
+
+  const ownerTitle = document.getElementById('playlistOwnerTitle');
+  const ownerSub = document.getElementById('playlistOwnerSub');
+  if (ownerTitle) {
+    ownerTitle.textContent = user ? `PLAYLIST 3D DE ${user.user.toUpperCase()}` : 'MI PLAYLIST 3D';
+  }
+  if (ownerSub) {
+    ownerSub.textContent = user ? `Colección sincronizada de ${user.user}. Desliza en 3D para reproducir.` : 'Inicia sesión para sincronizar tu colección en tu cuenta.';
+  }
+
+  try {
+    const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}`);
+    const data = await res.json();
+    if (data && data.success && Array.isArray(data.playlist)) {
+      state.userPlaylist = data.playlist;
+    } else {
+      const saved = localStorage.getItem(`vice_playlist_${username}`);
+      state.userPlaylist = saved ? JSON.parse(saved) : [];
+    }
+  } catch (err) {
+    const saved = localStorage.getItem(`vice_playlist_${username}`);
+    state.userPlaylist = saved ? JSON.parse(saved) : [];
+  }
+
+  if (state.activeCoverflowIndex >= state.userPlaylist.length) {
+    state.activeCoverflowIndex = Math.max(0, state.userPlaylist.length - 1);
+  }
+
+  renderCoverflow();
+  renderPlaylistTracklist();
+}
+
+function renderCoverflow() {
+  const stage = document.getElementById('coverflowStage');
+  const subtitleText = document.getElementById('activeSubtitleText');
+  const dockCover = document.getElementById('dockCover');
+  const dockTitle = document.getElementById('dockTitle');
+  const dockArtist = document.getElementById('dockArtist');
+
+  if (!stage) return;
+  stage.innerHTML = '';
+
+  const list = state.userPlaylist || [];
+  if (list.length === 0) {
+    stage.innerHTML = `
+      <div class="coverflow-empty-msg" style="text-align:center; padding: 40px; color: #a19bb8;">
+        <div style="font-size: 3.5rem; margin-bottom: 12px;">💿</div>
+        <p style="font-weight: 700; color: #fff; font-size: 1.2rem;">Tu Playlist 3D está vacía</p>
+        <p style="font-size: 0.95rem; color: #a19bb8; margin-top: 8px;">
+          Haz clic en los 3 puntos (···) en cualquier canción para añadirla aquí a tu colección.
+        </p>
+      </div>
+    `;
+    if (subtitleText) subtitleText.textContent = 'Explora música y añade temas a tu playlist 3D.';
+    if (dockCover) dockCover.src = 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
+    if (dockTitle) dockTitle.textContent = 'Playlist vacía';
+    if (dockArtist) dockArtist.textContent = 'Vice Music';
+    return;
+  }
+
+  const activeIdx = Math.max(0, Math.min(state.activeCoverflowIndex, list.length - 1));
+  state.activeCoverflowIndex = activeIdx;
+  const activeTrack = list[activeIdx];
+
+  if (subtitleText && activeTrack) {
+    subtitleText.innerHTML = `<strong>${escapeHtml(activeTrack.title)}</strong> &mdash; ${escapeHtml(activeTrack.artist)} <span style="opacity:0.65;">(${escapeHtml(activeTrack.album || 'Vice Music')})</span>`;
+  }
+
+  if (dockCover && activeTrack) {
+    dockCover.src = activeTrack.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
+  }
+  if (dockTitle && activeTrack) {
+    dockTitle.textContent = activeTrack.title;
+  }
+  if (dockArtist && activeTrack) {
+    dockArtist.textContent = activeTrack.artist;
+  }
+
+  list.forEach((track, idx) => {
+    const card = document.createElement('div');
+    card.className = 'coverflow-card';
+
+    const offset = idx - activeIdx;
+    if (offset === 0) {
+      card.classList.add('active');
+    } else if (offset === -1) {
+      card.classList.add('left-1');
+    } else if (offset === -2) {
+      card.classList.add('left-2');
+    } else if (offset < -2) {
+      card.classList.add('left-hidden');
+    } else if (offset === 1) {
+      card.classList.add('right-1');
+    } else if (offset === 2) {
+      card.classList.add('right-2');
+    } else if (offset > 2) {
+      card.classList.add('right-hidden');
+    }
+
+    card.innerHTML = `
+      <img src="${escapeHtml(track.cover || 'https://via.placeholder.com/320/1a0933/ff2a85?text=VI')}" alt="${escapeHtml(track.title)}" loading="lazy">
+      <div class="card-overlay">
+        <div class="card-play-pill">▶ REPRODUCIR</div>
+        <div class="card-info-bottom">
+          <div class="card-title">${escapeHtml(track.title)}</div>
+          <div class="card-artist">${escapeHtml(track.artist)}</div>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      if (idx === state.activeCoverflowIndex) {
+        playPlaylistTrack(track);
+      } else {
+        state.activeCoverflowIndex = idx;
+        renderCoverflow();
+        renderPlaylistTracklist();
+      }
+    });
+
+    stage.appendChild(card);
+  });
+}
+
+function renderPlaylistTracklist() {
+  const container = document.getElementById('playlistTracklist');
+  const countEl = document.getElementById('playlistTotalCount');
+  if (!container) return;
+
+  const list = state.userPlaylist || [];
+  if (countEl) countEl.textContent = list.length;
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: #a19bb8;">
+        <p>No tienes pistas en tu lista todavía.</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  list.forEach((t, i) => {
+    const isActive = i === state.activeCoverflowIndex;
+    const durationMin = formatTime(t.duration || 180);
+    html += `
+      <div class="playlist-row ${isActive ? 'active-row' : ''}" data-index="${i}">
+        <div class="pl-col-idx">${i + 1}</div>
+        <div class="pl-col-cover">
+          <img src="${escapeHtml(t.cover || 'https://via.placeholder.com/48/1a0933/ff2a85?text=VI')}" alt="${escapeHtml(t.title)}">
+        </div>
+        <div class="pl-col-meta">
+          <span class="pl-title">${escapeHtml(t.title)}</span>
+          <span class="pl-artist">${escapeHtml(t.artist)}</span>
+        </div>
+        <div class="pl-col-album">${escapeHtml(t.album || 'Vice Music')}</div>
+        <div class="pl-col-duration">${durationMin}</div>
+        <div class="pl-col-actions">
+          <button class="pl-act-btn btn-pl-play" title="Reproducir" data-index="${i}">▶</button>
+          <button class="pl-act-btn btn-pl-dl" title="Descargar MP3 320 kbps" data-index="${i}">⬇</button>
+          <button class="pl-act-btn btn-pl-del" title="Eliminar de mi playlist" data-index="${i}">✕</button>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('.btn-pl-play').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-index'), 10);
+      state.activeCoverflowIndex = idx;
+      renderCoverflow();
+      renderPlaylistTracklist();
+      const track = state.userPlaylist[idx];
+      if (track) playPlaylistTrack(track);
+    });
+  });
+
+  container.querySelectorAll('.btn-pl-dl').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-index'), 10);
+      const track = state.userPlaylist[idx];
+      if (track) {
+        downloadMp3_320(track.artist, track.title, track.preview, track.videoId || track.video_id, {
+          album: track.album,
+          duration: track.duration,
+          coverUrl: track.cover
+        }, btn);
+      }
+    });
+  });
+
+  container.querySelectorAll('.btn-pl-del').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-index'), 10);
+      const track = state.userPlaylist[idx];
+      if (track) removeFromUserPlaylist(track);
+    });
+  });
+
+  container.querySelectorAll('.playlist-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = parseInt(row.getAttribute('data-index'), 10);
+      state.activeCoverflowIndex = idx;
+      renderCoverflow();
+      renderPlaylistTracklist();
+    });
+  });
+}
+
+function playPlaylistTrack(track) {
+  if (!track) return;
+  state.currentTrack = track;
+  updateDockPlayState(true);
+
+  if (track.preview && track.preview.startsWith('http')) {
+    loadTrack({
+      id: track.id || Date.now(),
+      title: track.title,
+      artist: track.artist,
+      cover: track.cover,
+      album: track.album,
+      audioUrl: track.preview,
+      duration: track.duration || 30
+    });
+  } else {
+    playFullSong(track.artist, track.title, track.cover, track.album);
+  }
+}
+
+async function addToUserPlaylist(track) {
+  if (!track || !track.title) {
+    showToast('❌ No hay canción seleccionada para añadir.');
+    return;
+  }
+
+  const user = getAuthUser();
+  const username = user ? user.user : 'guest';
+
+  const exists = (state.userPlaylist || []).some(t => 
+    t.title.toLowerCase().trim() === track.title.toLowerCase().trim() && 
+    t.artist.toLowerCase().trim() === track.artist.toLowerCase().trim()
+  );
+  if (exists) {
+    showToast(`⚠️ "${track.title}" ya está en tu playlist.`);
+    return;
+  }
+
+  const playlistItem = {
+    title: track.title,
+    artist: track.artist || 'Artista Desconocido',
+    cover: track.cover || (state.currentAlbum && state.currentAlbum.coverXl) || 'https://via.placeholder.com/300/1a0933/ff2a85?text=VI',
+    preview: track.audioUrl || track.preview || '',
+    album: track.album || (state.currentAlbum && state.currentAlbum.title) || 'Vice Music Single',
+    duration: track.duration || 180,
+    video_id: track.videoId || ''
+  };
+
+  try {
+    const res = await fetch('/api/playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: username, track: playlistItem })
+    });
+    const data = await res.json();
+    if (data && data.success && data.track) {
+      playlistItem.id = data.track.id;
+    } else {
+      playlistItem.id = Date.now();
+    }
+  } catch (err) {
+    playlistItem.id = Date.now();
+  }
+
+  state.userPlaylist.unshift(playlistItem);
+  try {
+    localStorage.setItem(`vice_playlist_${username}`, JSON.stringify(state.userPlaylist));
+  } catch (e) {}
+
+  state.activeCoverflowIndex = 0;
+  renderCoverflow();
+  renderPlaylistTracklist();
+  showToast(`💖 ¡"${playlistItem.title}" añadida a tu Playlist 3D!`);
+}
+
+async function removeFromUserPlaylist(trackOrId) {
+  const user = getAuthUser();
+  const username = user ? user.user : 'guest';
+
+  let idToRemove = null;
+  let titleToRemove = '';
+  if (typeof trackOrId === 'object' && trackOrId !== null) {
+    idToRemove = trackOrId.id;
+    titleToRemove = trackOrId.title;
+  } else {
+    idToRemove = trackOrId;
+  }
+
+  const idx = state.userPlaylist.findIndex(t => (idToRemove && t.id === idToRemove) || (titleToRemove && t.title === titleToRemove));
+  if (idx === -1) return;
+
+  const removedTrack = state.userPlaylist[idx];
+  state.userPlaylist.splice(idx, 1);
+  if (state.activeCoverflowIndex >= state.userPlaylist.length) {
+    state.activeCoverflowIndex = Math.max(0, state.userPlaylist.length - 1);
+  }
+
+  try {
+    await fetch('/api/playlist', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: username, id: removedTrack.id, title: removedTrack.title })
+    });
+  } catch (err) {
+    console.warn('Error eliminando del servidor:', err);
+  }
+
+  try {
+    localStorage.setItem(`vice_playlist_${username}`, JSON.stringify(state.userPlaylist));
+  } catch (e) {}
+
+  renderCoverflow();
+  renderPlaylistTracklist();
+  showToast(`🗑️ "${removedTrack.title}" eliminada de tu playlist.`);
 }

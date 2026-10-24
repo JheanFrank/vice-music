@@ -13,16 +13,9 @@ try {
   if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
 } catch (_) {}
 
-let ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
-try {
-  console.log('🛡️ [YTDL] Inicializando motor de PO Token contra bloqueos de YouTube...');
-  const poTokenProvider = await createPoTokenProvider();
-  ytdlInstance = new Ytdl({ poTokenProvider, clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
-  console.log('🛡️ [YTDL] ¡Motor de PO Token activado con éxito!');
-} catch (poErr) {
-  console.warn('⚠️ [YTDL] Motor PO Token no pudo iniciar, usando clientes Tv/WebEmbedded:', poErr.message);
-  ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
-}
+// Motor de descarga ultra-rápido VisionOS (sin decipher de player ni OOM en servidores Linux / Render)
+let ytdlInstance = new Ytdl({ clients: [Client.VisionOS] });
+console.log('⚡ [YTDL] Motor VisionOS nativo de alta velocidad activado (cero consumo de memoria, sin base.js).');
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -483,20 +476,7 @@ const server = http.createServer(async (req, res) => {
         report.baseJsError = pErr.message;
       }
 
-      // Test default Ytdl instance without poTokenProvider vs with poTokenProvider
-      try {
-        const rawYtdl = new Ytdl();
-        const info = await rawYtdl.getInfo(vid);
-        report.rawYtdlFormats = info.formats ? info.formats.length : 0;
-      } catch (rErr) {
-        report.rawYtdlError = rErr.message;
-        report.rawYtdlCause = rErr.cause ? (rErr.cause.message || String(rErr.cause)) : null;
-        if (rErr.cause && rErr.cause.cause) {
-          report.rawYtdlSubCause = rErr.cause.cause.message || String(rErr.cause.cause);
-        }
-      }
-
-      // Test YTDL getInfo & download
+      // Test YTDL getInfo & download con VisionOS
       try {
         const info = await ytdlInstance.getInfo(vid);
         report.ytdlInfoFormats = info.formats ? info.formats.length : 0;
@@ -1399,24 +1379,33 @@ function stripOldId3(mp3Buffer) {
         }
         let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
 
-        if (!targetVideoId && q) {
+        if (!targetVideoId && (q || (artist && title))) {
+          const searchQuery = `${artist || ''} ${title || q} audio`.trim();
           try {
-            const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' audio')}`, {
-              headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(8000)
-            });
-            const html = await ytRes.text();
-            const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-            if (match && match[1]) {
-              targetVideoId = match[1];
-            } else {
-              const idx = html.indexOf('watch?v=');
-              if (idx !== -1) {
-                targetVideoId = html.substring(idx + 8, idx + 19);
-              }
+            const results = await ytdlInstance.search(searchQuery);
+            if (results && results.length > 0) {
+              const best = results.find(r => r.author?.verified || r.author?.badges?.includes('Official Artist Channel')) || results[0];
+              targetVideoId = best.id;
+              console.log(`[Native MP3 Engine] Video oficial encontrado vía search: [${targetVideoId}] "${best.title}"`);
             }
-          } catch (e) {
-            console.warn('[Native Engine] Búsqueda de videoId falló:', e.message);
+          } catch (sErr) {
+            console.warn('[Native MP3 Engine] Búsqueda ytdl falló:', sErr.message);
+          }
+
+          if (!targetVideoId) {
+            try {
+              const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, {
+                headers: { 'User-Agent': USER_AGENT },
+                signal: AbortSignal.timeout(8000)
+              });
+              const html = await ytRes.text();
+              const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+              if (match && match[1]) {
+                targetVideoId = match[1];
+              }
+            } catch (e) {
+              console.warn('[Native Engine] Fallback de videoId falló:', e.message);
+            }
           }
         }
 
@@ -1484,25 +1473,40 @@ function stripOldId3(mp3Buffer) {
           'pipe:1'
         ]);
 
+        ffmpeg.stdin.on('error', () => {}); // Prevenir crash por EPIPE
+
         audioStream.pipe(ffmpeg.stdin);
 
-        // Enviar cabeceras de descarga de archivo MP3 de inmediato (evita timeout de Render)
-        res.writeHead(200, {
-          'Content-Type': 'audio/mpeg',
-          'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Access-Control-Allow-Origin': '*'
+        let headersSent = false;
+
+        ffmpeg.stdout.on('data', (chunk) => {
+          if (!headersSent) {
+            headersSent = true;
+            res.writeHead(200, {
+              'Content-Type': 'audio/mpeg',
+              'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Access-Control-Allow-Origin': '*'
+            });
+            // Escribir cabecera ID3v2.3 con carátula oficial al principio del archivo
+            res.write(tag);
+          }
+          res.write(chunk);
         });
 
-        // Escribir cabecera ID3v2.3 con carátula oficial al principio del archivo
-        res.write(tag);
-
-        // Transmitir flujo de datos codificados de FFmpeg directamente al cliente
-        ffmpeg.stdout.pipe(res);
+        ffmpeg.stdout.on('end', () => {
+          if (!headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'FFmpeg terminó sin datos de audio' }));
+          } else {
+            res.end();
+            console.log(`[Native MP3 Engine] ✅ Descarga transmitida con éxito: "${safeFilename}.mp3"`);
+          }
+        });
 
         audioStream.on('error', (aErr) => {
           console.error('[Native MP3 Engine] Error en stream de audio:', aErr.message);
-          if (!res.headersSent) {
+          if (!headersSent) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Error al obtener audio: ' + aErr.message }));
           } else {
@@ -1512,16 +1516,19 @@ function stripOldId3(mp3Buffer) {
 
         ffmpeg.on('error', (fErr) => {
           console.error('[Native MP3 Engine] Error en FFmpeg:', fErr.message);
-          if (!res.headersSent) {
+          if (!headersSent) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Error al procesar MP3: ' + fErr.message }));
+            res.end(JSON.stringify({ error: 'Error en FFmpeg: ' + fErr.message }));
           } else {
             res.end();
           }
         });
 
-        ffmpeg.on('close', (code) => {
-          console.log(`[Native MP3 Engine] ✅ Descarga completada exitosamente: "${safeFilename}.mp3" (código ${code})`);
+        req.on('close', () => {
+          try {
+            audioStream.destroy();
+            ffmpeg.kill('SIGKILL');
+          } catch (_) {}
         });
 
         return;

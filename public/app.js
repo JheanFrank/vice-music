@@ -114,6 +114,7 @@ const amMenuTitle = document.getElementById('amMenuTitle');
 const amMenuArtist = document.getElementById('amMenuArtist');
 const amMenuBtnQueue = document.getElementById('amMenuBtnQueue');
 const amMenuBtnDownload = document.getElementById('amMenuBtnDownload');
+const amMenuBtnDownloadFlac = document.getElementById('amMenuBtnDownloadFlac');
 const amMenuBtnDj = document.getElementById('amMenuBtnDj');
 const amMenuDjTag = document.getElementById('amMenuDjTag');
 const amMenuBtnArtist = document.getElementById('amMenuBtnArtist');
@@ -122,6 +123,7 @@ const amMenuBtnFull = document.getElementById('amMenuBtnFull');
 const amMenuBtnShare = document.getElementById('amMenuBtnShare');
 const amDjBadge = document.getElementById('amDjBadge');
 const btnBottomDj = document.getElementById('btnBottomDj');
+const btnPlayerMoreLeft = document.getElementById('btnPlayerMoreLeft');
 
 const appleMusicState = {
   isOpen: false,
@@ -714,35 +716,65 @@ function setupEventListeners() {
       openMoreMenu();
     });
   }
+  if (btnPlayerMoreLeft) {
+    btnPlayerMoreLeft.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.currentTrack) {
+        openTrackContextMenu(state.currentTrack);
+      } else {
+        showToast('Selecciona primero una pista de audio.');
+      }
+    });
+  }
   if (amMenuBackdrop) {
     amMenuBackdrop.addEventListener('click', closeMoreMenu);
   }
   if (amMenuBtnQueue) {
     amMenuBtnQueue.addEventListener('click', () => {
       closeMoreMenu();
-      if (!state.currentTrack) return;
+      const t = state.contextTrack || state.currentTrack;
+      if (!t) return;
       if (!state.queue) state.queue = [];
       state.queue.push({
-        artist: state.currentTrack.artist,
-        title: state.currentTrack.title,
-        cover: state.currentTrack.cover,
-        album: state.currentTrack.album
+        artist: t.artist,
+        title: t.title,
+        cover: t.cover,
+        album: t.album
       });
-      showToast(`➕ "${state.currentTrack.title}" añadida a la cola para sonar a continuación.`);
+      showToast(`➕ "${t.title}" añadida a la cola para sonar a continuación.`);
     });
   }
   if (amMenuBtnDownload) {
     amMenuBtnDownload.addEventListener('click', () => {
       closeMoreMenu();
-      if (state.currentTrack) {
-        downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
-          album: state.currentTrack.album,
-          coverUrl: state.currentTrack.cover,
-          year: state.currentTrack.releaseDate
+      const t = state.contextTrack || state.currentTrack;
+      if (t) {
+        downloadMp3_320(t.artist, t.title, t.audioUrl || t.preview, t.videoId, {
+          album: t.album,
+          coverUrl: t.cover,
+          year: t.releaseDate
         });
       } else {
         showToast('Selecciona primero una canción para descargar en MP3 320.');
       }
+    });
+  }
+  if (amMenuBtnDownloadFlac) {
+    amMenuBtnDownloadFlac.addEventListener('click', () => {
+      closeMoreMenu();
+      const t = state.contextTrack || state.currentTrack;
+      if (!t) return;
+      if (!isUserLoggedIn()) {
+        openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${t.title}".`, () => {
+          showToast(`⚡ Abriendo enlace FLAC para: ${t.title}`);
+          const url = t.lucidaUrl || `https://lucida.to/?url=${encodeURIComponent(t.title + ' ' + t.artist)}`;
+          window.open(url, '_blank');
+        });
+        return;
+      }
+      showToast(`⚡ Abriendo enlace FLAC para: ${t.title}`);
+      const url = t.lucidaUrl || `https://lucida.to/?url=${encodeURIComponent(t.title + ' ' + t.artist)}`;
+      window.open(url, '_blank');
     });
   }
   if (amMenuBtnDj) {
@@ -758,44 +790,48 @@ function setupEventListeners() {
   if (amMenuBtnArtist) {
     amMenuBtnArtist.addEventListener('click', () => {
       closeMoreMenu();
-      if (state.currentTrack && state.currentTrack.artist) {
+      const t = state.contextTrack || state.currentTrack;
+      if (t && t.artist) {
         closeAppleMusicModal();
-        openArtistProfile(state.currentTrack.artist);
+        openArtistProfile(t.artist);
       }
     });
   }
   if (amMenuBtnAlbum) {
     amMenuBtnAlbum.addEventListener('click', () => {
       closeMoreMenu();
+      const t = state.contextTrack || state.currentTrack;
       if (state.currentAlbum) {
         closeAppleMusicModal();
         openAlbumDetail(state.currentAlbum.id);
-      } else if (state.currentTrack) {
-        showToast(`📀 Reproduciendo desde: ${state.currentTrack.album || 'Álbum Oficial'}`);
+      } else if (t) {
+        showToast(`📀 Reproduciendo desde: ${t.album || 'Álbum Oficial'}`);
       }
     });
   }
   if (amMenuBtnFull) {
     amMenuBtnFull.addEventListener('click', () => {
       closeMoreMenu();
-      if (state.currentTrack) {
-        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album);
+      const t = state.contextTrack || state.currentTrack;
+      if (t) {
+        playFullSong(t.artist, t.title, t.cover, t.album);
       }
     });
   }
   if (amMenuBtnShare) {
     amMenuBtnShare.addEventListener('click', () => {
       closeMoreMenu();
-      if (state.currentTrack) {
-        const textToShare = `Escucha "${state.currentTrack.title}" de ${state.currentTrack.artist} en Vice Music`;
+      const t = state.contextTrack || state.currentTrack;
+      if (t) {
+        const textToShare = `Escucha "${t.title}" de ${t.artist} en Vice Music: ${window.location.href}`;
         if (navigator.clipboard) {
           navigator.clipboard.writeText(textToShare).then(() => {
             showToast('🔗 Información copiada al portapapeles');
           }).catch(() => {
-            showToast(`🎵 Compartir: ${state.currentTrack.title} - ${state.currentTrack.artist}`);
+            showToast(`🎵 Compartir: ${t.title} - ${t.artist}`);
           });
         } else {
-          showToast(`🎵 Compartir: ${state.currentTrack.title} - ${state.currentTrack.artist}`);
+          showToast(`🎵 Compartir: ${t.title} - ${t.artist}`);
         }
       }
     });
@@ -1230,11 +1266,12 @@ async function openAlbumDetail(albumId) {
           <button class="btn-track-action btn-play-full" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);" title="Escuchar Canción Completa">
             🎧 COMPLETA
           </button>
-          <button class="btn-track-action btn-dl-mp3" title="Descargar MP3 320 kbps (Audio YouTube)">
-            📥 MP3 320
-          </button>
-          <button class="btn-track-action btn-dl-flac" title="Descargar pista individual en FLAC">
-            ⚡ FLAC
+          <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+              <circle cx="5" cy="12" r="2.2"></circle>
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <circle cx="19" cy="12" r="2.2"></circle>
+            </svg>
           </button>
         </div>
       `;
@@ -1260,33 +1297,22 @@ async function openAlbumDetail(albumId) {
         playFullSong(track.artist, track.title, album.coverXl, album.title);
       });
 
-      // Descargar MP3 320 kbps oficial vía stream
-      trackRow.querySelector('.btn-dl-mp3').addEventListener('click', (e) => {
-        downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
+      // Menú de 3 puntos: Descargas MP3/FLAC, añadir a cola, etc.
+      trackRow.querySelector('.btn-track-more').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTrackContextMenu({
+          title: track.title,
+          artist: track.artist || album.artist,
           album: album.title,
-          albumArtist: album.artist,
-          publisher: album.label || null,
-          coverUrl: album.coverXl,
-          year: album.releaseDate,
+          cover: album.coverXl,
+          preview: track.preview,
+          audioUrl: track.preview || track.audioUrl,
+          lucidaUrl: track.lucidaUrl,
           releaseDate: album.releaseDate,
-          track: track.position || (index + 1),
+          position: track.position || (index + 1),
           totalTracks: album.tracks ? album.tracks.length : null,
-          disk: track.disk || 1,
-          genre: album.genre || null
-        }, e.currentTarget);
-      });
-
-      // Descargar pista individual
-      trackRow.querySelector('.btn-dl-flac').addEventListener('click', () => {
-        if (!isUserLoggedIn()) {
-          openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${track.title}".`, () => {
-            showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
-            window.open(track.lucidaUrl, '_blank');
-          });
-          return;
-        }
-        showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
-        window.open(track.lucidaUrl, '_blank');
+          label: album.label
+        });
       });
 
       albumTracklist.appendChild(trackRow);
@@ -2386,15 +2412,19 @@ function playPreviousTrack() {
 }
 
 // MENÚ CONTEXTUAL ESTILO SPOTIFY / APPLE MUSIC (3 PUNTOS)
-function openMoreMenu() {
+function openTrackContextMenu(trackData) {
+  if (!trackData) return;
+  state.contextTrack = trackData;
   if (!amMoreMenu) return;
-  if (state.currentTrack) {
-    if (amMenuCover) amMenuCover.src = state.currentTrack.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
-    if (amMenuTitle) amMenuTitle.innerText = state.currentTrack.title || 'Canción Seleccionada';
-    if (amMenuArtist) amMenuArtist.innerText = state.currentTrack.artist || 'Vice Music';
-  }
+  if (amMenuCover) amMenuCover.src = trackData.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
+  if (amMenuTitle) amMenuTitle.innerText = trackData.title || 'Canción Seleccionada';
+  if (amMenuArtist) amMenuArtist.innerText = trackData.artist || 'Vice Music';
   updateSmartDjUI();
   amMoreMenu.classList.remove('hidden');
+}
+
+function openMoreMenu() {
+  openTrackContextMenu(state.currentTrack);
 }
 
 function closeMoreMenu() {

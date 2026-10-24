@@ -83,12 +83,8 @@ const amCoverStage = document.querySelector('.am-cover-stage');
 const amCoverCard = document.getElementById('amCoverCard');
 const amCoverImg = document.getElementById('amCoverImg');
 const amMotionVideo = document.getElementById('amMotionVideo');
-const amMotionBadge = document.getElementById('amMotionBadge');
-const amMotionText = document.getElementById('amMotionText');
 const amCoverGlow = document.getElementById('amCoverGlow');
 let hlsMotion = null;
-const amVinylDisc = document.getElementById('amVinylDisc');
-const amVinylCenter = document.getElementById('amVinylCenter');
 const amTrackTitle = document.getElementById('amTrackTitle');
 const amTrackArtist = document.getElementById('amTrackArtist');
 const amTrackAlbum = document.getElementById('amTrackAlbum');
@@ -2183,7 +2179,6 @@ function setPlayingState(playing) {
     waveIndicator.classList.add('playing');
     if (amIconPlay) amIconPlay.classList.add('hidden');
     if (amIconPause) amIconPause.classList.remove('hidden');
-    if (amVinylDisc) amVinylDisc.classList.add('playing');
     if (amCoverCard) amCoverCard.classList.add('playing');
     if (amCoverGlow) amCoverGlow.classList.add('playing');
     if (amCoverImg) amCoverImg.classList.add('auto-moving');
@@ -2199,7 +2194,6 @@ function setPlayingState(playing) {
     waveIndicator.classList.remove('playing');
     if (amIconPlay) amIconPlay.classList.remove('hidden');
     if (amIconPause) amIconPause.classList.add('hidden');
-    if (amVinylDisc) amVinylDisc.classList.remove('playing');
     if (amCoverCard) amCoverCard.classList.remove('playing');
     if (amCoverGlow) amCoverGlow.classList.remove('playing');
     if (amCoverImg) amCoverImg.classList.remove('auto-moving');
@@ -2589,9 +2583,6 @@ function updateAppleMusicTrackInfo(track) {
   if (amAmbientBg) {
     amAmbientBg.style.backgroundImage = `radial-gradient(circle at 50% 35%, rgba(255, 42, 133, 0.42) 0%, rgba(0, 240, 255, 0.32) 40%, rgba(10, 4, 18, 0.95) 85%), url('${coverUrl}')`;
   }
-  if (amVinylCenter) {
-    amVinylCenter.style.backgroundImage = `url('${coverUrl}')`;
-  }
 
   // Si cambia la pista, resetear letras y buscar nuevas
   const trackKey = `${track.artist}::${track.title}`;
@@ -2638,10 +2629,6 @@ async function fetchMotionArtwork(artist, album, title) {
 
       amMotionVideo.classList.remove('hidden');
       if (amCoverImg) amCoverImg.style.opacity = '0';
-      if (amMotionBadge) {
-        amMotionBadge.className = 'am-motion-badge active-video';
-        if (amMotionText) amMotionText.innerText = '🎬 MOTION ARTWORK OFICIAL';
-      }
       return;
     }
   } catch (err) {
@@ -2662,10 +2649,6 @@ async function fetchMotionArtwork(artist, album, title) {
   if (amCoverImg) {
     amCoverImg.style.opacity = '1';
     amCoverImg.classList.add('auto-moving');
-  }
-  if (amMotionBadge) {
-    amMotionBadge.className = 'am-motion-badge';
-    if (amMotionText) amMotionText.innerText = '🌀 CARÁTULA EN MOVIMIENTO';
   }
 }
 

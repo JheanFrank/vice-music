@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v5.5</span>
+          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v6.4</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -306,6 +306,15 @@
               <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"></line>
             </svg>
           </button>
+          <button class="dock-btn" id="btnDockShuffle" title="Reproducción aleatoria (Shuffle)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <polyline points="16 3 21 3 21 8"></polyline>
+              <line x1="4" y1="20" x2="21" y2="3"></line>
+              <polyline points="21 16 21 21 16 21"></polyline>
+              <line x1="15" y1="15" x2="21" y2="21"></line>
+              <line x1="4" y1="4" x2="9" y2="9"></line>
+            </svg>
+          </button>
         </div>
 
         <div class="dock-track-center" id="dockTrackCenter" title="Clic para escuchar completa">
@@ -323,6 +332,15 @@
         </div>
 
         <div class="dock-controls-right">
+          <button class="dock-btn dock-queue" id="btnDockQueue" title="Ver cola de reproducción">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <polygon points="3 6 3 18 6 12 3 6" fill="currentColor"></polygon>
+            </svg>
+            <span class="dock-queue-badge hidden" id="dockQueueBadge">0</span>
+          </button>
           <button class="dock-btn dock-trash" id="btnDockRemove" title="Eliminar de mi playlist">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -336,7 +354,25 @@
       <!-- Tabla completa de canciones de la playlist -->
       <div class="playlist-table-container">
         <div class="playlist-table-header">
-          <h3>TODAS LAS CANCIONES GUARDADAS (<span id="playlistTotalCount">0</span>)</h3>
+          <div class="pl-header-left">
+            <span class="pl-header-badge">COLECCIÓN</span>
+            <h3>CANCIONES GUARDADAS (<span id="playlistTotalCount">0</span>)</h3>
+          </div>
+          <div class="pl-header-actions">
+            <button class="btn-pl-action" id="btnPlaylistShuffle" title="Reproducir en modo aleatorio">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <polyline points="16 3 21 3 21 8"></polyline>
+                <line x1="4" y1="20" x2="21" y2="3"></line>
+                <polyline points="21 16 21 21 16 21"></polyline>
+                <line x1="15" y1="15" x2="21" y2="21"></line>
+                <line x1="4" y1="4" x2="9" y2="9"></line>
+              </svg>
+              <span>ALEATORIO</span>
+            </button>
+            <button class="btn-pl-action" id="btnPlaylistPlayAll" title="Reproducir toda la playlist en orden">
+              <span>▶ REPRODUCIR TODAS</span>
+            </button>
+          </div>
         </div>
         <div class="playlist-tracklist" id="playlistTracklist">
           <!-- Items generados dinámicamente -->
@@ -449,7 +485,15 @@
 
       <!-- Acciones de barra fija: Limpias y equilibradas con el lado izquierdo -->
       <div class="player-actions">
-        <!-- Los botones MP3 y Completa se pasaron al menú de 3 puntos para máxima limpieza visual -->
+        <button id="btnPlayerQueue" class="player-queue-btn" title="Ver cola de reproducción">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <polygon points="3 6 3 18 6 12 3 6" fill="currentColor"></polygon>
+          </svg>
+          <span class="player-queue-badge hidden" id="playerQueueBadge">0</span>
+        </button>
       </div>
 
     </div>
@@ -572,6 +616,11 @@
         <span class="am-menu-text">Añadir a Mi Playlist 3D</span>
         <span class="am-menu-arrow">›</span>
       </button>
+      <button class="am-menu-item" id="amMenuBtnPlayNext">
+        <span class="am-menu-icon">⏭️</span>
+        <span class="am-menu-text">Poner a continuación</span>
+        <span class="am-menu-arrow">›</span>
+      </button>
       <button class="am-menu-item" id="amMenuBtnQueue">
         <span class="am-menu-icon">➕</span>
         <span class="am-menu-text">Añadir a la cola</span>
@@ -603,16 +652,74 @@
         <span class="am-menu-text">Ir al álbum</span>
         <span class="am-menu-arrow">›</span>
       </button>
-      <button class="am-menu-item" id="amMenuBtnFull">
-        <span class="am-menu-icon">🎧</span>
-        <span class="am-menu-text">Canción completa</span>
-      </button>
       <div class="am-menu-divider"></div>
-      <button class="am-menu-item" id="amMenuBtnShare">
-        <span class="am-menu-icon">🔗</span>
-        <span class="am-menu-text">Compartir</span>
-        <span class="am-menu-arrow">›</span>
+      <button class="am-menu-item" id="amMenuBtnViewQueue">
+        <span class="am-menu-icon">📑</span>
+        <span class="am-menu-text">Ver cola de reproducción</span>
+        <span class="am-menu-tag" id="amMenuQueueTag" style="background: rgba(255,255,255,0.15);">0</span>
       </button>
+    </div>
+  </div>
+
+  <!-- Notificación Toast Esquina Superior Derecha -->
+  <div id="topRightToast" class="top-right-toast hidden" role="status" aria-live="polite">
+    <div class="trt-icon-wrap" id="trtIconWrap">
+      <span id="trtIcon">✓</span>
+    </div>
+    <div class="trt-body">
+      <div class="trt-title" id="trtTitle">Éxito</div>
+      <div class="trt-subtitle" id="trtSubtitle">Operación completada</div>
+    </div>
+  </div>
+
+  <!-- Modal Confirmación de Descarga en MP3 320 kbps -->
+  <div id="downloadConfirmModal" class="download-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="downloadModalTitle">
+    <div class="download-modal-backdrop" id="downloadModalBackdrop"></div>
+    <div class="download-modal-box">
+      <div class="download-modal-glow"></div>
+      <div class="download-modal-icon">📥</div>
+      <h3 class="download-modal-title" id="downloadModalTitle">¿Descargar en MP3?</h3>
+      <p class="download-modal-desc" id="downloadModalDesc">¿Deseas descargar esta pista en máxima calidad <strong>MP3 320 kbps</strong> con carátula oficial integrada?</p>
+      <div class="download-modal-actions">
+        <button type="button" id="btnCancelDownload" class="btn-download-cancel">Cancelar</button>
+        <button type="button" id="btnConfirmDownload" class="btn-download-confirm">Descargar MP3</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cola de Reproducción (Gestor de Canciones en Espera) -->
+  <div id="queueModal" class="queue-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="queueModalTitle">
+    <div class="queue-modal-backdrop" id="queueModalBackdrop"></div>
+    <div class="queue-modal-box">
+      <div class="queue-modal-header">
+        <div class="queue-title-wrap">
+          <span class="queue-header-icon">📑</span>
+          <h3 id="queueModalTitle" class="queue-modal-title">COLA DE REPRODUCCIÓN</h3>
+          <span class="queue-badge-count" id="queueBadgeCount">0</span>
+        </div>
+        <div class="queue-header-actions">
+          <button type="button" id="btnClearQueue" class="btn-queue-clear" title="Vaciar cola de reproducción">Vaciar</button>
+          <button type="button" id="btnCloseQueueModal" class="queue-close-btn" aria-label="Cerrar">&times;</button>
+        </div>
+      </div>
+      <div class="queue-modal-body" id="queueListContainer">
+        <!-- Renderizado dinámico de canciones en cola -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Confirmación de Eliminación de Canción de Playlist -->
+  <div id="deleteConfirmModal" class="delete-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="delete-modal-backdrop" id="deleteModalBackdrop"></div>
+    <div class="delete-modal-box">
+      <div class="delete-modal-glow"></div>
+      <div class="delete-modal-icon">🗑️</div>
+      <h3 class="delete-modal-title" id="deleteModalTitle">¿Eliminar canción?</h3>
+      <p class="delete-modal-desc" id="deleteModalDesc">¿Estás seguro de que deseas eliminar esta pista de tu Playlist 3D?</p>
+      <div class="delete-modal-actions">
+        <button type="button" id="btnCancelDelete" class="btn-delete-cancel">Cancelar</button>
+        <button type="button" id="btnConfirmDelete" class="btn-delete-confirm">Sí, eliminar</button>
+      </div>
     </div>
   </div>
 
@@ -663,6 +770,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=570"></script>
+  <script src="app.js?v=670"></script>
 </body>
 </html>

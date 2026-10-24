@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v4.9</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v5.0</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -280,22 +280,14 @@
     <div class="player-glow"></div>
     <div class="player-content">
       
-      <!-- Info Track -->
-      <div class="player-track">
+      <!-- Info Track Limpio Estilo Apple Music / Spotify -->
+      <div class="player-track" id="playerTrackWrap" title="Clic para abrir reproductor inmersivo">
         <div class="track-artwork-wrapper">
           <img id="playerCover" src="https://via.placeholder.com/80/1a0933/ff2a85?text=VI" alt="Cover">
-          <div class="sound-wave-indicator" id="waveIndicator">
-            <span></span><span></span><span></span><span></span>
-          </div>
         </div>
         <div class="track-meta">
           <h4 id="playerTitle">Selecciona una pista</h4>
           <p id="playerArtist">Vice City Radio 98.3</p>
-          <div class="track-specs">
-            <span class="spec-pill gold" id="playerModeBadge">STUDIO MASTER</span>
-            <span class="spec-pill" id="playerDuration">00:00</span>
-            <span class="spec-pill" id="playerLabel" style="display: none;"></span>
-          </div>
         </div>
       </div>
 
@@ -350,12 +342,8 @@
         </div>
       </div>
 
-      <!-- Visualizador Vice City, Botón Escuchar Completa & Descargar MP3 320 -->
-            <div class="player-actions">
-        <canvas id="visualizerCanvas" width="90" height="32"></canvas>
-        <button id="btnOpenAppleMusic" class="btn-track-action btn-open-apple-music" title="Abrir interfaz estilo Apple Music con Carátula Dinámica y Letras">
-          <span>✨ APPLE MUSIC</span>
-        </button>
+      <!-- Botones de Acción -->
+      <div class="player-actions">
         <button id="btnPlayerDlMp3" class="btn-track-action btn-dl-mp3" title="Descargar canción en MP3 320 kbps">
           <span>📥 MP3 320</span>
         </button>
@@ -386,7 +374,7 @@
 
         <div class="am-now-playing-label">
           <span class="am-indicator-live"></span>
-          <span>REPRODUCIENDO EN VIVO // APPLE MUSIC MASTER</span>
+          <span>REPRODUCIENDO AHORA</span>
         </div>
 
         <div class="am-view-tabs">
@@ -511,6 +499,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=490"></script>
+  <script src="app.js?v=500"></script>
 </body>
 </html>

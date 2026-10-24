@@ -1,4 +1,4 @@
-// Build trigger: 2026-10-23T00:50:00.0000000Z
+// Build trigger: 2026-10-23T01:35:00.0000000Z
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -419,7 +419,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '5.2', status: 'online', engine: 'Vice Music Clean Apple Music Centered UI' }));
+      return res.end(JSON.stringify({ version: '5.3', status: 'online', engine: 'Vice Music Smart DJ + Spotify Context Menu + Centered Controls' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)

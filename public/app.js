@@ -10,7 +10,11 @@ const state = {
   playbackSource: 'preview', // 'preview' | 'full'
   currentSpeed: 1, // 1 | 1.25 | 1.5 | 2
   audio: document.getElementById('audioElement'),
-  results: []
+  results: [],
+  rankingTracks: [],
+  queue: [],
+  history: [],
+  smartDjEnabled: true
 };
 
 // DOM Elements
@@ -102,6 +106,22 @@ const amIconPlay = document.getElementById('amIconPlay');
 const amIconPause = document.getElementById('amIconPause');
 const amBtnForward = document.getElementById('amBtnForward');
 const amBtnDownload = document.getElementById('amBtnDownload');
+const amBtnMore = document.getElementById('amBtnMore');
+const amMoreMenu = document.getElementById('amMoreMenu');
+const amMenuBackdrop = document.getElementById('amMenuBackdrop');
+const amMenuCover = document.getElementById('amMenuCover');
+const amMenuTitle = document.getElementById('amMenuTitle');
+const amMenuArtist = document.getElementById('amMenuArtist');
+const amMenuBtnQueue = document.getElementById('amMenuBtnQueue');
+const amMenuBtnDownload = document.getElementById('amMenuBtnDownload');
+const amMenuBtnDj = document.getElementById('amMenuBtnDj');
+const amMenuDjTag = document.getElementById('amMenuDjTag');
+const amMenuBtnArtist = document.getElementById('amMenuBtnArtist');
+const amMenuBtnAlbum = document.getElementById('amMenuBtnAlbum');
+const amMenuBtnFull = document.getElementById('amMenuBtnFull');
+const amMenuBtnShare = document.getElementById('amMenuBtnShare');
+const amDjBadge = document.getElementById('amDjBadge');
+const btnBottomDj = document.getElementById('btnBottomDj');
 
 const appleMusicState = {
   isOpen: false,
@@ -222,6 +242,9 @@ function onYtStateChange(event) {
     currentTimeLabel.innerText = '00:00';
     progressFill.style.width = '0%';
     progressThumb.style.left = '0%';
+    if (state.smartDjEnabled) {
+      setTimeout(() => playNextTrack(), 500);
+    }
   }
 }
 
@@ -556,12 +579,18 @@ function setupEventListeners() {
   btnPlayPause.addEventListener('click', togglePlayPause);
   
   btnBackward.addEventListener('click', () => {
-    seekDelta(-5);
+    playPreviousTrack();
   });
 
   btnForward.addEventListener('click', () => {
-    seekDelta(5);
+    playNextTrack();
   });
+
+  if (btnBottomDj) {
+    btnBottomDj.addEventListener('click', () => {
+      toggleSmartDj();
+    });
+  }
 
   progressTrack.addEventListener('click', (e) => {
     const rect = progressTrack.getBoundingClientRect();
@@ -588,6 +617,9 @@ function setupEventListeners() {
     if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
       setPlayingState(false);
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+      if (state.smartDjEnabled) {
+        setTimeout(() => playNextTrack(), 500);
+      }
     }
   });
   state.audio.addEventListener('play', () => {
@@ -665,10 +697,10 @@ function setupEventListeners() {
     amBtnPlayPause.addEventListener('click', togglePlayPause);
   }
   if (amBtnBackward) {
-    amBtnBackward.addEventListener('click', () => seekDelta(-5));
+    amBtnBackward.addEventListener('click', () => playPreviousTrack());
   }
   if (amBtnForward) {
-    amBtnForward.addEventListener('click', () => seekDelta(5));
+    amBtnForward.addEventListener('click', () => playNextTrack());
   }
   if (amBtnSpeed) {
     amBtnSpeed.addEventListener('click', () => {
@@ -676,16 +708,95 @@ function setupEventListeners() {
       if (amBtnSpeed) amBtnSpeed.innerText = `${state.currentSpeed}x`;
     });
   }
-  if (amBtnDownload) {
-    amBtnDownload.addEventListener('click', (e) => {
+  if (amBtnMore) {
+    amBtnMore.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openMoreMenu();
+    });
+  }
+  if (amMenuBackdrop) {
+    amMenuBackdrop.addEventListener('click', closeMoreMenu);
+  }
+  if (amMenuBtnQueue) {
+    amMenuBtnQueue.addEventListener('click', () => {
+      closeMoreMenu();
+      if (!state.currentTrack) return;
+      if (!state.queue) state.queue = [];
+      state.queue.push({
+        artist: state.currentTrack.artist,
+        title: state.currentTrack.title,
+        cover: state.currentTrack.cover,
+        album: state.currentTrack.album
+      });
+      showToast(`➕ "${state.currentTrack.title}" añadida a la cola para sonar a continuación.`);
+    });
+  }
+  if (amMenuBtnDownload) {
+    amMenuBtnDownload.addEventListener('click', () => {
+      closeMoreMenu();
       if (state.currentTrack) {
         downloadMp3_320(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.audioUrl, state.currentTrack.videoId, {
           album: state.currentTrack.album,
           coverUrl: state.currentTrack.cover,
           year: state.currentTrack.releaseDate
-        }, e.currentTarget);
+        });
       } else {
-        showToast('Selecciona primero una canción para descargar en MP3.');
+        showToast('Selecciona primero una canción para descargar en MP3 320.');
+      }
+    });
+  }
+  if (amMenuBtnDj) {
+    amMenuBtnDj.addEventListener('click', () => {
+      toggleSmartDj();
+    });
+  }
+  if (amDjBadge) {
+    amDjBadge.addEventListener('click', () => {
+      toggleSmartDj();
+    });
+  }
+  if (amMenuBtnArtist) {
+    amMenuBtnArtist.addEventListener('click', () => {
+      closeMoreMenu();
+      if (state.currentTrack && state.currentTrack.artist) {
+        closeAppleMusicModal();
+        openArtistProfile(state.currentTrack.artist);
+      }
+    });
+  }
+  if (amMenuBtnAlbum) {
+    amMenuBtnAlbum.addEventListener('click', () => {
+      closeMoreMenu();
+      if (state.currentAlbum) {
+        closeAppleMusicModal();
+        openAlbumDetail(state.currentAlbum.id);
+      } else if (state.currentTrack) {
+        showToast(`📀 Reproduciendo desde: ${state.currentTrack.album || 'Álbum Oficial'}`);
+      }
+    });
+  }
+  if (amMenuBtnFull) {
+    amMenuBtnFull.addEventListener('click', () => {
+      closeMoreMenu();
+      if (state.currentTrack) {
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album);
+      }
+    });
+  }
+  if (amMenuBtnShare) {
+    amMenuBtnShare.addEventListener('click', () => {
+      closeMoreMenu();
+      if (state.currentTrack) {
+        const textToShare = `Escucha "${state.currentTrack.title}" de ${state.currentTrack.artist} en Vice Music`;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(textToShare).then(() => {
+            showToast('🔗 Información copiada al portapapeles');
+          }).catch(() => {
+            showToast(`🎵 Compartir: ${state.currentTrack.title} - ${state.currentTrack.artist}`);
+          });
+        } else {
+          showToast(`🎵 Compartir: ${state.currentTrack.title} - ${state.currentTrack.artist}`);
+        }
       }
     });
   }
@@ -1839,6 +1950,12 @@ async function playFullSong(artist, title, cover = null, album = null) {
     album: album || (state.currentAlbum && state.currentAlbum.title) || title
   };
 
+  if (!state.history) state.history = [];
+  if (state.history.length === 0 || state.history[state.history.length - 1].title !== title) {
+    state.history.push({ artist, title, cover: trackObj.cover, album: trackObj.album });
+    if (state.history.length > 50) state.history.shift();
+  }
+
   state.currentTrack = trackObj;
 
   playerTitle.innerText = title;
@@ -2143,6 +2260,172 @@ function seekDelta(seconds) {
   }
 }
 
+// SALTAR A LA SIGUIENTE CANCIÓN (ÁLBUM, COLA, RANKING O ALEATORIA)
+function playNextTrack() {
+  // 1. Si hay canciones en cola (Poner a continuación)
+  if (state.queue && state.queue.length > 0) {
+    const nextItem = state.queue.shift();
+    showToast(`⏭️ Cola de reproducción: ${nextItem.title}`);
+    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album);
+    return;
+  }
+
+  // 2. Si se está reproduciendo dentro de un álbum oficial
+  if (state.currentAlbum && Array.isArray(state.currentAlbum.tracks) && state.currentAlbum.tracks.length > 0) {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.currentAlbum.tracks.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx !== -1 && curIdx + 1 < state.currentAlbum.tracks.length) {
+      const nextTrack = state.currentAlbum.tracks[curIdx + 1];
+      showToast(`⏭️ Siguiente en álbum: ${nextTrack.title}`);
+      playFullSong(nextTrack.artist || state.currentAlbum.artist, nextTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title);
+      return;
+    }
+  }
+
+  // 3. Si se está reproduciendo del Top 10 Colombia
+  if (state.rankingTracks && state.rankingTracks.length > 0) {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.rankingTracks.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx !== -1 && curIdx + 1 < state.rankingTracks.length) {
+      const nextTrack = state.rankingTracks[curIdx + 1];
+      showToast(`⏭️ Siguiente éxito: ${nextTrack.title}`);
+      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album);
+      return;
+    }
+  }
+
+  // 4. Si se está en resultados de catálogo de pistas
+  if (state.results && state.results.length > 0 && state.currentMode === 'tracks') {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.results.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx !== -1 && curIdx + 1 < state.results.length) {
+      const nextTrack = state.results[curIdx + 1];
+      showToast(`⏭️ Siguiente canción: ${nextTrack.title}`);
+      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle);
+      return;
+    }
+  }
+
+  // 5. Fallback aleatorio inteligente: elegir una canción del catálogo o ranking
+  const pool = (state.rankingTracks && state.rankingTracks.length > 0) 
+    ? state.rankingTracks 
+    : (state.results && state.results.length > 0 ? state.results : []);
+
+  if (pool.length > 0) {
+    const randomTrack = pool[Math.floor(Math.random() * pool.length)];
+    const artist = randomTrack.artist ? (randomTrack.artist.name || randomTrack.artist) : 'Artista';
+    const title = randomTrack.title;
+    const cover = randomTrack.coverXl || randomTrack.cover;
+    const album = randomTrack.album || randomTrack.albumTitle || 'Éxito';
+    showToast(`🔀 Siguiente aleatoria: ${title} - ${artist}`);
+    playFullSong(artist, title, cover, album);
+    return;
+  }
+
+  showToast('⏭️ No hay más canciones en la lista.');
+}
+
+// RETROCEDER CANCIÓN (REINICIAR O IR A ANTERIOR)
+function playPreviousTrack() {
+  const cur = (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getCurrentTime === 'function')
+    ? (ytPlayer.getCurrentTime() || 0)
+    : (state.audio ? state.audio.currentTime || 0 : 0);
+
+  // Si la pista lleva más de 3 segundos, reiniciar al principio como en Spotify / Apple Music
+  if (cur > 3) {
+    if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+      ytPlayer.seekTo(0, true);
+    } else if (state.audio) {
+      state.audio.currentTime = 0;
+    }
+    showToast('⏮️ Reiniciando pista desde el inicio');
+    return;
+  }
+
+  // 1. Revisar historial
+  if (state.history && state.history.length > 1) {
+    state.history.pop(); // Pop canción actual
+    const prevTrack = state.history.pop();
+    if (prevTrack) {
+      showToast(`⏮️ Canción anterior: ${prevTrack.title}`);
+      playFullSong(prevTrack.artist, prevTrack.title, prevTrack.cover, prevTrack.album);
+      return;
+    }
+  }
+
+  // 2. Si estamos dentro de un álbum
+  if (state.currentAlbum && Array.isArray(state.currentAlbum.tracks) && state.currentAlbum.tracks.length > 0) {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.currentAlbum.tracks.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx > 0) {
+      const prevTrack = state.currentAlbum.tracks[curIdx - 1];
+      showToast(`⏮️ Pista anterior: ${prevTrack.title}`);
+      playFullSong(prevTrack.artist || state.currentAlbum.artist, prevTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title);
+      return;
+    }
+  }
+
+  // 3. Si estamos en Top 10
+  if (state.rankingTracks && state.rankingTracks.length > 0) {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.rankingTracks.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx > 0) {
+      const prevTrack = state.rankingTracks[curIdx - 1];
+      showToast(`⏮️ Éxito anterior: ${prevTrack.title}`);
+      playFullSong(prevTrack.artist, prevTrack.title, prevTrack.coverXl || prevTrack.cover, prevTrack.album);
+      return;
+    }
+  }
+
+  // Fallback: reiniciar pista
+  if (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+    ytPlayer.seekTo(0, true);
+  } else if (state.audio) {
+    state.audio.currentTime = 0;
+  }
+}
+
+// MENÚ CONTEXTUAL ESTILO SPOTIFY / APPLE MUSIC (3 PUNTOS)
+function openMoreMenu() {
+  if (!amMoreMenu) return;
+  if (state.currentTrack) {
+    if (amMenuCover) amMenuCover.src = state.currentTrack.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
+    if (amMenuTitle) amMenuTitle.innerText = state.currentTrack.title || 'Canción Seleccionada';
+    if (amMenuArtist) amMenuArtist.innerText = state.currentTrack.artist || 'Vice Music';
+  }
+  updateSmartDjUI();
+  amMoreMenu.classList.remove('hidden');
+}
+
+function closeMoreMenu() {
+  if (amMoreMenu) amMoreMenu.classList.add('hidden');
+}
+
+function toggleSmartDj() {
+  state.smartDjEnabled = !state.smartDjEnabled;
+  updateSmartDjUI();
+  if (state.smartDjEnabled) {
+    showToast('🎛️ Smart DJ Activado: Sincronización continua de canciones sin cortes.');
+  } else {
+    showToast('⏹️ Smart DJ Desactivado: Reproducción manual.');
+  }
+}
+
+function updateSmartDjUI() {
+  if (amDjBadge) {
+    amDjBadge.style.display = state.smartDjEnabled ? 'inline-flex' : 'none';
+  }
+  if (btnBottomDj) {
+    if (state.smartDjEnabled) btnBottomDj.classList.add('active');
+    else btnBottomDj.classList.remove('active');
+  }
+  if (amMenuDjTag) {
+    amMenuDjTag.innerText = state.smartDjEnabled ? 'ON' : 'OFF';
+    amMenuDjTag.style.background = state.smartDjEnabled ? 'linear-gradient(135deg, #00f0ff, #00a8ff)' : 'rgba(255,255,255,0.2)';
+    amMenuDjTag.style.color = state.smartDjEnabled ? '#000' : '#fff';
+  }
+}
+
 // Alternar velocidad (1x -> 1.25x -> 1.5x -> 2x)
 function cyclePlaybackSpeed() {
   const speeds = [1, 1.25, 1.5, 2];
@@ -2286,6 +2569,9 @@ async function loadHomeContent() {
         }));
       }
     }
+
+    // Guardar tracks en state para navegación siguiente/anterior
+    state.rankingTracks = tracks;
 
     // Renderizar Ranking Top 10
     topRankingList.innerHTML = '';
@@ -2537,6 +2823,9 @@ function openAppleMusicModal() {
     amBtnSpeed.innerText = `${state.currentSpeed || 1}x`;
   }
 
+  // Sincronizar Smart DJ UI
+  updateSmartDjUI();
+
   // Sincronizar progreso actual
   const cur = (state.playbackSource === 'full' && ytPlayer && typeof ytPlayer.getCurrentTime === 'function')
     ? (ytPlayer.getCurrentTime() || 0)
@@ -2549,6 +2838,7 @@ function openAppleMusicModal() {
 
 function closeAppleMusicModal() {
   if (!appleMusicModal) return;
+  closeMoreMenu();
   appleMusicState.isOpen = false;
   appleMusicModal.classList.add('hidden');
   document.body.style.overflow = '';

@@ -426,6 +426,8 @@ function handleLogout() {
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   updateAuthUI();
+  updateClockIndicator();
+  setInterval(updateClockIndicator, 30000);
   startVisualizer();
   loadHomeContent();
   switchViewMode('home');
@@ -2512,6 +2514,15 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function updateClockIndicator() {
+  const amClockTime = document.getElementById('amClockTime');
+  if (!amClockTime) return;
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  amClockTime.innerText = `${hours}:${minutes}`;
+}
+
 function openAppleMusicModal() {
   if (!appleMusicModal) return;
   if (!state.currentTrack) {
@@ -2522,6 +2533,8 @@ function openAppleMusicModal() {
   appleMusicState.isOpen = true;
   appleMusicModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+
+  updateClockIndicator();
 
   // Sincronizar metadatos y carátula
   updateAppleMusicTrackInfo(state.currentTrack);

@@ -472,6 +472,26 @@ const server = http.createServer(async (req, res) => {
         report.ffmpegError = ffErr.message;
       }
 
+      // Test fetching YouTube player script directly
+      try {
+        const pRes = await fetch('https://www.youtube.com/s/player/cbcfbf2f/player_ias.vflset/en_US/base.js', {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        report.baseJsStatus = pRes.status;
+        report.baseJsLength = (await pRes.text()).length;
+      } catch (pErr) {
+        report.baseJsError = pErr.message;
+      }
+
+      // Test default Ytdl instance without poTokenProvider vs with poTokenProvider
+      try {
+        const rawYtdl = new Ytdl();
+        const info = await rawYtdl.getInfo(vid);
+        report.rawYtdlFormats = info.formats ? info.formats.length : 0;
+      } catch (rErr) {
+        report.rawYtdlError = rErr.message;
+      }
+
       // Test YTDL getInfo & download
       try {
         const info = await ytdlInstance.getInfo(vid);

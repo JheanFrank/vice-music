@@ -2227,21 +2227,52 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 
-    // Iniciar descarga nativa directa sin bloqueos de memoria ni errores de CORS
-    const a = document.createElement('a');
-    a.href = downloadApiUrl;
-    a.download = `${safeName}.mp3`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // Petición asíncrona segura con soporte dual (Blob binario o CDN directo anti-bloqueo)
+    const res = await fetch(downloadApiUrl);
+    if (!res.ok) {
+      let errTxt = 'Error al generar el archivo en el servidor';
+      try {
+        const errJson = await res.json();
+        if (errJson.error) errTxt = errJson.error;
+      } catch (_) {}
+      throw new Error(errTxt);
+    }
 
-    setTimeout(() => {
-      setDownloadProgress(100, '¡Archivo MP3 320 kbps generado con éxito!', safeName);
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      if (data.downloadUrl) {
+        setDownloadProgress(100, '¡Descarga directa lista!', safeName);
+        const a = document.createElement('a');
+        a.href = data.downloadUrl;
+        a.download = `${safeName}.mp3`;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => {
+          hideDownloadProgress();
+          showToast(`✅ Descarga iniciada: ${safeName}.mp3`);
+        }, 1200);
+      } else if (data.error) {
+        throw new Error(data.error);
+      }
+    } else {
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${safeName}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 20000);
+      setDownloadProgress(100, '¡Descarga 320 kbps completada!', safeName);
       setTimeout(() => {
         hideDownloadProgress();
-        showToast(`✅ Descarga iniciada: ${safeName}.mp3`);
-      }, 1500);
-    }, 5500);
+        showToast(`✅ Descargado: ${safeName}.mp3`);
+      }, 1200);
+    }
   } catch (err) {
     if (dlProgressTimer) {
       clearInterval(dlProgressTimer);

@@ -420,7 +420,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '6.1', status: 'online', engine: 'Vice Music 3D Coverflow + Fast Direct CDN MP3 Downloader' }));
+      return res.end(JSON.stringify({ version: '6.2', status: 'online', engine: 'Vice Music 3D Coverflow + Dual MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1319,13 +1319,16 @@ function stripOldId3(mp3Buffer) {
               throw new Error('Tiempo de espera agotado al procesar audio en la nube');
             }
 
-            console.log(`[Native MP3 Engine] Redirigiendo cliente directamente al CDN de alta velocidad: ${downloadUrl}`);
-            res.writeHead(302, {
-              'Location': downloadUrl,
-              'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-              'Cache-Control': 'no-cache'
+            console.log(`[Native MP3 Engine] Entregando URL directa de descarga CDN: ${downloadUrl}`);
+            res.writeHead(200, {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
             });
-            return res.end();
+            return res.end(JSON.stringify({
+              success: true,
+              downloadUrl: downloadUrl,
+              filename: safeFilename
+            }));
           } catch (cloudErr) {
             console.error(`[Native MP3 Engine] Error en ambas estrategias:`, cloudErr.message);
             res.writeHead(500, { 'Content-Type': 'application/json' });

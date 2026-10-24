@@ -883,88 +883,44 @@ body {
   object-fit: cover;
 }
 
-.sound-wave-indicator {
-  position: absolute;
-  inset: 0;
-  background: rgba(12, 5, 20, 0.65);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.sound-wave-indicator.playing {
-  opacity: 1;
-}
-
-.sound-wave-indicator span {
-  width: 3px;
-  height: 16px;
-  background: var(--vice-pink);
-  border-radius: 3px;
-  animation: wave 1s infinite alternate;
-}
-
-.sound-wave-indicator span:nth-child(2) { animation-delay: 0.2s; height: 24px; background: var(--vice-cyan); }
-.sound-wave-indicator span:nth-child(3) { animation-delay: 0.4s; height: 12px; background: var(--vice-gold); }
-.sound-wave-indicator span:nth-child(4) { animation-delay: 0.1s; height: 20px; background: var(--vice-pink); }
-
 .track-meta {
   display: flex;
   flex-direction: column;
-  gap: 0.22rem;
+  justify-content: center;
+  gap: 0.2rem;
   min-width: 0;
-  flex: 1;
+  max-width: 280px;
 }
 
 .track-meta h4 {
-  font-size: 0.98rem;
+  font-size: 1.05rem;
   font-weight: 800;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   line-height: 1.25;
+  margin: 0;
 }
 
 .track-meta p {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
+  font-weight: 600;
   color: var(--vice-pink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.25;
-  margin-bottom: 0;
+  margin: 0;
 }
 
-.track-specs {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  flex-wrap: wrap;
-  margin-top: 0.35rem; /* Separación clara y espaciosa */
-}
-
-.spec-pill {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  padding: 0.2rem 0.55rem;
-  border-radius: 6px;
-  color: var(--text-dim);
-  white-space: nowrap;
-  letter-spacing: 0.5px;
-  line-height: 1.2;
-}
-
-.spec-pill.gold {
-  border-color: rgba(255, 184, 0, 0.55);
-  background: rgba(255, 184, 0, 0.12);
-  color: var(--vice-gold);
+/* Ocultar elementos sobrantes para una barra fija limpia */
+.track-specs,
+.sound-wave-indicator,
+#visualizerCanvas,
+.btn-open-apple-music {
+  display: none !important;
 }
 
 .btn-open-apple-music {
@@ -2981,31 +2937,31 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(350px, 78vw);
-  height: min(350px, 78vw);
+  width: min(400px, 86vw);
+  height: min(400px, 86vw);
   margin: 0 auto;
 }
 
 .am-cover-glow {
   position: absolute;
-  inset: -15px;
-  border-radius: 32px;
-  background: radial-gradient(circle, rgba(255, 42, 133, 0.45), rgba(0, 240, 255, 0.35), transparent 70%);
-  filter: blur(35px);
-  opacity: 0.75;
+  inset: -12px;
+  border-radius: 36px;
+  background: radial-gradient(circle, rgba(255, 42, 133, 0.55), rgba(0, 240, 255, 0.4), transparent 70%);
+  filter: blur(45px);
+  opacity: 0.85;
   transition: opacity 0.4s ease;
 }
 
-/* CARÁTULA LIMPIA ESTILO APPLE MUSIC */
+/* CARÁTULA LIMPIA Y BORDELESS ESTILO APPLE MUSIC (SIN BORDES CUADRADOS DE SPOTIFY) */
 .am-cover-card {
   position: relative;
   z-index: 2;
   width: 100%;
   height: 100%;
-  border-radius: 24px;
+  border-radius: 32px;
   overflow: hidden;
-  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.85), 0 0 45px rgba(255, 42, 133, 0.35);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: none;
+  box-shadow: 0 35px 90px rgba(0, 0, 0, 0.8), 0 0 65px rgba(255, 42, 133, 0.4);
   transition: all 0.4s ease;
   transform-style: preserve-3d;
 }
@@ -3132,40 +3088,44 @@ body {
   text-align: center;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.35rem;
-  max-width: 90%;
+  width: 100%;
+  max-width: 440px;
 }
 
 .am-title {
-  font-family: var(--font-logo);
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   font-size: 1.85rem;
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: 1px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
 }
 
 .am-artist {
-  font-family: var(--font-body);
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--vice-pink);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
+  transition: color 0.2s ease;
+}
+
+.am-artist:hover {
+  color: #fff;
+  text-decoration: underline;
 }
 
 .am-album {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  opacity: 0.8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none !important;
 }
 
 /* Vista de Letras de Canciones Sincronizadas */
@@ -3413,13 +3373,15 @@ body {
     padding: 1rem 1.2rem;
   }
   .am-cover-stage {
-    width: min(280px, 76vw);
-    height: min(280px, 76vw);
+    width: min(320px, 84vw);
+    height: min(320px, 84vw);
     margin: 0 auto;
   }
   .am-cover-card {
     width: 100%;
     height: 100%;
+    border-radius: 24px;
+    border: none;
   }
   .am-title {
     font-size: 1.45rem;

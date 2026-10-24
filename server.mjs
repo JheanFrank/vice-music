@@ -436,27 +436,72 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ version: '7.5', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
-    // 0.01 TEST YTDL
-    if (pathname === '/api/test-ytdl') {
+    // 0.01 TEST YTDL & DEBUG RENDER
+    if (pathname === '/api/debug-render') {
       const vid = (reqUrl.searchParams.get('v') || '_RZQcpPViMA').trim();
+      const report = {
+        platform: process.platform,
+        arch: process.arch,
+        ffmpegPath,
+        ffmpegExists: fs.existsSync(ffmpegPath),
+        ffmpegVersion: null,
+        ffmpegError: null,
+        ytdlInfoFormats: null,
+        ytdlDownloadChunks: 0,
+        ytdlError: null
+      };
+
+      // Test FFmpeg execution
       try {
-        const stream = ytdlInstance.download(vid, { filter: { hasAudio: true, hasVideo: false }, quality: 'highestaudio' });
-        const chunks = [];
-        await new Promise((resolve, reject) => {
-          stream.on('data', c => {
-            chunks.push(c);
-            if (chunks.length > 5) resolve();
+        await new Promise((resolve) => {
+          const ff = spawn(ffmpegPath, ['-version']);
+          let out = '';
+          ff.stdout.on('data', d => out += d.toString());
+          ff.stderr.on('data', d => out += d.toString());
+          ff.on('close', code => {
+            report.ffmpegVersion = out.split('\n')[0];
+            resolve();
           });
-          stream.on('end', resolve);
-          stream.on('error', reject);
-          setTimeout(() => reject(new Error('Timeout 8s')), 8000);
+          ff.on('error', err => {
+            report.ffmpegError = err.message;
+            resolve();
+          });
+          setTimeout(resolve, 3000);
         });
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ success: true, chunks: chunks.length, bytes: chunks.reduce((a,c)=>a+c.length,0) }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ success: false, error: err.message }));
+      } catch (ffErr) {
+        report.ffmpegError = ffErr.message;
       }
+
+      // Test YTDL getInfo & download
+      try {
+        const info = await ytdlInstance.getInfo(vid);
+        report.ytdlInfoFormats = info.formats ? info.formats.length : 0;
+        const dlStream = ytdlInstance.download(vid, { filter: { hasAudio: true, hasVideo: false }, quality: 'highestaudio' });
+        await new Promise((resolve) => {
+          dlStream.on('data', c => {
+            report.ytdlDownloadChunks++;
+            if (report.ytdlDownloadChunks >= 3) {
+              dlStream.destroy();
+              resolve();
+            }
+          });
+          dlStream.on('error', e => {
+            report.ytdlError = e.message;
+            resolve();
+          });
+          setTimeout(() => {
+            if (!report.ytdlError && report.ytdlDownloadChunks === 0) {
+              report.ytdlError = 'Download timed out after 6s';
+            }
+            resolve();
+          }, 6000);
+        });
+      } catch (yErr) {
+        report.ytdlError = yErr.message;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(report, null, 2));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)

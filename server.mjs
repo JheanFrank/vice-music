@@ -428,7 +428,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '6.7', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '6.9', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -846,7 +846,19 @@ const server = http.createServer(async (req, res) => {
         let videoId = null;
         let videoTitle = null;
 
-        const BAD_CHANNELS = ['latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial'];
+        const BAD_CHANNELS = [
+          'latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial',
+          'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music'
+        ];
+
+        function parseDurationSec(durStr) {
+          if (!durStr) return 0;
+          const parts = durStr.trim().split(':').map(Number);
+          if (parts.some(isNaN)) return 0;
+          if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+          if (parts.length === 2) return parts[0] * 60 + parts[1];
+          return parts[0] || 0;
+        }
 
         for (const queryTerm of queriesToTry) {
           if (videoId) break;
@@ -879,7 +891,9 @@ const server = http.createServer(async (req, res) => {
                     const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
                     const isVerified = badges.some(b => b && b.includes('VERIFIED'));
                     const isTopic = channel.includes('Topic');
-                    candidates.push({ id: v.videoId, title, channel, isVerified, isTopic });
+                    const durStr = v.lengthText?.simpleText || v.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText || '';
+                    const durSec = parseDurationSec(durStr);
+                    candidates.push({ id: v.videoId, title, channel, isVerified, isTopic, durStr, durSec });
                   }
                 }
               }
@@ -896,27 +910,43 @@ const server = http.createServer(async (req, res) => {
                   let score = 0;
 
                   let matchedTitleWords = 0;
+                  let matchedChannelWords = 0;
                   for (const w of queryWords) {
                     if (cTitle.includes(w)) {
                       score += 25;
                       matchedTitleWords++;
-                    } else if (cChannel.includes(w)) {
-                      score += 10;
+                    }
+                    if (cChannel.includes(w)) {
+                      score += 15;
+                      matchedChannelWords++;
                     }
                   }
 
+                  // Si el canal coincide con varias palabras del query (nombre de artista oficial)
+                  if (matchedChannelWords >= 2) {
+                    score += 55;
+                  }
+
+                  // Si ninguna palabra clave del query está en el título
                   if (queryWords.length >= 2 && matchedTitleWords === 0) {
                     score -= 80;
                   }
 
                   // Priorizar canales oficiales "Topic" y versiones de audio oficial (sin intros habladas, sincronía perfecta con letras)
-                  if (c.isTopic) score += 45;
+                  if (c.isTopic) score += 50;
                   if (cTitle.includes('audio oficial') || cTitle.includes('official audio') || cTitle.includes('pista')) score += 35;
-                  if (c.isVerified) score += 20;
+                  if (c.isVerified) score += 25;
+                  if (cTitle.includes('lyric video') || cTitle.includes('video lyric') || cTitle.includes('audio')) score += 20;
                   if (cTitle.includes('video oficial') || cTitle.includes('official video') || cTitle.includes('music video')) score += 15;
-                  if (cTitle.includes('karaoke') || cTitle.includes('parodia') || cTitle.includes('reacción') || cTitle.includes('lofi') || cTitle.includes('lo-fi') || cTitle.includes('slowed')) score -= 60;
 
-                  if (BAD_CHANNELS.some(b => cChannel.includes(b))) score -= 50;
+                  // Penalizar remixes no oficiales, parodias, karaoke, slowed, loops de 1 hora
+                  if (cTitle.includes('karaoke') || cTitle.includes('parodia') || cTitle.includes('reacción') || cTitle.includes('lofi') || cTitle.includes('lo-fi') || cTitle.includes('slowed') || cTitle.includes('1 hour') || cTitle.includes('1 hora') || cTitle.includes('loop')) score -= 100;
+
+                  // Penalizar duraciones sospechosas (cortes < 120s o loops/mixes > 600s)
+                  if (c.durSec > 0 && c.durSec < 120) score -= 90;
+                  if (c.durSec > 600) score -= 100;
+
+                  if (BAD_CHANNELS.some(b => cChannel.includes(b))) score -= 80;
 
                   return score;
                 }
@@ -926,7 +956,7 @@ const server = http.createServer(async (req, res) => {
                 if (best && scoreCandidate(best) > -40) {
                   videoId = best.id;
                   videoTitle = best.title;
-                  console.log(`[FullAudio] Video oficial filtrado seleccionado: [${videoId}] "${videoTitle}" (Canal: ${best.channel})`);
+                  console.log(`[FullAudio] Video oficial filtrado seleccionado: [${videoId}] "${videoTitle}" (Canal: ${best.channel}, Duración: ${best.durStr})`);
                   break;
                 }
               }
@@ -1390,16 +1420,16 @@ function stripOldId3(mp3Buffer) {
               throw new Error('Tiempo de espera agotado al procesar audio en la nube');
             }
 
-            console.log(`[Native MP3 Engine] Entregando URL directa de descarga CDN: ${downloadUrl}`);
-            res.writeHead(200, {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+            console.log(`[Native MP3 Engine] Descargando audio convertido desde CDN (${downloadUrl}) para inyectar metadatos Apple Music...`);
+            const cdnAudioRes = await fetch(downloadUrl, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(35000)
             });
-            return res.end(JSON.stringify({
-              success: true,
-              downloadUrl: downloadUrl,
-              filename: safeFilename
-            }));
+            if (!cdnAudioRes.ok) {
+              throw new Error(`Fallo al descargar archivo desde CDN: ${cdnAudioRes.status}`);
+            }
+            rawMp3 = Buffer.from(await cdnAudioRes.arrayBuffer());
+            console.log(`[Native MP3 Engine] Audio CDN obtenido con éxito: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
           } catch (cloudErr) {
             console.error(`[Native MP3 Engine] Error en ambas estrategias:`, cloudErr.message);
             res.writeHead(500, { 'Content-Type': 'application/json' });

@@ -433,7 +433,30 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.3', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.4', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+    }
+
+    // 0.01 TEST YTDL
+    if (pathname === '/api/test-ytdl') {
+      const vid = (reqUrl.searchParams.get('v') || '_RZQcpPViMA').trim();
+      try {
+        const stream = ytdlInstance.download(vid, { filter: { hasAudio: true, hasVideo: false }, quality: 'highestaudio' });
+        const chunks = [];
+        await new Promise((resolve, reject) => {
+          stream.on('data', c => {
+            chunks.push(c);
+            if (chunks.length > 5) resolve();
+          });
+          stream.on('end', resolve);
+          stream.on('error', reject);
+          setTimeout(() => reject(new Error('Timeout 8s')), 8000);
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, chunks: chunks.length, bytes: chunks.reduce((a,c)=>a+c.length,0) }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, error: err.message }));
+      }
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)

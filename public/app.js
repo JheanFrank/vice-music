@@ -715,19 +715,9 @@ function setupEventListeners() {
     });
   }
 
-  // Efecto dinámico 3D tilt en carátula flotante
+  // Carátula flotante estática y limpia (sin distorsión 3D tilt)
   if (amCoverStage && amCoverCard) {
-    amCoverStage.addEventListener('mousemove', (e) => {
-      const rect = amCoverStage.getBoundingClientRect();
-      const x = e.clientX - rect.left - rect.width / 2;
-      const y = e.clientY - rect.top - rect.height / 2;
-      const tiltX = -(y / (rect.height / 2)) * 14;
-      const tiltY = (x / (rect.width / 2)) * 14;
-      amCoverCard.style.transform = `perspective(800px) rotateX(${tiltX.toFixed(2)}deg) rotateY(${tiltY.toFixed(2)}deg) scale(1.04)`;
-    });
-    amCoverStage.addEventListener('mouseleave', () => {
-      amCoverCard.style.transform = '';
-    });
+    amCoverCard.style.transform = '';
   }
 
   // Cerrar modales con tecla Escape

@@ -428,7 +428,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '6.9', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.0', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1422,13 +1422,25 @@ function stripOldId3(mp3Buffer) {
 
             console.log(`[Native MP3 Engine] Descargando audio convertido desde CDN (${downloadUrl}) para inyectar metadatos Apple Music...`);
             const cdnAudioRes = await fetch(downloadUrl, {
-              headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(35000)
+              headers: {
+                'User-Agent': USER_AGENT,
+                'Referer': 'https://savenow.to/',
+                'Origin': 'https://savenow.to/',
+                'Accept': '*/*'
+              },
+              signal: AbortSignal.timeout(45000)
             });
             if (!cdnAudioRes.ok) {
               throw new Error(`Fallo al descargar archivo desde CDN: ${cdnAudioRes.status}`);
             }
             rawMp3 = Buffer.from(await cdnAudioRes.arrayBuffer());
+
+            // Validación estricta anti-corrupción: verificar que sea un archivo de audio binario real (>300 KB y sin tags HTML)
+            const sampleHeader = rawMp3.slice(0, 100).toString('utf8').toLowerCase();
+            if (rawMp3.length < 300000 || sampleHeader.includes('<html') || sampleHeader.includes('<!doctype') || sampleHeader.includes('window.location')) {
+              throw new Error(`El CDN devolvió una página HTML de bloqueo/redirección (${rawMp3.length} bytes), reintentando...`);
+            }
+
             console.log(`[Native MP3 Engine] Audio CDN obtenido con éxito: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
           } catch (cloudErr) {
             console.error(`[Native MP3 Engine] Error en ambas estrategias:`, cloudErr.message);

@@ -635,10 +635,8 @@ body {
   background: rgba(0, 240, 255, 0.15);
   border: 1px solid var(--vice-cyan);
   color: var(--vice-cyan);
-  width: 34px;
-  height: 34px;
   border-radius: 8px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -833,12 +831,12 @@ body {
 
 .player-content {
   position: relative;
-  max-width: 1400px;
+  max-width: 1600px;
   height: 100%;
   margin: 0 auto;
   padding: 0 2rem;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 280px 1fr 280px;
   align-items: center;
   gap: 1.5rem;
 }
@@ -994,8 +992,9 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: 720px;
+  max-width: 850px;
   justify-self: center;
+  margin: 0 auto;
   gap: 0.5rem;
 }
 
@@ -1066,10 +1065,10 @@ body {
 
 .progress-bar-container {
   width: 100%;
-  max-width: 700px;
+  max-width: 850px;
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .btn-track-more {
@@ -1511,13 +1510,7 @@ body {
   }
 
   .btn-track-play {
-    width: 32px;
-    height: 32px;
-  }
-
-  .btn-track-play svg {
-    width: 14px;
-    height: 14px;
+    padding: 0.35rem 0.55rem;
   }
 
   /* BARRA REPRODUCTOR EN MOVIL (DISENO NATIVO COMPACTO) */
@@ -3436,133 +3429,87 @@ body {
   fill: #000000;
 }
 
-/* MENÚ CONTEXTUAL GLOBAL ESTILO SPOTIFY / APPLE MUSIC */
+/* MENÚ CONTEXTUAL GLOBAL ESTILO SPOTIFY (POPUP SIN TAPAR PANTALLA) */
 .am-context-menu {
   position: fixed;
   inset: 0;
   z-index: 999999999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  animation: amMenuFadeIn 0.2s ease-out;
+  background: transparent;
+  pointer-events: auto;
 }
 
 .am-context-menu.hidden {
   display: none !important;
 }
 
-@keyframes amMenuFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 .am-menu-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  cursor: pointer;
+  background: transparent;
+  cursor: default;
 }
 
 .am-menu-panel {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  max-width: 440px;
-  background: #191622;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 20px;
-  padding: 1.1rem;
+  position: fixed;
+  z-index: 1000000000;
+  width: 250px;
+  background: #282828;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.9), 0 0 35px rgba(255, 42, 133, 0.25);
-  animation: amMenuSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 16px 24px rgba(0, 0, 0, 0.65), 0 4px 8px rgba(0, 0, 0, 0.4);
+  animation: amMenuPop 0.12s ease-out;
+  transform-origin: top right;
 }
 
-@keyframes amMenuSlideUp {
-  from { transform: translateY(30px) scale(0.95); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
+@keyframes amMenuPop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .am-menu-header {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding-bottom: 0.75rem;
-}
-
-.am-menu-thumb {
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
-  object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  flex-shrink: 0;
-}
-
-.am-menu-track-info {
-  min-width: 0;
-  flex: 1;
-}
-
-.am-menu-track-info h4 {
-  font-family: var(--font-body);
-  font-size: 0.96rem;
-  font-weight: 700;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin: 0;
-}
-
-.am-menu-track-info p {
-  font-family: var(--font-body);
-  font-size: 0.82rem;
-  color: var(--vice-pink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin: 0.15rem 0 0;
+  display: none !important;
 }
 
 .am-menu-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.09);
-  margin: 0.2rem 0;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
 }
 
 .am-menu-item {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.72rem 0.85rem;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
   background: transparent;
   border: none;
-  border-radius: 10px;
-  color: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  color: #eaeaea;
   cursor: pointer;
   text-align: left;
-  font-family: var(--font-body);
-  font-size: 0.88rem;
-  font-weight: 600;
-  transition: all 0.18s ease;
+  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: background 0.12s ease, color 0.12s ease;
   width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 .am-menu-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
-  transform: translateX(3px);
+  transform: none;
 }
 
 .am-menu-icon {
-  font-size: 1.15rem;
-  width: 24px;
-  display: flex;
+  font-size: 0.95rem;
+  width: 20px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -3573,21 +3520,28 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 0.82rem;
+}
+
+.am-menu-arrow {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.9rem;
+  margin-left: auto;
 }
 
 .am-menu-tag {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  padding: 0.18rem 0.5rem;
-  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
   letter-spacing: 0.5px;
 }
 
 .am-menu-tag.dj-tag {
-  background: linear-gradient(135deg, #00f0ff, #00a8ff);
+  background: #00f0ff;
   color: #000;
   font-weight: 800;
 }

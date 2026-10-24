@@ -467,8 +467,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadHomeContent();
   switchViewMode('home');
 
-  // Sincronizar etiqueta de versión dinámica
-  fetch('/api/version').then(r => r.json()).then(data => {
+  // Sincronizar etiqueta de versión dinámica sin caché
+  fetch('/api/version?t=' + Date.now()).then(r => r.json()).then(data => {
     if (data && data.version) {
       const badge = document.getElementById('versionBadge');
       if (badge) badge.textContent = `v${data.version}`;

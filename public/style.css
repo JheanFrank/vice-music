@@ -3445,8 +3445,11 @@ body {
 .am-menu-backdrop {
   position: fixed;
   inset: 0;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   cursor: default;
+  touch-action: none;
 }
 
 .am-menu-panel {

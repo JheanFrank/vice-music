@@ -420,7 +420,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '5.8', status: 'online', engine: 'Vice Music Dual MP3 Engine (Local YTDL + Cloud Anti-Bot Fallback)' }));
+      return res.end(JSON.stringify({ version: '5.9', status: 'online', engine: 'Vice Music Dual MP3 Engine (Local YTDL + Cloud Anti-Bot Fallback)' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1203,15 +1203,10 @@ function stripOldId3(mp3Buffer) {
               signal: AbortSignal.timeout(8000)
             });
             const html = await ytRes.text();
-            const regex = /"videoRenderer":\{"videoId":"([^"]+)".+?"title":\{"runs":\[\{"text":"([^"]+)"\}\]/g;
-            let m;
-            while ((m = regex.exec(html)) !== null) {
-              if (m[1] && m[1].length === 11) {
-                targetVideoId = m[1];
-                break;
-              }
-            }
-            if (!targetVideoId) {
+            const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+            if (match && match[1]) {
+              targetVideoId = match[1];
+            } else {
               const idx = html.indexOf('watch?v=');
               if (idx !== -1) {
                 targetVideoId = html.substring(idx + 8, idx + 19);

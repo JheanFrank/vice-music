@@ -1,4 +1,4 @@
-// Build trigger: 2026-10-23T01:55:00.0000000Z
+// Build trigger: 2026-10-23T21:48:00.0000000Z
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -419,7 +419,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '5.4', status: 'online', engine: 'Vice Music Extended Scrubber + Track Context 3-Dots Menu' }));
+      return res.end(JSON.stringify({ version: '5.5', status: 'online', engine: 'Vice Music Extended Scrubber + Track Context 3-Dots Menu + Native MP3 Fallback' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1017,10 +1017,12 @@ function createId3Tag({ title, artist, albumArtist, album, composer, publisher, 
 }
 
 function stripOldId3(mp3Buffer) {
-  if (mp3Buffer.length > 10 && mp3Buffer.toString('ascii', 0, 3) === 'ID3') {
-    const size = (mp3Buffer[6] << 21) | (mp3Buffer[7] << 14) | (mp3Buffer[8] << 7) | mp3Buffer[9];
+  if (mp3Buffer && mp3Buffer.length > 10 && mp3Buffer.toString('ascii', 0, 3) === 'ID3') {
+    const size = ((mp3Buffer[6] & 0x7f) << 21) | ((mp3Buffer[7] & 0x7f) << 14) | ((mp3Buffer[8] & 0x7f) << 7) | (mp3Buffer[9] & 0x7f);
     const totalHeader = size + 10;
-    return mp3Buffer.subarray(totalHeader);
+    if (totalHeader > 0 && totalHeader < mp3Buffer.length) {
+      return mp3Buffer.subarray(totalHeader);
+    }
   }
   return mp3Buffer;
 }
@@ -1233,18 +1235,35 @@ function stripOldId3(mp3Buffer) {
           }
 
           console.log(`[Native MP3 Engine] Descargando audio desde servidor de alta velocidad...`);
-          const fileRes = await fetch(downloadUrl, {
-            headers: { 'User-Agent': USER_AGENT },
-            signal: AbortSignal.timeout(45000)
-          });
+          let cloudBuffer = null;
+          try {
+            const fileRes = await fetch(downloadUrl, {
+              headers: {
+                'User-Agent': USER_AGENT,
+                'Referer': 'https://savenow.to/',
+                'Accept': '*/*'
+              },
+              signal: AbortSignal.timeout(45000)
+            });
 
-          if (!fileRes.ok) throw new Error(`Error ${fileRes.status} al descargar archivo de audio`);
+            if (fileRes.ok) {
+              cloudBuffer = Buffer.from(await fileRes.arrayBuffer());
+            } else {
+              console.warn(`[Native MP3 Engine] fileRes error ${fileRes.status}, fallback a redirección directa.`);
+            }
+          } catch (fetchErr) {
+            console.warn(`[Native MP3 Engine] Error al bajar buffer en la nube: ${fetchErr.message}, fallback directo.`);
+          }
 
-          const cloudBuffer = Buffer.from(await fileRes.arrayBuffer());
+          if (!cloudBuffer || cloudBuffer.length < 50000) {
+            console.warn(`[Native MP3 Engine] Buffer insuficiente (${cloudBuffer ? cloudBuffer.length : 0} bytes), redirigiendo al cliente directamente a: ${downloadUrl}`);
+            res.writeHead(302, { 'Location': downloadUrl });
+            return res.end();
+          }
+
           rawMp3 = stripOldId3(cloudBuffer);
-
-          if (!rawMp3 || rawMp3.length < 100000) {
-            throw new Error(`Audio en la nube corrupto o insuficiente (${rawMp3 ? rawMp3.length : 0} bytes)`);
+          if (!rawMp3 || rawMp3.length < 50000) {
+            rawMp3 = cloudBuffer;
           }
 
           console.log(`[Native MP3 Engine] Audio recibido desde la nube: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);

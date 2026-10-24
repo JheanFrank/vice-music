@@ -2821,10 +2821,11 @@ body {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1100px;
+  max-width: 520px;
   height: 100%;
   margin: 0 auto;
-  padding: 1.5rem 2rem 1.8rem;
+  padding: 1.2rem 1.6rem 2.2rem;
+  justify-content: space-between;
 }
 
 /* Barra Superior Apple Music */
@@ -2832,27 +2833,29 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 1rem;
+  width: 100%;
+  padding-bottom: 0.5rem;
+  z-index: 5;
 }
 
 .am-btn-round {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  backdrop-filter: blur(12px);
 }
 
 .am-btn-round:hover {
-  background: rgba(255, 42, 133, 0.3);
-  border-color: var(--vice-pink);
-  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(1.08);
 }
 
 .am-btn-round svg {
@@ -2860,53 +2863,43 @@ body {
   height: 20px;
 }
 
-.am-now-playing-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: var(--font-display);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  color: var(--text-dim);
-}
-
-.am-indicator-live {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--vice-cyan);
-  box-shadow: 0 0 10px var(--vice-cyan);
-  animation: pulsePink 1.5s infinite;
+.am-clock-indicator {
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 
 .am-view-tabs {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.35rem;
   background: rgba(0, 0, 0, 0.35);
-  padding: 0.25rem;
+  padding: 0.22rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(14px);
 }
 
 .am-tab-pill {
   background: transparent;
   border: none;
-  color: var(--text-dim);
-  font-family: var(--font-display);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 1px;
-  padding: 0.4rem 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-body), -apple-system, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding: 0.35rem 0.8rem;
   border-radius: 999px;
   cursor: pointer;
-  transition: all 0.22s ease;
+  transition: all 0.2s ease;
 }
 
 .am-tab-pill.active {
-  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
-  color: #fff;
-  box-shadow: 0 0 15px rgba(255, 42, 133, 0.5);
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 /* Cuerpo Principal Apple Music */
@@ -2917,59 +2910,60 @@ body {
   justify-content: center;
   min-height: 0;
   position: relative;
-  padding: 1.5rem 0;
+  width: 100%;
 }
 
-/* Vista de Carátula Dinámica que se Mueve */
+/* Vista de Carátula Estilo iOS Lockscreen (Hero Cover + Frosted Glass Widget) */
 .am-cover-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 1.8rem;
+  justify-content: space-between;
   width: 100%;
-  max-width: 520px;
+  height: 100%;
+  max-height: 84vh;
+  gap: 1.2rem;
   animation: fadeInHome 0.3s ease-out;
 }
 
+/* CARÁTULA HEROICA EXPANSIVA (ESTILO APPLE MUSIC LOCKSCREEN) */
 .am-cover-stage {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(400px, 86vw);
-  height: min(400px, 86vw);
-  margin: 0 auto;
+  width: min(390px, 86vw);
+  height: min(390px, 86vw);
+  max-height: 52vh;
+  margin: auto 0;
 }
 
 .am-cover-glow {
   position: absolute;
-  inset: -12px;
+  inset: -15px;
   border-radius: 36px;
   background: radial-gradient(circle, rgba(255, 42, 133, 0.55), rgba(0, 240, 255, 0.4), transparent 70%);
-  filter: blur(45px);
+  filter: blur(48px);
   opacity: 0.85;
   transition: opacity 0.4s ease;
 }
 
-/* CARÁTULA LIMPIA Y BORDELESS ESTILO APPLE MUSIC (SIN BORDES CUADRADOS DE SPOTIFY) */
+/* CARÁTULA LIMPIA Y BORDELESS ESTILO APPLE MUSIC */
 .am-cover-card {
   position: relative;
   z-index: 2;
   width: 100%;
   height: 100%;
-  border-radius: 32px;
+  border-radius: 28px;
   overflow: hidden;
   border: none;
-  box-shadow: 0 35px 90px rgba(0, 0, 0, 0.8), 0 0 65px rgba(255, 42, 133, 0.4);
+  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.7), 0 0 55px rgba(255, 42, 133, 0.35);
   transition: all 0.4s ease;
   transform-style: preserve-3d;
 }
 
-/* CARÁTULA QUE SE MUEVE SOLA (APPLE MUSIC AUTONOMOUS 3D MOTION) */
 .am-cover-card.playing {
   animation: appleCoverAutoMotion 14s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85), 0 0 50px rgba(255, 42, 133, 0.45), 0 0 80px rgba(0, 240, 255, 0.25);
 }
 
 @keyframes appleCoverAutoMotion {
@@ -2990,7 +2984,6 @@ body {
   }
 }
 
-/* VIDEO OFICIAL MOTION ARTWORK DE APPLE MUSIC */
 .am-motion-video {
   width: 100%;
   height: 100%;
@@ -3000,7 +2993,6 @@ body {
   z-index: 1;
 }
 
-/* IMAGEN INTERIOR CON EFECTO KEN BURNS CONTINUO QUE SE MUEVE SOLA */
 .am-dynamic-cover {
   width: 100%;
   height: 100%;
@@ -3028,7 +3020,6 @@ body {
   }
 }
 
-/* DESTELLO DE LUZ HOLOGRÁFICA QUE BARRE LA CARÁTULA PERIÓDICAMENTE */
 .am-cover-shine {
   position: absolute;
   inset: -100%;
@@ -3057,7 +3048,6 @@ body {
   }
 }
 
-/* RESPLANDOR AMBIENTAL VIVO */
 .am-cover-glow.playing {
   animation: appleGlowPulse 5s ease-in-out infinite alternate;
 }
@@ -3084,43 +3074,79 @@ body {
   display: none !important;
 }
 
+/* WIDGET FLOTANTE GLASSMORPHISM ESTILO iOS LOCKSCREEN / NOW PLAYING */
+.am-ios-player-card {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 1.15rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  z-index: 10;
+  margin-top: auto;
+}
+
 .am-track-info {
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
   width: 100%;
-  max-width: 440px;
+}
+
+.am-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
 }
 
 .am-title {
-  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-  font-size: 1.85rem;
-  font-weight: 800;
-  letter-spacing: -0.4px;
-  color: #fff;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
+  max-width: 82%;
+  margin: 0;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+.am-explicit-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 0.12rem 0.35rem;
+  background: rgba(255, 255, 255, 0.35);
+  color: #fff;
+  border-radius: 4px;
+  line-height: 1;
 }
 
 .am-artist {
-  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-  font-size: 1.15rem;
-  font-weight: 600;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
   color: rgba(255, 255, 255, 0.78);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  margin: 0;
   transition: color 0.2s ease;
 }
 
 .am-artist:hover {
-  color: #fff;
+  color: #ffffff;
   text-decoration: underline;
 }
 
@@ -3128,7 +3154,163 @@ body {
   display: none !important;
 }
 
-/* Vista de Letras de Canciones Sincronizadas */
+/* PROGRESS BAR ULTRA-DELGADA ESTILO APPLE */
+.am-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.am-time {
+  font-family: var(--font-body), -apple-system, sans-serif;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 500;
+  min-width: 32px;
+  text-align: center;
+}
+
+.am-progress-track {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  cursor: pointer;
+  overflow: visible;
+  transition: height 0.15s ease;
+}
+
+.am-progress-track:hover {
+  height: 7px;
+}
+
+.am-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+}
+
+.am-progress-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 11px;
+  height: 11px;
+  background: #ffffff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.am-progress-track:hover .am-progress-thumb {
+  opacity: 1;
+}
+
+/* FILA DE BOTONES DE CONTROL */
+.am-buttons-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 0.2rem;
+}
+
+.am-btn-small {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.am-btn-small:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.am-btn-ctrl {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.am-btn-ctrl:hover {
+  color: #ffffff;
+  transform: scale(1.15);
+}
+
+.am-btn-ctrl svg {
+  width: 26px;
+  height: 26px;
+}
+
+.am-btn-play-large {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+  color: #000000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 20px rgba(255, 255, 255, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.am-btn-play-large:hover {
+  transform: scale(1.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 30px rgba(255, 255, 255, 0.6);
+}
+
+.am-btn-play-large svg {
+  width: 24px;
+  height: 24px;
+  fill: #000000;
+}
+
+.am-btn-dl {
+  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
+  border: none;
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(255, 42, 133, 0.4);
+  transition: all 0.2s ease;
+}
+
+.am-btn-dl:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 42, 133, 0.6);
+}
+
+/* VISTA DE LETRAS SINCRONIZADAS */
 .am-lyrics-section {
   width: 100%;
   max-width: 680px;
@@ -3212,160 +3394,6 @@ body {
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: 0.85rem;
-}
-
-/* Footer Apple Music Controls */
-.am-controls-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-}
-
-.am-progress-wrap {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  width: 100%;
-}
-
-.am-time {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  width: 44px;
-  text-align: center;
-}
-
-.am-progress-track {
-  position: relative;
-  flex: 1;
-  height: 7px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  cursor: pointer;
-  overflow: visible;
-}
-
-.am-progress-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0%;
-  background: linear-gradient(90deg, var(--vice-pink), var(--vice-cyan));
-  border-radius: 6px;
-  box-shadow: 0 0 12px var(--vice-pink);
-}
-
-.am-progress-thumb {
-  position: absolute;
-  top: 50%;
-  left: 0%;
-  width: 15px;
-  height: 15px;
-  background: #fff;
-  border: 2px solid var(--vice-pink);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
-}
-
-.am-buttons-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1.6rem;
-}
-
-.am-btn-small {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.am-btn-small:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: #fff;
-}
-
-.am-btn-ctrl {
-  background: transparent;
-  border: none;
-  color: #fff;
-  cursor: pointer;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s ease;
-}
-
-.am-btn-ctrl:hover {
-  background: rgba(255, 255, 255, 0.12);
-  transform: scale(1.1);
-}
-
-.am-btn-ctrl svg {
-  width: 24px;
-  height: 24px;
-}
-
-.am-btn-play-large {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: #fff;
-  border: none;
-  color: #000;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 30px rgba(255, 255, 255, 0.5), 0 0 45px rgba(255, 42, 133, 0.4);
-  transition: all 0.25s ease;
-}
-
-.am-btn-play-large:hover {
-  transform: scale(1.08);
-  box-shadow: 0 0 40px rgba(255, 255, 255, 0.8), 0 0 60px rgba(0, 240, 255, 0.6);
-}
-
-.am-btn-play-large svg {
-  width: 28px;
-  height: 28px;
-}
-
-.am-btn-dl {
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.25), rgba(255, 42, 133, 0.25));
-  border: 1px solid var(--vice-gold);
-  color: var(--vice-gold);
-  font-family: var(--font-display);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 1px;
-  padding: 0.45rem 0.9rem;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.22s ease;
-}
-
-.am-btn-dl:hover {
-  background: var(--vice-gold);
-  color: #000;
-  box-shadow: 0 0 18px var(--vice-gold);
-  transform: translateY(-2px);
 }
 
 @media (max-width: 768px) {

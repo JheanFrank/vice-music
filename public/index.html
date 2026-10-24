@@ -368,30 +368,30 @@
     <div class="am-container">
       <!-- Top Bar Apple Music -->
       <header class="am-top-bar">
-        <button id="btnMinimizeAm" class="am-btn-round" title="Minimizar a barra inferior">
+        <button id="btnMinimizeAm" class="am-btn-round" title="Minimizar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
 
-        <div class="am-now-playing-label">
-          <span class="am-indicator-live"></span>
-          <span>REPRODUCIENDO AHORA</span>
+        <div class="am-clock-indicator">
+          <span id="amClockTime">00:00</span>
         </div>
 
         <div class="am-view-tabs">
-          <button id="btnAmTabCover" class="am-tab-pill active">💿 CARÁTULA</button>
-          <button id="btnAmTabLyrics" class="am-tab-pill">🎤 LETRAS</button>
+          <button id="btnAmTabCover" class="am-tab-pill active">CARÁTULA</button>
+          <button id="btnAmTabLyrics" class="am-tab-pill">LETRAS</button>
         </div>
       </header>
 
       <!-- Main Body Apple Music -->
       <div class="am-main-body">
         
-        <!-- Vista 1: Carátula Dinámica que se Mueve (Moving Cover) -->
+        <!-- Vista 1: Carátula Apple Music Lockscreen / Now Playing -->
         <div class="am-cover-section" id="amCoverSection">
+          
+          <!-- Carátula Heroica Expansiva -->
           <div class="am-cover-stage">
             <div class="am-cover-glow" id="amCoverGlow"></div>
 
-            <!-- Carátula Flotante 3D con Movimiento Autónomo (Apple Music Motion) -->
             <div class="am-cover-card playing" id="amCoverCard">
               <video id="amMotionVideo" class="am-motion-video hidden" autoplay loop muted playsinline></video>
               <img id="amCoverImg" src="https://via.placeholder.com/500/1a0933/ff2a85?text=VI" alt="Artwork" class="am-dynamic-cover auto-moving">
@@ -399,11 +399,50 @@
             </div>
           </div>
 
-          <div class="am-track-info">
-            <h1 id="amTrackTitle" class="am-title">Selecciona una pista</h1>
-            <p id="amTrackArtist" class="am-artist artist-clickable">Vice Music</p>
-            <p id="amTrackAlbum" class="am-album">Álbum Oficial</p>
+          <!-- Tarjeta Flotante Glassmorphism iOS Lockscreen Player Widget -->
+          <div class="am-ios-player-card">
+            
+            <div class="am-track-info">
+              <div class="am-title-row">
+                <h1 id="amTrackTitle" class="am-title">Selecciona una pista</h1>
+                <span class="am-explicit-badge">E</span>
+              </div>
+              <p id="amTrackArtist" class="am-artist artist-clickable">Vice Music</p>
+              <p id="amTrackAlbum" class="am-album" style="display: none;">Álbum Oficial</p>
+            </div>
+
+            <div class="am-progress-wrap">
+              <span id="amTimeCurrent" class="am-time">00:00</span>
+              <div class="am-progress-track" id="amProgressTrack">
+                <div class="am-progress-fill" id="amProgressFill"></div>
+                <div class="am-progress-thumb" id="amProgressThumb"></div>
+              </div>
+              <span id="amTimeTotal" class="am-time">00:00</span>
+            </div>
+
+            <div class="am-buttons-row">
+              <button id="amBtnSpeed" class="am-btn-small" title="Velocidad: 1x, 1.25x, 1.5x, 2x">1x</button>
+              
+              <button id="amBtnBackward" class="am-btn-ctrl" title="Retroceder 5s">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+              </button>
+
+              <button id="amBtnPlayPause" class="am-btn-play-large" title="Reproducir / Pausar">
+                <svg id="amIconPlay" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <svg id="amIconPause" class="hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+              </button>
+
+              <button id="amBtnForward" class="am-btn-ctrl" title="Adelantar 5s">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+              </button>
+
+              <button id="amBtnDownload" class="am-btn-dl" title="Descargar MP3 320 kbps (VIP)">
+                <span>📥 MP3 320</span>
+              </button>
+            </div>
+
           </div>
+
         </div>
 
         <!-- Vista 2: Letras de Canciones Sincronizadas (Live Lyrics) -->
@@ -422,39 +461,6 @@
         </div>
 
       </div>
-
-      <!-- Footer Apple Music Controls -->
-      <footer class="am-controls-footer">
-        <div class="am-progress-wrap">
-          <span id="amTimeCurrent" class="am-time">00:00</span>
-          <div class="am-progress-track" id="amProgressTrack">
-            <div class="am-progress-fill" id="amProgressFill"></div>
-            <div class="am-progress-thumb" id="amProgressThumb"></div>
-          </div>
-          <span id="amTimeTotal" class="am-time">00:00</span>
-        </div>
-
-        <div class="am-buttons-row">
-          <button id="amBtnSpeed" class="am-btn-small" title="Velocidad: 1x, 1.25x, 1.5x, 2x">1x</button>
-          
-          <button id="amBtnBackward" class="am-btn-ctrl" title="Retroceder 5s">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
-          </button>
-
-          <button id="amBtnPlayPause" class="am-btn-play-large" title="Reproducir / Pausar">
-            <svg id="amIconPlay" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            <svg id="amIconPause" class="hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
-          </button>
-
-          <button id="amBtnForward" class="am-btn-ctrl" title="Adelantar 5s">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
-          </button>
-
-          <button id="amBtnDownload" class="am-btn-dl" title="Descargar MP3 320 kbps (VIP)">
-            <span>📥 MP3 320</span>
-          </button>
-        </div>
-      </footer>
     </div>
   </div>
 

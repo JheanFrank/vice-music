@@ -9,6 +9,10 @@ import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client, createPoTokenProvider } from '@distube/ytdl-core';
 import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist } from './db.mjs';
 
+try {
+  if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
+} catch (_) {}
+
 let ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
 try {
   console.log('🛡️ [YTDL] Inicializando motor de PO Token contra bloqueos de YouTube...');
@@ -429,7 +433,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.1', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.2', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1422,27 +1426,41 @@ function stripOldId3(mp3Buffer) {
             }
 
             console.log(`[Native MP3 Engine] Descargando audio convertido desde CDN (${downloadUrl}) para inyectar metadatos Apple Music...`);
-            const cdnAudioRes = await fetch(downloadUrl, {
-              headers: {
-                'User-Agent': USER_AGENT,
-                'Referer': 'https://savenow.to/',
-                'Origin': 'https://savenow.to/',
-                'Accept': '*/*'
-              },
-              signal: AbortSignal.timeout(45000)
-            });
-            if (!cdnAudioRes.ok) {
-              throw new Error(`Fallo al descargar archivo desde CDN: ${cdnAudioRes.status}`);
+            try {
+              const cdnAudioRes = await fetch(downloadUrl, {
+                headers: {
+                  'User-Agent': USER_AGENT,
+                  'Accept': '*/*'
+                },
+                signal: AbortSignal.timeout(45000)
+              });
+              if (cdnAudioRes.ok) {
+                const testBuf = Buffer.from(await cdnAudioRes.arrayBuffer());
+                const sampleHeader = testBuf.slice(0, 100).toString('utf8').toLowerCase();
+                if (testBuf.length >= 300000 && !sampleHeader.includes('<html') && !sampleHeader.includes('<!doctype') && !sampleHeader.includes('window.location')) {
+                  rawMp3 = testBuf;
+                  console.log(`[Native MP3 Engine] Audio CDN obtenido con éxito: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
+                } else {
+                  console.warn(`[Native MP3 Engine] CDN devolvió respuesta no válida (${testBuf.length} bytes), usando entrega directa de URL.`);
+                }
+              }
+            } catch (cdnFetchErr) {
+              console.warn('[Native MP3 Engine] Falló descarga de buffer CDN en servidor:', cdnFetchErr.message);
             }
-            rawMp3 = Buffer.from(await cdnAudioRes.arrayBuffer());
 
-            // Validación estricta anti-corrupción: verificar que sea un archivo de audio binario real (>300 KB y sin tags HTML)
-            const sampleHeader = rawMp3.slice(0, 100).toString('utf8').toLowerCase();
-            if (rawMp3.length < 300000 || sampleHeader.includes('<html') || sampleHeader.includes('<!doctype') || sampleHeader.includes('window.location')) {
-              throw new Error(`El CDN devolvió una página HTML de bloqueo/redirección (${rawMp3.length} bytes), reintentando...`);
+            // Si el servidor no pudo descargar el buffer completo de audio, entregar la URL directa de CDN al cliente (su navegador lo descarga con IP residencial)
+            if (!rawMp3 || rawMp3.length < 300000) {
+              console.log(`[Native MP3 Engine] Entregando URL directa de CDN al navegador: ${downloadUrl}`);
+              res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+              });
+              return res.end(JSON.stringify({
+                success: true,
+                downloadUrl: downloadUrl,
+                filename: safeFilename
+              }));
             }
-
-            console.log(`[Native MP3 Engine] Audio CDN obtenido con éxito: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
           } catch (cloudErr) {
             console.error(`[Native MP3 Engine] Error en ambas estrategias:`, cloudErr.message);
             res.writeHead(500, { 'Content-Type': 'application/json' });

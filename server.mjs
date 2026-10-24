@@ -6,10 +6,18 @@ import { fileURLToPath } from 'url';
 import dns from 'dns';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
-import { Ytdl, Client } from '@distube/ytdl-core';
+import { Ytdl, Client, createPoTokenProvider } from '@distube/ytdl-core';
 import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist } from './db.mjs';
 
-const ytdl = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
+let ytdlInstance = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
+try {
+  console.log('🛡️ [YTDL] Inicializando motor de PO Token contra bloqueos de YouTube...');
+  const poTokenProvider = await createPoTokenProvider();
+  ytdlInstance = new Ytdl({ poTokenProvider });
+  console.log('🛡️ [YTDL] ¡Motor de PO Token activado con éxito!');
+} catch (poErr) {
+  console.warn('⚠️ [YTDL] Motor PO Token no pudo iniciar, usando cliente VisionOS:', poErr.message);
+}
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -420,7 +428,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '6.2', status: 'online', engine: 'Vice Music 3D Coverflow + Dual MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '6.3', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1240,19 +1248,19 @@ function stripOldId3(mp3Buffer) {
 
         let rawMp3 = null;
 
-        // ESTRATEGIA 1: Extracción nativa directa con YTDL + FFmpeg
+        // ESTRATEGIA 1: Extracción nativa directa con YTDL PO Token + FFmpeg
         try {
-          console.log(`[Native MP3 Engine] Extracción nativa directa para ${targetVideoId}...`);
+          console.log(`[Native MP3 Engine] Extracción directa con PO Token para ${targetVideoId}...`);
           let stream;
           try {
-            stream = await ytdl.download(targetVideoId, {
-              filter: f => f.hasAudio && !f.hasVideo,
+            stream = await ytdlInstance.download(targetVideoId, {
+              filter: { hasAudio: true, hasVideo: false },
               quality: 'highestaudio'
             });
           } catch (e1) {
             console.warn(`[Native MP3 Engine] highestaudio falló (${e1.message}), probando stream general...`);
-            stream = await ytdl.download(targetVideoId, {
-              filter: f => f.hasAudio
+            stream = await ytdlInstance.download(targetVideoId, {
+              filter: { hasAudio: true }
             });
           }
 

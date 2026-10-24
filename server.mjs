@@ -419,7 +419,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '5.0', status: 'online', engine: 'Vice Music Pure Apple Music Borderless UI + Clean Bar' }));
+      return res.end(JSON.stringify({ version: '5.1', status: 'online', engine: 'Vice Music iOS Lockscreen Player Widget + Full-Bleed Artwork' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)

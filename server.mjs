@@ -428,7 +428,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '6.3', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '6.7', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -457,8 +457,23 @@ const server = http.createServer(async (req, res) => {
 
         let videoUrl = null;
         if (itunesData && Array.isArray(itunesData.results)) {
+          const normArtist = artist.toLowerCase().trim();
+          const normTitle = (album || title).toLowerCase().trim();
+
           for (const item of itunesData.results) {
             if (!item.collectionViewUrl) continue;
+
+            const itemArtist = (item.artistName || '').toLowerCase().trim();
+            const itemAlbum = (item.collectionName || '').toLowerCase().trim();
+
+            // Verificación estricta: Artista o Álbum deben coincidir para no asignar carátulas erróneas
+            const artistMatches = itemArtist.includes(normArtist) || normArtist.includes(itemArtist);
+            const albumMatches = itemAlbum.includes(normTitle) || normTitle.includes(itemAlbum);
+
+            if (!artistMatches && !albumMatches) {
+              continue;
+            }
+
             try {
               const htmlRes = await fetch(item.collectionViewUrl, {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
@@ -817,70 +832,118 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const queryYt = `${q} audio`;
-        const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryYt)}`, {
-          headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(8000)
-        });
-        const html = await ytRes.text();
+        const cleanQuery = q.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+        const queriesToTry = [
+          `${cleanQuery} audio oficial`,
+          `${cleanQuery} topic`,
+          `${q} audio`,
+          `${cleanQuery} audio`,
+          q,
+          `${cleanQuery} official`,
+          cleanQuery
+        ];
 
         let videoId = null;
         let videoTitle = null;
 
-        const startIdx = html.indexOf('var ytInitialData = ');
-        if (startIdx !== -1) {
+        const BAD_CHANNELS = ['latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial'];
+
+        for (const queryTerm of queriesToTry) {
+          if (videoId) break;
+
           try {
-            const endIdx = html.indexOf(';</script>', startIdx);
-            const jsonStr = html.substring(startIdx + 20, endIdx);
-            const data = JSON.parse(jsonStr);
-            const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+            const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryTerm)}`, {
+              headers: {
+                'User-Agent': USER_AGENT,
+                'Accept-Language': 'es-419,es;q=0.9,en;q=0.8'
+              },
+              signal: AbortSignal.timeout(6000)
+            });
+            const html = await ytRes.text();
 
-            const JUNK_KEYWORDS = [
-              'lyrics', 'letra', 'letras', 'fusa', 'cantoyo', 'karaoke',
-              'clean hits', 'latinhype', 'player one', 'dj ', 'type beat',
-              'instrumental', 'remix', 'mix', 'trapurbano', 'boyz club',
-              'speed up', 'chicano', 'stringo', 'baila', 'extended'
-            ];
+            const startIdx = html.indexOf('var ytInitialData = ');
+            if (startIdx !== -1) {
+              const endIdx = html.indexOf(';</script>', startIdx);
+              const jsonStr = html.substring(startIdx + 20, endIdx);
+              const data = JSON.parse(jsonStr);
+              const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
 
-            const candidates = [];
-            for (const s of sections) {
-              const items = s.itemSectionRenderer?.contents || [];
-              for (const it of items) {
-                const v = it.videoRenderer;
-                if (v && v.videoId && v.videoId.length === 11) {
-                  const title = v.title?.runs?.[0]?.text || '';
-                  const channel = v.ownerText?.runs?.[0]?.text || '';
-                  const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
-                  const isVerified = badges.some(b => b.includes('VERIFIED'));
-                  const isTopic = channel.includes('Topic');
-                  candidates.push({ id: v.videoId, title, channel, isVerified, isTopic });
+              const candidates = [];
+              for (const s of sections) {
+                const items = s.itemSectionRenderer?.contents || [];
+                for (const it of items) {
+                  const v = it.videoRenderer;
+                  if (v && v.videoId && v.videoId.length === 11) {
+                    const title = v.title?.runs?.[0]?.text || '';
+                    const channel = v.ownerText?.runs?.[0]?.text || '';
+                    const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
+                    const isVerified = badges.some(b => b && b.includes('VERIFIED'));
+                    const isTopic = channel.includes('Topic');
+                    candidates.push({ id: v.videoId, title, channel, isVerified, isTopic });
+                  }
+                }
+              }
+
+              if (candidates.length > 0) {
+                const queryWords = cleanQuery.toLowerCase()
+                  .replace(/[^\w\sáéíóúüñ]/gi, ' ')
+                  .split(/\s+/)
+                  .filter(w => w.length >= 2);
+
+                function scoreCandidate(c) {
+                  const cTitle = (c.title || '').toLowerCase();
+                  const cChannel = (c.channel || '').toLowerCase();
+                  let score = 0;
+
+                  let matchedTitleWords = 0;
+                  for (const w of queryWords) {
+                    if (cTitle.includes(w)) {
+                      score += 25;
+                      matchedTitleWords++;
+                    } else if (cChannel.includes(w)) {
+                      score += 10;
+                    }
+                  }
+
+                  if (queryWords.length >= 2 && matchedTitleWords === 0) {
+                    score -= 80;
+                  }
+
+                  // Priorizar canales oficiales "Topic" y versiones de audio oficial (sin intros habladas, sincronía perfecta con letras)
+                  if (c.isTopic) score += 45;
+                  if (cTitle.includes('audio oficial') || cTitle.includes('official audio') || cTitle.includes('pista')) score += 35;
+                  if (c.isVerified) score += 20;
+                  if (cTitle.includes('video oficial') || cTitle.includes('official video') || cTitle.includes('music video')) score += 15;
+                  if (cTitle.includes('karaoke') || cTitle.includes('parodia') || cTitle.includes('reacción') || cTitle.includes('lofi') || cTitle.includes('lo-fi') || cTitle.includes('slowed')) score -= 60;
+
+                  if (BAD_CHANNELS.some(b => cChannel.includes(b))) score -= 50;
+
+                  return score;
+                }
+
+                candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+                const best = candidates[0];
+                if (best && scoreCandidate(best) > -40) {
+                  videoId = best.id;
+                  videoTitle = best.title;
+                  console.log(`[FullAudio] Video oficial filtrado seleccionado: [${videoId}] "${videoTitle}" (Canal: ${best.channel})`);
+                  break;
                 }
               }
             }
 
-            // Filtrar canales piratas / no oficiales
-            const clean = candidates.filter(c => {
-              const ch = c.channel.toLowerCase();
-              return !JUNK_KEYWORDS.some(k => ch.includes(k));
-            });
-
-            // Priorizar canal oficial verificado o canal Topic
-            const best = clean.find(c => c.isVerified || c.isTopic || q.toLowerCase().split(' ').some(w => w.length > 3 && c.channel.toLowerCase().includes(w))) || clean[0] || candidates[0];
-
-            if (best) {
-              videoId = best.id;
-              videoTitle = best.title;
-              console.log(`[FullAudio] Video oficial filtrado seleccionado: [${videoId}] "${videoTitle}" (Canal: ${best.channel})`);
+            // Fallback si ytInitialData no arrojó candidatos pero hay coincidencia directa de videoId
+            if (!videoId) {
+              const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+              if (match) {
+                videoId = match[1];
+                videoTitle = queryTerm;
+                break;
+              }
             }
-          } catch (pe) {
-            console.warn('[FullAudio] Falló parseo ytInitialData:', pe.message);
+          } catch (tryErr) {
+            // Siguiente término de búsqueda
           }
-        }
-
-        // Fallback básico si ytInitialData no estuviera presente
-        if (!videoId) {
-          const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-          if (match) videoId = match[1];
         }
 
         if (videoId) {

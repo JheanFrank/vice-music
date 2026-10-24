@@ -1804,8 +1804,10 @@ function loadTrack(track) {
   playerArtist.innerText = track.artist;
   playerCover.src = track.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
 
-  playerModeBadge.innerText = 'PREVIEW 30S';
-  playerModeBadge.className = 'spec-pill';
+  if (playerModeBadge) {
+    playerModeBadge.innerText = 'PREVIEW 30S';
+    playerModeBadge.className = 'spec-pill';
+  }
 
   const labelText = (state.currentAlbum && state.currentAlbum.label) || (track && track.label) || '';
   if (playerLabel) {
@@ -1852,8 +1854,10 @@ async function playFullSong(artist, title, cover = null, album = null) {
   if (trackObj.cover) {
     playerCover.src = trackObj.cover;
   }
-  playerModeBadge.innerText = '🎧 CANCIÓN COMPLETA';
-  playerModeBadge.className = 'spec-pill gold';
+  if (playerModeBadge) {
+    playerModeBadge.innerText = '🎧 CANCIÓN COMPLETA';
+    playerModeBadge.className = 'spec-pill gold';
+  }
 
   const labelTextFull = (state.currentAlbum && state.currentAlbum.label) || '';
   if (playerLabel) {
@@ -2176,7 +2180,7 @@ function setPlayingState(playing) {
   if (playing) {
     iconPlay.classList.add('hidden');
     iconPause.classList.remove('hidden');
-    waveIndicator.classList.add('playing');
+    if (waveIndicator) waveIndicator.classList.add('playing');
     if (amIconPlay) amIconPlay.classList.add('hidden');
     if (amIconPause) amIconPause.classList.remove('hidden');
     if (amCoverCard) amCoverCard.classList.add('playing');
@@ -2191,7 +2195,7 @@ function setPlayingState(playing) {
   } else {
     iconPlay.classList.remove('hidden');
     iconPause.classList.add('hidden');
-    waveIndicator.classList.remove('playing');
+    if (waveIndicator) waveIndicator.classList.remove('playing');
     if (amIconPlay) amIconPlay.classList.remove('hidden');
     if (amIconPause) amIconPause.classList.add('hidden');
     if (amCoverCard) amCoverCard.classList.remove('playing');

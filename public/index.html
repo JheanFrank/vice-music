@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=550">
+  <link rel="stylesheet" href="style.css?v=560">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -471,52 +471,50 @@
     </div>
   </div>
 
-  <!-- Menú Contextual Global Estilo Spotify / Apple Music (3 Puntos) -->
+  <!-- Menú Contextual Global Estilo Spotify (3 Puntos Flotante) -->
   <div id="amMoreMenu" class="am-context-menu hidden" role="dialog" aria-modal="true">
     <div class="am-menu-backdrop" id="amMenuBackdrop"></div>
-    <div class="am-menu-panel">
-      <div class="am-menu-header">
-        <img id="amMenuCover" src="https://via.placeholder.com/80/1a0933/ff2a85?text=VI" alt="Cover" class="am-menu-thumb">
-        <div class="am-menu-track-info">
-          <h4 id="amMenuTitle">Selecciona una pista</h4>
-          <p id="amMenuArtist">Vice Music</p>
-        </div>
-      </div>
-      <div class="am-menu-divider"></div>
+    <div class="am-menu-panel" id="amMenuPanel">
       <button class="am-menu-item" id="amMenuBtnQueue">
         <span class="am-menu-icon">➕</span>
-        <span class="am-menu-text">Poner a continuación (Añadir a la cola)</span>
+        <span class="am-menu-text">Añadir a la cola</span>
+        <span class="am-menu-arrow">›</span>
       </button>
       <button class="am-menu-item" id="amMenuBtnDownload">
         <span class="am-menu-icon">📥</span>
-        <span class="am-menu-text">Descargar canción en MP3 320 kbps</span>
-        <span class="am-menu-tag">VIP 320</span>
+        <span class="am-menu-text">Descargar en MP3 320 kbps</span>
+        <span class="am-menu-tag">320K</span>
       </button>
       <button class="am-menu-item" id="amMenuBtnDownloadFlac">
         <span class="am-menu-icon">⚡</span>
-        <span class="am-menu-text">Descargar pista en FLAC Lossless</span>
-        <span class="am-menu-tag" style="background: linear-gradient(135deg, #00f0ff, #9d00ff); color: #fff;">FLAC</span>
+        <span class="am-menu-text">Descargar en FLAC</span>
+        <span class="am-menu-tag" style="background: #00f0ff; color: #000;">FLAC</span>
       </button>
+      <div class="am-menu-divider"></div>
       <button class="am-menu-item" id="amMenuBtnDj">
         <span class="am-menu-icon">🎛️</span>
-        <span class="am-menu-text" id="amMenuDjLabel">Smart DJ: Sincronía y Auto-mix</span>
+        <span class="am-menu-text" id="amMenuDjLabel">Smart DJ</span>
         <span class="am-menu-tag dj-tag" id="amMenuDjTag">ON</span>
       </button>
       <button class="am-menu-item" id="amMenuBtnArtist">
         <span class="am-menu-icon">👤</span>
-        <span class="am-menu-text">Ir al perfil del artista</span>
+        <span class="am-menu-text">Ir al artista</span>
+        <span class="am-menu-arrow">›</span>
       </button>
       <button class="am-menu-item" id="amMenuBtnAlbum">
         <span class="am-menu-icon">📀</span>
-        <span class="am-menu-text">Ver álbum completo</span>
+        <span class="am-menu-text">Ir al álbum</span>
+        <span class="am-menu-arrow">›</span>
       </button>
       <button class="am-menu-item" id="amMenuBtnFull">
         <span class="am-menu-icon">🎧</span>
-        <span class="am-menu-text">Escuchar versión completa</span>
+        <span class="am-menu-text">Canción completa</span>
       </button>
+      <div class="am-menu-divider"></div>
       <button class="am-menu-item" id="amMenuBtnShare">
         <span class="am-menu-icon">🔗</span>
-        <span class="am-menu-text">Compartir canción</span>
+        <span class="am-menu-text">Compartir</span>
+        <span class="am-menu-arrow">›</span>
       </button>
     </div>
   </div>
@@ -562,6 +560,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=550"></script>
+  <script src="app.js?v=560"></script>
 </body>
 </html>

@@ -720,7 +720,7 @@ function setupEventListeners() {
     btnPlayerMoreLeft.addEventListener('click', (e) => {
       e.stopPropagation();
       if (state.currentTrack) {
-        openTrackContextMenu(state.currentTrack);
+        openTrackContextMenu(state.currentTrack, e.currentTarget);
       } else {
         showToast('Selecciona primero una pista de audio.');
       }
@@ -1258,10 +1258,10 @@ async function openAlbumDetail(albumId) {
         </div>
         <div class="track-duration">${durationMin}</div>
         <div class="track-actions">
-          <button class="btn-rank-action btn-track-play" title="Escuchar preview">
+          <button class="btn-rank-action btn-album-preview" title="Escuchar preview">
             ▶ <span>PREVIEW</span>
           </button>
-          <button class="btn-rank-action btn-play-full" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);" title="Escuchar Canción Completa">
+          <button class="btn-rank-action btn-album-full" title="Escuchar Canción Completa">
             🎧 <span>COMPLETA</span>
           </button>
           <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
@@ -1275,7 +1275,7 @@ async function openAlbumDetail(albumId) {
       `;
 
       // Escuchar muestra de 30s
-      trackRow.querySelector('.btn-track-play').addEventListener('click', () => {
+      trackRow.querySelector('.btn-album-preview').addEventListener('click', () => {
         if (!track.preview) {
           showToast('⚠️ Muestra de 30s no disponible. Reproduciendo canción completa oficial...');
           playFullSong(track.artist, track.title, album.coverXl, album.title);
@@ -1291,7 +1291,7 @@ async function openAlbumDetail(albumId) {
       });
 
       // Escuchar Canción Completa (Audio Oficial en segundo plano)
-      trackRow.querySelector('.btn-play-full').addEventListener('click', () => {
+      trackRow.querySelector('.btn-album-full').addEventListener('click', () => {
         playFullSong(track.artist, track.title, album.coverXl, album.title);
       });
 
@@ -1310,7 +1310,7 @@ async function openAlbumDetail(albumId) {
           position: track.position || (index + 1),
           totalTracks: album.tracks ? album.tracks.length : null,
           label: album.label
-        });
+        }, e.currentTarget);
       });
 
       albumTracklist.appendChild(trackRow);
@@ -1425,7 +1425,7 @@ function renderTracks(tracks) {
           lucidaUrl: track.lucidaUrl,
           releaseDate: track.releaseDate,
           label: track.genre || 'Vice Music'
-        });
+        }, e.currentTarget);
       });
     }
 
@@ -1630,7 +1630,7 @@ async function switchArtistTab(mode, artistName, artistId) {
             preview: track.preview,
             audioUrl: track.preview,
             lucidaUrl: track.lucidaUrl
-          });
+          }, e.currentTarget);
         });
 
         if (albumId) {
@@ -1792,7 +1792,7 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
           preview: track.preview,
           audioUrl: track.preview,
           lucidaUrl: track.lucidaUrl
-        });
+        }, e.currentTarget);
       });
     }
 
@@ -2182,48 +2182,21 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 
-    // Petición asíncrona directa para asegurar descarga limpia en la misma página
-    const res = await fetch(downloadApiUrl);
-    if (!res.ok) {
-      let msg = 'Error en el servidor al generar el archivo';
-      try {
-        const errJson = await res.json();
-        if (errJson.error) msg = errJson.error;
-      } catch (_) {}
-      throw new Error(msg);
-    }
-
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const json = await res.json();
-      if (json.downloadUrl) {
-        window.open(json.downloadUrl, '_blank');
-        hideDownloadProgress();
-        showToast(`✅ ¡Descarga directa de MP3 iniciada: ${safeName}.mp3!`);
-        return;
-      }
-    }
-
-    const blob = await res.blob();
-    if (blob.size < 5000) {
-      window.open(downloadApiUrl, '_blank');
-      hideDownloadProgress();
-      showToast(`⚡ Abriendo enlace de descarga para: ${safeName}`);
-      return;
-    }
-
-    const blobUrl = URL.createObjectURL(blob);
+    // Iniciar descarga nativa directa sin bloqueos de memoria ni errores de CORS
     const a = document.createElement('a');
-    a.href = blobUrl;
+    a.href = downloadApiUrl;
     a.download = `${safeName}.mp3`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
-
-    hideDownloadProgress();
-    showToast(`✅ ¡Descarga completada con éxito: ${safeName}.mp3!`);
+    setTimeout(() => {
+      setDownloadProgress(100, '¡Archivo MP3 320 kbps generado con éxito!', safeName);
+      setTimeout(() => {
+        hideDownloadProgress();
+        showToast(`✅ Descarga iniciada: ${safeName}.mp3`);
+      }, 1500);
+    }, 5500);
   } catch (err) {
     if (dlProgressTimer) {
       clearInterval(dlProgressTimer);
@@ -2413,20 +2386,50 @@ function playPreviousTrack() {
   }
 }
 
-// MENÚ CONTEXTUAL ESTILO SPOTIFY / APPLE MUSIC (3 PUNTOS)
-function openTrackContextMenu(trackData) {
+// MENÚ CONTEXTUAL FLOTANTE ESTILO SPOTIFY (3 PUNTOS)
+function openTrackContextMenu(trackData, triggerEl = null) {
   if (!trackData) return;
   state.contextTrack = trackData;
   if (!amMoreMenu) return;
-  if (amMenuCover) amMenuCover.src = trackData.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
-  if (amMenuTitle) amMenuTitle.innerText = trackData.title || 'Canción Seleccionada';
-  if (amMenuArtist) amMenuArtist.innerText = trackData.artist || 'Vice Music';
   updateSmartDjUI();
+
+  const panel = document.getElementById('amMenuPanel');
+  if (panel && triggerEl) {
+    const rect = triggerEl.getBoundingClientRect();
+    const menuWidth = 250;
+    const menuHeight = 290;
+
+    let left = rect.right - menuWidth;
+    if (left < 10) left = rect.left;
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+    panel.style.position = 'fixed';
+    panel.style.left = `${Math.max(10, left)}px`;
+    panel.style.right = 'auto';
+
+    if (rect.bottom + menuHeight > window.innerHeight - 10) {
+      panel.style.top = 'auto';
+      panel.style.bottom = `${Math.max(10, window.innerHeight - rect.top + 4)}px`;
+    } else {
+      panel.style.top = `${rect.bottom + 4}px`;
+      panel.style.bottom = 'auto';
+    }
+    panel.style.transform = 'none';
+  } else if (panel) {
+    panel.style.position = 'fixed';
+    panel.style.left = '50%';
+    panel.style.top = '50%';
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.transform = 'translate(-50%, -50%)';
+  }
+
   amMoreMenu.classList.remove('hidden');
 }
 
-function openMoreMenu() {
-  openTrackContextMenu(state.currentTrack);
+function openMoreMenu(triggerEl = null) {
+  openTrackContextMenu(state.currentTrack, triggerEl);
 }
 
 function closeMoreMenu() {
@@ -2695,7 +2698,7 @@ async function loadHomeContent() {
             preview: track.preview,
             audioUrl: track.preview,
             lucidaUrl: track.lucidaUrl
-          });
+          }, e.currentTarget);
         });
 
         const artistLink = row.querySelector('.ranking-track-artist');

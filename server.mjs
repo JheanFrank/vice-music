@@ -9,14 +9,15 @@ import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client, createPoTokenProvider } from '@distube/ytdl-core';
 import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist } from './db.mjs';
 
-let ytdlInstance = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
+let ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
 try {
   console.log('🛡️ [YTDL] Inicializando motor de PO Token contra bloqueos de YouTube...');
   const poTokenProvider = await createPoTokenProvider();
-  ytdlInstance = new Ytdl({ poTokenProvider });
+  ytdlInstance = new Ytdl({ poTokenProvider, clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
   console.log('🛡️ [YTDL] ¡Motor de PO Token activado con éxito!');
 } catch (poErr) {
-  console.warn('⚠️ [YTDL] Motor PO Token no pudo iniciar, usando cliente VisionOS:', poErr.message);
+  console.warn('⚠️ [YTDL] Motor PO Token no pudo iniciar, usando clientes Tv/WebEmbedded:', poErr.message);
+  ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
 }
 
 const audioUrlCache = new Map();
@@ -428,7 +429,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.0', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.1', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)

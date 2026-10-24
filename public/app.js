@@ -1258,13 +1258,11 @@ async function openAlbumDetail(albumId) {
         </div>
         <div class="track-duration">${durationMin}</div>
         <div class="track-actions">
-          <button class="btn-track-play" title="Escuchar Muestra (30s)">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
+          <button class="btn-rank-action btn-track-play" title="Escuchar preview">
+            ▶ <span>PREVIEW</span>
           </button>
-          <button class="btn-track-action btn-play-full" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);" title="Escuchar Canción Completa">
-            🎧 COMPLETA
+          <button class="btn-rank-action btn-play-full" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);" title="Escuchar Canción Completa">
+            🎧 <span>COMPLETA</span>
           </button>
           <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
             <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -1354,32 +1352,20 @@ function renderTracks(tracks) {
         <h3 class="album-title" title="${track.title}">${track.title}</h3>
         <p class="album-artist artist-clickable" data-artist="${track.artist}" title="Ver discografía y perfil de ${track.artist}">${track.artist}</p>
         
-        <div class="track-card-actions">
-          <!-- Fila 1: Reproducción Instantánea -->
-          <div class="actions-row-play">
-            <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar muestra de 30s">
-              ▶ <span>PREVIEW</span>
-            </button>
-            <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar canción completa">
-              🎧 <span>COMPLETA</span>
-            </button>
-          </div>
-
-          <!-- Fila 2: Descargas y Acceso a Álbum -->
-          <div class="actions-row-dl">
-            <button class="btn-card-action btn-card-mp3 btn-single-mp3" title="Descargar MP3 320 kbps (VIP)">
-              📥 <span>MP3 320</span>
-            </button>
-            ${track.albumId ? `
-              <button class="btn-card-action btn-card-album btn-go-to-album" title="Ver álbum completo con todas sus canciones">
-                💿 <span>ÁLBUM</span>
-              </button>
-            ` : `
-              <button class="btn-card-action btn-card-flac btn-single-flac" title="Descargar FLAC Lossless">
-                ⚡ <span>FLAC</span>
-              </button>
-            `}
-          </div>
+        <div class="track-card-actions-single">
+          <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview (30s)">
+            ▶ <span>PREVIEW</span>
+          </button>
+          <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar canción completa">
+            🎧 <span>COMPLETA</span>
+          </button>
+          <button class="btn-track-more btn-single-more" title="Más opciones (Descargar MP3 320, FLAC, Cola, Álbum)">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+              <circle cx="5" cy="12" r="2.2"></circle>
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <circle cx="19" cy="12" r="2.2"></circle>
+            </svg>
+          </button>
         </div>
       </div>
     `;
@@ -1409,50 +1395,6 @@ function renderTracks(tracks) {
       });
     }
 
-    if (track.albumId) {
-      const albumBtn = card.querySelector('.btn-go-to-album');
-      if (albumBtn) {
-        albumBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openAlbumDetail(track.albumId);
-        });
-      }
-    }
-
-    const flacBtn = card.querySelector('.btn-single-flac');
-    if (flacBtn) {
-      flacBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!isUserLoggedIn()) {
-          openLoginModal(`Inicia sesión como VIP para descargar FLAC de "${track.title}".`, () => {
-            showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
-            window.open(track.lucidaUrl, '_blank');
-          });
-          return;
-        }
-        showToast(`⚡ Abriendo enlace FLAC para: ${track.title}`);
-        window.open(track.lucidaUrl, '_blank');
-      });
-    }
-
-    card.querySelector('.btn-single-full').addEventListener('click', (e) => {
-      e.stopPropagation();
-      playFullSong(track.artist, track.title, track.coverXl, track.album);
-    });
-
-    card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
-      e.stopPropagation();
-      downloadMp3_320(track.artist, track.title, track.preview || track.audioUrl, null, {
-        album: track.album,
-        albumArtist: track.artist,
-        coverUrl: track.coverXl,
-        year: track.releaseDate,
-        releaseDate: track.releaseDate,
-        track: track.trackPosition || null,
-        genre: track.genre || null
-      }, e.currentTarget);
-    });
-
     card.querySelector('.btn-single-play').addEventListener('click', (e) => {
       e.stopPropagation();
       loadTrack({
@@ -1462,6 +1404,30 @@ function renderTracks(tracks) {
         audioUrl: track.preview
       });
     });
+
+    card.querySelector('.btn-single-full').addEventListener('click', (e) => {
+      e.stopPropagation();
+      playFullSong(track.artist, track.title, track.coverXl, track.album);
+    });
+
+    const moreBtn = card.querySelector('.btn-single-more');
+    if (moreBtn) {
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTrackContextMenu({
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          albumId: track.albumId,
+          cover: track.coverXl,
+          preview: track.preview,
+          audioUrl: track.preview || track.audioUrl,
+          lucidaUrl: track.lucidaUrl,
+          releaseDate: track.releaseDate,
+          label: track.genre || 'Vice Music'
+        });
+      });
+    }
 
     resultsGrid.appendChild(card);
   });
@@ -1628,7 +1594,13 @@ async function switchArtistTab(mode, artistName, artistId) {
           <div class="ranking-actions-cell">
             <button class="btn-rank-action btn-rank-play" title="Escuchar preview">▶ <span>PREVIEW</span></button>
             <button class="btn-rank-action btn-rank-full" title="Escuchar completa">🎧 <span>COMPLETA</span></button>
-            <button class="btn-rank-action btn-dl-vip" title="Descargar MP3 320 kbps (VIP)">📥 <span>MP3 320</span></button>
+            <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <circle cx="5" cy="12" r="2.2"></circle>
+                <circle cx="12" cy="12" r="2.2"></circle>
+                <circle cx="19" cy="12" r="2.2"></circle>
+              </svg>
+            </button>
           </div>
         `;
 
@@ -1648,12 +1620,17 @@ async function switchArtistTab(mode, artistName, artistId) {
           e.stopPropagation();
           playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle);
         });
-        row.querySelector('.btn-dl-vip').addEventListener('click', (e) => {
+        row.querySelector('.btn-track-more').addEventListener('click', (e) => {
           e.stopPropagation();
-          downloadMp3_320(track.artist ? track.artist.name : artistName, track.title, track.preview, null, {
+          openTrackContextMenu({
+            title: track.title,
+            artist: track.artist ? track.artist.name : artistName,
+            cover: cover,
             album: albumTitle,
-            coverUrl: cover
-          }, e.currentTarget);
+            preview: track.preview,
+            audioUrl: track.preview,
+            lucidaUrl: track.lucidaUrl
+          });
         });
 
         if (albumId) {
@@ -1768,19 +1745,20 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
       <div class="album-info">
         <h3 class="album-title" title="${track.title}">${track.title}</h3>
         <p class="album-artist">${track.artist ? track.artist.name : artistName}</p>
-        <div class="track-card-actions">
-          <div class="actions-row-play">
-            <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar muestra">▶ <span>PREVIEW</span></button>
-            <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar completa">🎧 <span>COMPLETA</span></button>
-          </div>
-          <div class="actions-row-dl">
-            <button class="btn-card-action btn-card-mp3 btn-single-mp3" title="Descargar MP3 320 kbps (VIP)">📥 <span>MP3 320</span></button>
-            ${albumId ? `
-              <button class="btn-card-action btn-card-album btn-go-to-album" title="Ver álbum">💿 <span>ÁLBUM</span></button>
-            ` : `
-              <button class="btn-card-action btn-card-flac btn-single-flac" title="Descargar en FLAC">⚡ <span>FLAC</span></button>
-            `}
-          </div>
+        <div class="track-card-actions-single">
+          <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview">
+            ▶ <span>PREVIEW</span>
+          </button>
+          <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar completa">
+            🎧 <span>COMPLETA</span>
+          </button>
+          <button class="btn-track-more btn-single-more" title="Más opciones (Descargar MP3 320, FLAC, Cola, Álbum)">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+              <circle cx="5" cy="12" r="2.2"></circle>
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <circle cx="19" cy="12" r="2.2"></circle>
+            </svg>
+          </button>
         </div>
       </div>
     `;
@@ -1790,11 +1768,6 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
       if (albumId) openAlbumDetail(albumId);
       else loadTrack({ title: track.title, artist: track.artist ? track.artist.name : artistName, cover, audioUrl: track.preview, album: albumTitle });
     });
-
-    if (albumId) {
-      const albBtn = card.querySelector('.btn-go-to-album');
-      if (albBtn) albBtn.addEventListener('click', (e) => { e.stopPropagation(); openAlbumDetail(albumId); });
-    }
 
     card.querySelector('.btn-single-play').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1806,10 +1779,22 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
       playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle);
     });
 
-    card.querySelector('.btn-single-mp3').addEventListener('click', (e) => {
-      e.stopPropagation();
-      downloadMp3_320(track.artist ? track.artist.name : artistName, track.title, track.preview, null, { album: albumTitle, coverUrl: cover }, e.currentTarget);
-    });
+    const moreBtn = card.querySelector('.btn-single-more');
+    if (moreBtn) {
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTrackContextMenu({
+          title: track.title,
+          artist: track.artist ? track.artist.name : artistName,
+          album: albumTitle,
+          albumId: albumId,
+          cover: cover,
+          preview: track.preview,
+          audioUrl: track.preview,
+          lucidaUrl: track.lucidaUrl
+        });
+      });
+    }
 
     grid.appendChild(card);
   });
@@ -2208,9 +2193,26 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       throw new Error(msg);
     }
 
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const json = await res.json();
+      if (json.downloadUrl) {
+        window.open(json.downloadUrl, '_blank');
+        hideDownloadProgress();
+        showToast(`✅ ¡Descarga directa de MP3 iniciada: ${safeName}.mp3!`);
+        return;
+      }
+    }
 
+    const blob = await res.blob();
+    if (blob.size < 5000) {
+      window.open(downloadApiUrl, '_blank');
+      hideDownloadProgress();
+      showToast(`⚡ Abriendo enlace de descarga para: ${safeName}`);
+      return;
+    }
+
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
     a.download = `${safeName}.mp3`;
@@ -2646,8 +2648,12 @@ async function loadHomeContent() {
             <button class="btn-rank-action btn-rank-full" title="Escuchar canción completa">
               🎧 <span>COMPLETA</span>
             </button>
-            <button class="btn-rank-action btn-dl-vip" title="Descargar MP3 320 kbps (VIP)">
-              📥 <span>MP3 320</span>
+            <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <circle cx="5" cy="12" r="2.2"></circle>
+                <circle cx="12" cy="12" r="2.2"></circle>
+                <circle cx="19" cy="12" r="2.2"></circle>
+              </svg>
             </button>
           </div>
         `;
@@ -2679,12 +2685,17 @@ async function loadHomeContent() {
           playFullSong(track.artist, track.title, track.coverXl, track.album);
         });
 
-        row.querySelector('.btn-dl-vip').addEventListener('click', (e) => {
+        row.querySelector('.btn-track-more').addEventListener('click', (e) => {
           e.stopPropagation();
-          downloadMp3_320(track.artist, track.title, track.preview, null, {
+          openTrackContextMenu({
+            title: track.title,
+            artist: track.artist,
+            cover: track.coverXl,
             album: track.album,
-            coverUrl: track.coverXl
-          }, e.currentTarget);
+            preview: track.preview,
+            audioUrl: track.preview,
+            lucidaUrl: track.lucidaUrl
+          });
         });
 
         const artistLink = row.querySelector('.ranking-track-artist');

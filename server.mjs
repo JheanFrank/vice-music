@@ -433,7 +433,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.4', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.5', status: 'online', engine: 'Vice Music 3D Coverflow + PO Token Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL
@@ -1367,134 +1367,6 @@ function stripOldId3(mp3Buffer) {
           }
         }
 
-        let rawMp3 = null;
-
-        // ESTRATEGIA 1: Extracción nativa directa con YTDL PO Token + FFmpeg
-        try {
-          console.log(`[Native MP3 Engine] Extracción directa con PO Token para ${targetVideoId}...`);
-          let stream;
-          try {
-            stream = await ytdlInstance.download(targetVideoId, {
-              filter: { hasAudio: true, hasVideo: false },
-              quality: 'highestaudio'
-            });
-          } catch (e1) {
-            console.warn(`[Native MP3 Engine] highestaudio falló (${e1.message}), probando stream general...`);
-            stream = await ytdlInstance.download(targetVideoId, {
-              filter: { hasAudio: true }
-            });
-          }
-
-          const ffmpeg = spawn(ffmpegPath, [
-            '-i', 'pipe:0',
-            '-vn',
-            '-c:a', 'libmp3lame',
-            '-b:a', '320k',
-            '-f', 'mp3',
-            'pipe:1'
-          ]);
-
-          stream.pipe(ffmpeg.stdin);
-
-          const chunks = [];
-          ffmpeg.stdout.on('data', c => chunks.push(c));
-
-          rawMp3 = await new Promise((resolve, reject) => {
-            ffmpeg.on('close', code => {
-              if (code === 0) resolve(Buffer.concat(chunks));
-              else reject(new Error('FFmpeg finalizó con código ' + code));
-            });
-            ffmpeg.stderr.on('data', () => {});
-            stream.on('error', reject);
-            ffmpeg.on('error', reject);
-          });
-
-          if (!rawMp3 || rawMp3.length < 50000) {
-            throw new Error(`Extracción insuficiente: ${rawMp3 ? rawMp3.length : 0} bytes`);
-          }
-
-          console.log(`[Native MP3 Engine] Extracción local exitosa: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
-        } catch (localErr) {
-          console.warn(`[Native MP3 Engine] Extracción local no disponible (${localErr.message}). Activando ESTRATEGIA 2 en la nube anti-bot...`);
-
-          // ESTRATEGIA 2: Motor en la nube con proxies rotativos (para Render y servidores cloud)
-          try {
-            const startRes = await fetch(`https://p.savenow.to/ajax/download.php?format=mp3&audio_quality=320&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${targetVideoId}`)}`, {
-              headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(12000)
-            });
-            const startData = await startRes.json();
-
-            if (!startData.success || !startData.progress_url) {
-              throw new Error('Servidor de conversión en la nube no devolvió progress_url');
-            }
-
-            let downloadUrl = null;
-            for (let i = 0; i < 22; i++) {
-              await new Promise(r => setTimeout(r, 1000));
-              const pr = await fetch(startData.progress_url, {
-                headers: { 'User-Agent': USER_AGENT },
-                signal: AbortSignal.timeout(8000)
-              });
-              const pd = await pr.json();
-              if (pd.download_url && pd.progress === 1000) {
-                downloadUrl = pd.download_url;
-                break;
-              }
-              if (pd.error) throw new Error(pd.error);
-            }
-
-            if (!downloadUrl) {
-              throw new Error('Tiempo de espera agotado al procesar audio en la nube');
-            }
-
-            console.log(`[Native MP3 Engine] Descargando audio convertido desde CDN (${downloadUrl}) para inyectar metadatos Apple Music...`);
-            try {
-              const cdnAudioRes = await fetch(downloadUrl, {
-                headers: {
-                  'User-Agent': USER_AGENT,
-                  'Accept': '*/*'
-                },
-                signal: AbortSignal.timeout(45000)
-              });
-              if (cdnAudioRes.ok) {
-                const testBuf = Buffer.from(await cdnAudioRes.arrayBuffer());
-                const sampleHeader = testBuf.slice(0, 100).toString('utf8').toLowerCase();
-                if (testBuf.length >= 300000 && !sampleHeader.includes('<html') && !sampleHeader.includes('<!doctype') && !sampleHeader.includes('window.location')) {
-                  rawMp3 = testBuf;
-                  console.log(`[Native MP3 Engine] Audio CDN obtenido con éxito: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
-                } else {
-                  console.warn(`[Native MP3 Engine] CDN devolvió respuesta no válida (${testBuf.length} bytes), usando entrega directa de URL.`);
-                }
-              }
-            } catch (cdnFetchErr) {
-              console.warn('[Native MP3 Engine] Falló descarga de buffer CDN en servidor:', cdnFetchErr.message);
-            }
-
-            // Si el servidor no pudo descargar el buffer completo de audio, entregar la URL directa de CDN al cliente (su navegador lo descarga con IP residencial)
-            if (!rawMp3 || rawMp3.length < 300000) {
-              console.log(`[Native MP3 Engine] Entregando URL directa de CDN al navegador: ${downloadUrl}`);
-              res.writeHead(200, {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-              });
-              return res.end(JSON.stringify({
-                success: true,
-                downloadUrl: downloadUrl,
-                filename: safeFilename
-              }));
-            }
-          } catch (cloudErr) {
-            console.error(`[Native MP3 Engine] Error en ambas estrategias:`, cloudErr.message);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ error: 'Error al generar MP3: ' + cloudErr.message }));
-          }
-        }
-
-        if (!rawMp3 || rawMp3.length === 0) {
-          throw new Error('No se pudo obtener el archivo de audio');
-        }
-
         // Inyectar metadatos ID3v2.3 completos estilo Apple Music (Disquera, Copyright, ISRC, Compositor, Pista, Género, Carátula 1000px HD, sin comentarios)
         const cleanYear = (year || releaseDate || '').match(/\b(19\d{2}|20\d{2})\b/)?.[0] || String(new Date().getFullYear());
         const tag = createId3Tag({
@@ -1515,17 +1387,69 @@ function stripOldId3(mp3Buffer) {
           imageBuffer: coverBuf
         });
 
-        const finalMp3 = Buffer.concat([tag, rawMp3]);
+        console.log(`[Native MP3 Engine] Extrayendo y transmitiendo audio MP3 320 kbps para "${safeFilename}" (${targetVideoId})...`);
 
+        let audioStream;
+        try {
+          audioStream = ytdlInstance.download(targetVideoId, {
+            filter: { hasAudio: true, hasVideo: false },
+            quality: 'highestaudio'
+          });
+        } catch (e1) {
+          audioStream = ytdlInstance.download(targetVideoId, {
+            filter: { hasAudio: true }
+          });
+        }
+
+        const ffmpeg = spawn(ffmpegPath, [
+          '-i', 'pipe:0',
+          '-vn',
+          '-c:a', 'libmp3lame',
+          '-b:a', '320k',
+          '-f', 'mp3',
+          'pipe:1'
+        ]);
+
+        audioStream.pipe(ffmpeg.stdin);
+
+        // Enviar cabeceras de descarga de archivo MP3 de inmediato (evita timeout de Render)
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg',
           'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
-          'Content-Length': finalMp3.length,
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Access-Control-Allow-Origin': '*'
         });
 
-        res.end(finalMp3);
-        console.log(`[Native MP3 Engine] ✅ Enviado exitosamente al cliente: "${safeFilename}.mp3" (${(finalMp3.length / (1024 * 1024)).toFixed(2)} MB)`);
+        // Escribir cabecera ID3v2.3 con carátula oficial al principio del archivo
+        res.write(tag);
+
+        // Transmitir flujo de datos codificados de FFmpeg directamente al cliente
+        ffmpeg.stdout.pipe(res);
+
+        audioStream.on('error', (aErr) => {
+          console.error('[Native MP3 Engine] Error en stream de audio:', aErr.message);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Error al obtener audio: ' + aErr.message }));
+          } else {
+            res.end();
+          }
+        });
+
+        ffmpeg.on('error', (fErr) => {
+          console.error('[Native MP3 Engine] Error en FFmpeg:', fErr.message);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Error al procesar MP3: ' + fErr.message }));
+          } else {
+            res.end();
+          }
+        });
+
+        ffmpeg.on('close', (code) => {
+          console.log(`[Native MP3 Engine] ✅ Descarga completada exitosamente: "${safeFilename}.mp3" (código ${code})`);
+        });
+
         return;
       } catch (err) {
         console.error('[Native MP3 Engine] Error:', err.message);

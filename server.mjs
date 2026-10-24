@@ -1,4 +1,4 @@
-// Build trigger: 2026-10-23T21:48:00.0000000Z
+// Build trigger: 2026-10-23T22:05:00.0000000Z
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client } from '@distube/ytdl-core';
 
-const ytdl = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
+const ytdl = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -419,7 +419,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '5.5', status: 'online', engine: 'Vice Music Extended Scrubber + Track Context 3-Dots Menu + Native MP3 Fallback' }));
+      return res.end(JSON.stringify({ version: '5.6', status: 'online', engine: 'Vice Music Spotify Popup Menu + Native YouTube TV MP3 320' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1164,13 +1164,21 @@ function stripOldId3(mp3Buffer) {
 
         let rawMp3 = null;
 
-        // ESTRATEGIA 1: Transcodificación directa local de alta fidelidad 320 kbps
+        // ESTRATEGIA: Transcodificación nativa 320 kbps con YouTube TV Client + FFmpeg
         try {
-          console.log(`[Native MP3 Engine] Intentando extracción local directa para ${targetVideoId}...`);
-          const stream = await ytdl.download(targetVideoId, {
-            filter: f => f.hasAudio && !f.hasVideo,
-            quality: 'highestaudio'
-          });
+          console.log(`[Native MP3 Engine] Extracción nativa directa para ${targetVideoId}...`);
+          let stream;
+          try {
+            stream = await ytdl.download(targetVideoId, {
+              filter: f => f.hasAudio && !f.hasVideo,
+              quality: 'highestaudio'
+            });
+          } catch (e1) {
+            console.warn(`[Native MP3 Engine] highestaudio falló (${e1.message}), probando stream general...`);
+            stream = await ytdl.download(targetVideoId, {
+              filter: f => f.hasAudio
+            });
+          }
 
           const ffmpeg = spawn(ffmpegPath, [
             '-i', 'pipe:0',
@@ -1196,77 +1204,15 @@ function stripOldId3(mp3Buffer) {
             ffmpeg.on('error', reject);
           });
 
-          if (!rawMp3 || rawMp3.length < 100000) {
+          if (!rawMp3 || rawMp3.length < 50000) {
             throw new Error(`Extracción insuficiente: ${rawMp3 ? rawMp3.length : 0} bytes`);
           }
 
-          console.log(`[Native MP3 Engine] Extracción local exitosa: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
-        } catch (localErr) {
-          console.warn(`[Native MP3 Engine] Extracción local no disponible (${localErr.message}). Activando motor en la nube con proxies anti-bot...`);
-
-          // ESTRATEGIA 2: Motor en la nube con proxies rotativos (para Render y servidores cloud)
-          const startRes = await fetch(`https://p.savenow.to/ajax/download.php?format=mp3&audio_quality=320&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${targetVideoId}`)}`, {
-            headers: { 'User-Agent': USER_AGENT },
-            signal: AbortSignal.timeout(15000)
-          });
-          const startData = await startRes.json();
-
-          if (!startData.success || !startData.progress_url) {
-            throw new Error('Servidor de conversión en la nube no disponible temporalmente');
-          }
-
-          let downloadUrl = null;
-          for (let i = 0; i < 28; i++) {
-            await new Promise(r => setTimeout(r, 1000));
-            const pr = await fetch(startData.progress_url, {
-              headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(10000)
-            });
-            const pd = await pr.json();
-            if (pd.download_url && pd.progress === 1000) {
-              downloadUrl = pd.download_url;
-              break;
-            }
-            if (pd.error) throw new Error(pd.error);
-          }
-
-          if (!downloadUrl) {
-            throw new Error('Tiempo de espera agotado al procesar audio en la nube');
-          }
-
-          console.log(`[Native MP3 Engine] Descargando audio desde servidor de alta velocidad...`);
-          let cloudBuffer = null;
-          try {
-            const fileRes = await fetch(downloadUrl, {
-              headers: {
-                'User-Agent': USER_AGENT,
-                'Referer': 'https://savenow.to/',
-                'Accept': '*/*'
-              },
-              signal: AbortSignal.timeout(45000)
-            });
-
-            if (fileRes.ok) {
-              cloudBuffer = Buffer.from(await fileRes.arrayBuffer());
-            } else {
-              console.warn(`[Native MP3 Engine] fileRes error ${fileRes.status}, fallback a redirección directa.`);
-            }
-          } catch (fetchErr) {
-            console.warn(`[Native MP3 Engine] Error al bajar buffer en la nube: ${fetchErr.message}, fallback directo.`);
-          }
-
-          if (!cloudBuffer || cloudBuffer.length < 50000) {
-            console.warn(`[Native MP3 Engine] Buffer insuficiente (${cloudBuffer ? cloudBuffer.length : 0} bytes), redirigiendo al cliente directamente a: ${downloadUrl}`);
-            res.writeHead(302, { 'Location': downloadUrl });
-            return res.end();
-          }
-
-          rawMp3 = stripOldId3(cloudBuffer);
-          if (!rawMp3 || rawMp3.length < 50000) {
-            rawMp3 = cloudBuffer;
-          }
-
-          console.log(`[Native MP3 Engine] Audio recibido desde la nube: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
+          console.log(`[Native MP3 Engine] Extracción exitosa: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
+        } catch (err) {
+          console.error(`[Native MP3 Engine] Error al procesar audio:`, err.message);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Error al generar MP3: ' + err.message }));
         }
 
         if (!rawMp3 || rawMp3.length === 0) {

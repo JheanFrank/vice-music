@@ -2254,74 +2254,22 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 
-    // Petición asíncrona segura con soporte dual (Blob binario o CDN directo anti-bloqueo)
-    const res = await fetch(downloadApiUrl);
-    if (!res.ok) {
-      let errTxt = 'Error al generar el archivo en el servidor';
-      try {
-        const errJson = await res.json();
-        if (errJson.error) errTxt = errJson.error;
-      } catch (_) {}
-      throw new Error(errTxt);
-    }
+    // Disparar la descarga nativa directa del navegador (compatible 100% con móvil y escritorio)
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = downloadApiUrl;
+    downloadAnchor.setAttribute('download', `${safeName}.mp3`);
+    downloadAnchor.style.display = 'none';
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    setTimeout(() => {
+      if (document.body.contains(downloadAnchor)) document.body.removeChild(downloadAnchor);
+    }, 2000);
 
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
-      if (data.downloadUrl) {
-        setDownloadProgress(92, 'Transfiriendo audio a tu dispositivo...', safeName);
-        try {
-          const directFileRes = await fetch(data.downloadUrl);
-          const directBlob = await directFileRes.blob();
-          const directUrl = URL.createObjectURL(directBlob);
-          const a = document.createElement('a');
-          a.href = directUrl;
-          a.download = `${safeName}.mp3`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(directUrl), 20000);
-          setDownloadProgress(100, '¡Descarga 320 kbps completada!', safeName);
-          setTimeout(() => {
-            hideDownloadProgress();
-            showToast(`✅ Descargado: ${safeName}.mp3`);
-          }, 1200);
-          return;
-        } catch (_) {
-          // Si fetch directo falla por CORS, usar iframe oculto para NUNCA navegar la ventana actual ni cerrar la app
-          const ifr = document.createElement('iframe');
-          ifr.style.display = 'none';
-          ifr.src = data.downloadUrl;
-          document.body.appendChild(ifr);
-          setTimeout(() => {
-            if (document.body.contains(ifr)) document.body.removeChild(ifr);
-            hideDownloadProgress();
-            showToast(`✅ Descarga iniciada: ${safeName}.mp3`);
-          }, 3000);
-          return;
-        }
-      } else if (data.error) {
-        throw new Error(data.error);
-      }
-    } else {
-      const blob = await res.blob();
-      if (blob.size < 300000) {
-        throw new Error(`El archivo de audio descargado está incompleto (${Math.round(blob.size / 1024)} KB)`);
-      }
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `${safeName}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 20000);
-      setDownloadProgress(100, '¡Descarga 320 kbps completada!', safeName);
-      setTimeout(() => {
-        hideDownloadProgress();
-        showToast(`✅ Descargado: ${safeName}.mp3`);
-      }, 1200);
-    }
+    setDownloadProgress(100, '¡Descarga iniciada en tu dispositivo!', safeName);
+    setTimeout(() => {
+      hideDownloadProgress();
+      showToast(`✅ Descarga iniciada: ${safeName}.mp3`);
+    }, 1500);
   } catch (err) {
     if (dlProgressTimer) {
       clearInterval(dlProgressTimer);

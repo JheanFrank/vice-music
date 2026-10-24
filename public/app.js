@@ -2305,6 +2305,9 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       }
     } else {
       const blob = await res.blob();
+      if (blob.size < 300000) {
+        throw new Error(`El archivo de audio descargado está incompleto (${Math.round(blob.size / 1024)} KB)`);
+      }
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
@@ -2385,77 +2388,25 @@ function seekDelta(seconds) {
 
 // SALTAR A LA SIGUIENTE CANCIÓN (ÁLBUM, COLA, RANKING O ALEATORIA)
 function playNextTrack() {
-  // 1. Si hay canciones en cola (Poner a continuación)
+  // 1. Si hay canciones en la cola (secuencia programada de playlist o añadidas por el usuario)
   if (state.queue && state.queue.length > 0) {
     const nextItem = state.queue.shift();
-    showToast(`⏭️ Cola de reproducción: ${nextItem.title}`);
-    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album);
-    return;
-  }
+    updateQueueBadge();
+    renderQueueItems();
 
-  // 1.5 Si se está reproduciendo desde la Playlist Personal 3D o el modo Shuffle está activo
-  const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
-  const isFromPlaylist = state.currentMode === 'playlist' || (state.userPlaylist && state.userPlaylist.length > 0 && state.userPlaylist.some(t => t.title && t.title.trim().toLowerCase() === curTitle));
-  if ((isFromPlaylist || state.isShuffle) && state.userPlaylist && state.userPlaylist.length > 0) {
-    let nextIdx;
-    if (state.isShuffle) {
-      if (!Array.isArray(state.playedShuffleIds)) state.playedShuffleIds = [];
-
-      // Marcar la canción actual como ya sonada para garantizar que NO se repita
-      if (state.currentTrack) {
-        const curIdKey = state.currentTrack.id || state.currentTrack.title;
-        if (!state.playedShuffleIds.includes(curIdKey)) {
-          state.playedShuffleIds.push(curIdKey);
-        }
-      }
-
-      // Tracks que aún no han sonado en este ciclo de aleatorio
-      const unplayedIndices = [];
-      state.userPlaylist.forEach((t, idx) => {
-        const idKey = t.id || t.title;
-        if (!state.playedShuffleIds.includes(idKey)) {
-          unplayedIndices.push(idx);
-        }
-      });
-
-      if (unplayedIndices.length > 0) {
-        // Escoger aleatorio exclusivamente de las no escuchadas
-        const randPick = Math.floor(Math.random() * unplayedIndices.length);
-        nextIdx = unplayedIndices[randPick];
-        const nextTrack = state.userPlaylist[nextIdx];
-        state.playedShuffleIds.push(nextTrack.id || nextTrack.title);
-      } else {
-        // ¡Todas las canciones ya sonaron en aleatorio! Detener limpiamente y no repetir
-        stopCurrentPlayback();
-        state.playedShuffleIds = [];
-        showTopRightToast('Fin de la Playlist', 'Has escuchado todas las canciones en aleatorio', 'info');
-        return;
-      }
-    } else {
-      // MODO SECUENCIAL EN ORDEN: La que seguía por debajo
-      let curIdx = state.userPlaylist.findIndex(t => 
-        (t.id && state.currentTrack && t.id === state.currentTrack.id) ||
-        (t.title && state.currentTrack && t.title.trim().toLowerCase() === curTitle)
-      );
-      if (curIdx === -1) {
-        curIdx = state.activeCoverflowIndex || 0;
-      }
-
-      if (curIdx + 1 < state.userPlaylist.length) {
-        nextIdx = curIdx + 1;
-      } else {
-        // Fin de la playlist en orden
-        stopCurrentPlayback();
-        showTopRightToast('Fin de la Playlist', 'Has llegado al final de tu lista', 'info');
-        return;
-      }
+    // Sincronizar índice en Coverflow si la pista pertenece a la playlist
+    const plIdx = (state.userPlaylist || []).findIndex(t => 
+      (t.id && nextItem.id && t.id === nextItem.id) ||
+      (t.title && nextItem.title && t.title.trim().toLowerCase() === nextItem.title.trim().toLowerCase())
+    );
+    if (plIdx !== -1) {
+      state.activeCoverflowIndex = plIdx;
+      renderCoverflow();
+      renderPlaylistTracklist();
     }
 
-    state.activeCoverflowIndex = nextIdx;
-    renderCoverflow();
-    renderPlaylistTracklist();
-    const nextTrack = state.userPlaylist[nextIdx];
-    playPlaylistTrack(nextTrack);
+    showToast(`⏭️ Siguiente: ${nextItem.title}`);
+    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album);
     return;
   }
 
@@ -2478,6 +2429,27 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.rankingTracks.length) {
       const nextTrack = state.rankingTracks[curIdx + 1];
       showToast(`⏭️ Siguiente éxito: ${nextTrack.title}`);
+      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album);
+      return;
+    }
+  }
+
+  // 4. Si se está en resultados de catálogo de pistas
+  if (state.results && state.results.length > 0 && state.currentMode === 'tracks') {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.results.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx !== -1 && curIdx + 1 < state.results.length) {
+      const nextTrack = state.results[curIdx + 1];
+      showToast(`⏭️ Siguiente canción: ${nextTrack.title}`);
+      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle);
+      return;
+    }
+  }
+
+  // Si no queda nada en la cola: Fin de la reproducción limpia sin reiniciar en bucle
+  stopCurrentPlayback();
+  showTopRightToast('Fin de la Lista', 'Has escuchado todas las canciones programadas', 'info');
+}
       playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album);
       return;
     }
@@ -2610,11 +2582,10 @@ function openTrackContextMenu(trackData, triggerEl = null) {
   const panel = document.getElementById('amMenuPanel');
   if (panel && triggerEl) {
     const rect = triggerEl.getBoundingClientRect();
-    const menuWidth = 240;
-    const menuHeight = 230;
+    const menuWidth = 250;
 
     let left = rect.right - menuWidth;
-    if (left < 10) left = rect.left;
+    if (left < 10) left = 10;
     if (left + menuWidth > window.innerWidth - 10) {
       left = window.innerWidth - menuWidth - 10;
     }
@@ -2622,13 +2593,20 @@ function openTrackContextMenu(trackData, triggerEl = null) {
     panel.style.left = `${Math.max(10, left)}px`;
     panel.style.right = 'auto';
 
-    if (rect.top > menuHeight + 20) {
+    const spaceBelow = window.innerHeight - rect.bottom - 15;
+    const spaceAbove = rect.top - 15;
+
+    if (spaceBelow < 220 && spaceAbove > spaceBelow) {
       panel.style.top = 'auto';
       panel.style.bottom = `${Math.max(10, window.innerHeight - rect.top + 8)}px`;
+      panel.style.maxHeight = `${Math.min(spaceAbove, window.innerHeight - 30)}px`;
     } else {
-      panel.style.top = `${rect.bottom + 8}px`;
+      panel.style.top = `${Math.max(10, rect.bottom + 8)}px`;
       panel.style.bottom = 'auto';
+      panel.style.maxHeight = `${Math.min(spaceBelow, window.innerHeight - 30)}px`;
     }
+    panel.style.overflowY = 'auto';
+    panel.style.overscrollBehavior = 'contain';
     panel.style.transform = 'none';
   } else if (panel) {
     panel.style.position = 'fixed';
@@ -2636,6 +2614,9 @@ function openTrackContextMenu(trackData, triggerEl = null) {
     panel.style.right = '25px';
     panel.style.left = 'auto';
     panel.style.top = 'auto';
+    panel.style.maxHeight = 'calc(100vh - 120px)';
+    panel.style.overflowY = 'auto';
+    panel.style.overscrollBehavior = 'contain';
     panel.style.transform = 'none';
   }
 
@@ -3784,45 +3765,84 @@ function toggleAuthMode() {
   }
 }
 
+function startPlaylistPlayback(startIndex, isShuffle = false) {
+  if (!state.userPlaylist || state.userPlaylist.length === 0) {
+    showToast('Tu Playlist 3D está vacía. Añade canciones primero.');
+    showTopRightToast('Playlist Vacía', 'Añade canciones primero para reproducir', 'info');
+    return;
+  }
+  const N = state.userPlaylist.length;
+  state.isShuffle = isShuffle;
+
+  const btnDockShuffle = document.getElementById('btnDockShuffle');
+  const btnPlaylistShuffle = document.getElementById('btnPlaylistShuffle');
+  if (btnDockShuffle) btnDockShuffle.classList.toggle('shuffle-active', isShuffle);
+  if (btnPlaylistShuffle) btnPlaylistShuffle.classList.toggle('shuffle-active', isShuffle);
+
+  if (isShuffle) {
+    // Escoger canción aleatoria de inicio
+    const randIdx = Math.floor(Math.random() * N);
+    const chosenTrack = state.userPlaylist[randIdx];
+
+    // Mezclar el resto sin repeticiones en el pool de la cola
+    const remainder = state.userPlaylist.filter((_, idx) => idx !== randIdx);
+    for (let i = remainder.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [remainder[i], remainder[j]] = [remainder[j], remainder[i]];
+    }
+
+    state.queue = remainder.map(t => ({
+      artist: t.artist,
+      title: t.title,
+      cover: t.cover,
+      album: t.album
+    }));
+
+    state.activeCoverflowIndex = randIdx;
+    renderCoverflow();
+    renderPlaylistTracklist();
+    updateQueueBadge();
+    renderQueueItems();
+
+    showTopRightToast('Modo Aleatorio Activo', `Sonando: ${chosenTrack.title}`, 'shuffle');
+    playPlaylistTrack(chosenTrack);
+  } else {
+    // Modo Secuencial Circular:
+    // Arranca en startIndex, avanza hacia abajo, y al llegar al final se devuelve a la de arriba (0)
+    // hasta llegar a startIndex - 1 (todas las canciones suenan exactamente 1 vez sin repetirse)
+    const chosenTrack = state.userPlaylist[startIndex];
+    const newQueue = [];
+    for (let step = 1; step < N; step++) {
+      const idx = (startIndex + step) % N;
+      const t = state.userPlaylist[idx];
+      newQueue.push({
+        artist: t.artist,
+        title: t.title,
+        cover: t.cover,
+        album: t.album
+      });
+    }
+
+    state.queue = newQueue;
+    state.activeCoverflowIndex = startIndex;
+    renderCoverflow();
+    renderPlaylistTracklist();
+    updateQueueBadge();
+    renderQueueItems();
+
+    showTopRightToast('Reproduciendo Playlist', `En orden: ${chosenTrack.title}`, 'playlist');
+    playPlaylistTrack(chosenTrack);
+  }
+}
+
 function toggleShuffleMode() {
   if (!state.userPlaylist || state.userPlaylist.length === 0) {
     showToast('Tu Playlist 3D está vacía. Añade canciones primero.');
     showTopRightToast('Playlist Vacía', 'Añade canciones primero para activar aleatorio', 'info');
     return;
   }
-
-  state.isShuffle = !state.isShuffle;
-  const btnDockShuffle = document.getElementById('btnDockShuffle');
-  const btnPlaylistShuffle = document.getElementById('btnPlaylistShuffle');
-
-  if (btnDockShuffle) btnDockShuffle.classList.toggle('shuffle-active', state.isShuffle);
-  if (btnPlaylistShuffle) btnPlaylistShuffle.classList.toggle('shuffle-active', state.isShuffle);
-
-  if (state.isShuffle) {
-    // Vaciar la cola de reproducción previa para arrancar sesión aleatoria pura de la playlist
-    state.queue = [];
-    updateQueueBadge();
-
-    // Detener de inmediato cualquier reproducción previa
-    stopCurrentPlayback();
-
-    // Inicializar pool de aleatorio sin repeticiones
-    state.playedShuffleIds = [];
-
-    const randIdx = Math.floor(Math.random() * state.userPlaylist.length);
-    const chosenTrack = state.userPlaylist[randIdx];
-    state.playedShuffleIds.push(chosenTrack.id || chosenTrack.title);
-
-    state.activeCoverflowIndex = randIdx;
-    renderCoverflow();
-    renderPlaylistTracklist();
-
-    // Iniciar de inmediato la reproducción aleatoria de la playlist
-    playPlaylistTrack(chosenTrack);
-    showTopRightToast('Modo Aleatorio Activo', `Sonando: ${chosenTrack.title}`, 'shuffle');
-  } else {
-    showTopRightToast('Modo Secuencial Activo', 'Reproducción en orden 1, 2, 3...', 'info');
-  }
+  const nextShuffle = !state.isShuffle;
+  startPlaylistPlayback(state.activeCoverflowIndex || 0, nextShuffle);
 }
 
 function setupPlaylistControls() {
@@ -3853,25 +3873,7 @@ function setupPlaylistControls() {
 
   if (btnPlaylistPlayAll) {
     btnPlaylistPlayAll.addEventListener('click', () => {
-      if (!state.userPlaylist || state.userPlaylist.length === 0) {
-        showToast('Agrega canciones a tu playlist primero.');
-        return;
-      }
-      // Desactivar aleatorio para escuchar estrictamente en orden 1, 2, 3...
-      state.isShuffle = false;
-      const btnDockShuffle = document.getElementById('btnDockShuffle');
-      const btnPlShuffle = document.getElementById('btnPlaylistShuffle');
-      if (btnDockShuffle) btnDockShuffle.classList.remove('shuffle-active');
-      if (btnPlShuffle) btnPlShuffle.classList.remove('shuffle-active');
-
-      state.queue = [];
-      updateQueueBadge();
-      state.playedShuffleIds = [];
-      state.activeCoverflowIndex = 0;
-      renderCoverflow();
-      renderPlaylistTracklist();
-      showTopRightToast('Reproduciendo Playlist', 'En orden secuencial 1, 2, 3...', 'playlist');
-      playPlaylistTrack(state.userPlaylist[0]);
+      startPlaylistPlayback(0, false);
     });
   }
 
@@ -3914,7 +3916,11 @@ function setupPlaylistControls() {
         setPlayingState(false);
         updateDockPlayState(false);
       } else {
-        playPlaylistTrack(activeTrack);
+        if (!state.currentTrack || !state.queue || state.queue.length === 0) {
+          startPlaylistPlayback(state.activeCoverflowIndex, state.isShuffle);
+        } else {
+          togglePlayPause();
+        }
       }
     });
   }
@@ -4103,7 +4109,7 @@ function renderCoverflow() {
 
     card.addEventListener('click', () => {
       if (idx === state.activeCoverflowIndex) {
-        playPlaylistTrack(track);
+        startPlaylistPlayback(idx, state.isShuffle);
       } else {
         state.activeCoverflowIndex = idx;
         renderCoverflow();
@@ -4186,11 +4192,7 @@ function renderPlaylistTracklist() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const idx = parseInt(btn.getAttribute('data-index'), 10);
-      state.activeCoverflowIndex = idx;
-      renderCoverflow();
-      renderPlaylistTracklist();
-      const track = state.userPlaylist[idx];
-      if (track) playPlaylistTrack(track);
+      if (!isNaN(idx)) startPlaylistPlayback(idx, false);
     });
   });
 
@@ -4221,8 +4223,8 @@ function renderPlaylistTracklist() {
         return;
       }
       const idx = parseInt(row.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && state.userPlaylist[idx]) {
-        playPlaylistTrack(state.userPlaylist[idx]);
+      if (!isNaN(idx)) {
+        startPlaylistPlayback(idx, false);
       }
     });
   });

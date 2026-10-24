@@ -838,9 +838,23 @@ body {
   margin: 0 auto;
   padding: 0 2rem;
   display: grid;
-  grid-template-columns: 320px 1fr 200px;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
   align-items: center;
   gap: 1.5rem;
+}
+
+.player-track {
+  justify-self: start;
+}
+
+.player-controls {
+  justify-self: center;
+  width: 100%;
+  max-width: 580px;
+}
+
+.player-actions {
+  justify-self: end;
 }
 
 .player-track {
@@ -968,6 +982,30 @@ body {
 .control-btn:hover {
   color: #fff;
   transform: scale(1.1);
+}
+
+.control-btn.dj-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.control-btn.dj-btn:hover {
+  color: #fff;
+  border-color: rgba(0, 240, 255, 0.6);
+  transform: scale(1.1);
+}
+
+.control-btn.dj-btn.active {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: var(--vice-cyan);
+  color: var(--vice-cyan);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.45);
 }
 
 .control-btn.play-main {
@@ -2917,7 +2955,7 @@ body {
   justify-content: center;
   width: 100%;
   max-width: 520px;
-  gap: 1.5rem;
+  gap: 1.1rem;
   animation: fadeInHome 0.3s ease-out;
 }
 
@@ -2927,8 +2965,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(360px, 80vw);
-  height: min(360px, 80vw);
+  width: min(320px, 36vh, 76vw);
+  height: min(320px, 36vh, 76vw);
   margin: 0 auto;
 }
 
@@ -3038,9 +3076,11 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   width: 100%;
   max-width: 480px;
+  margin-top: 0.2rem;
+  margin-bottom: 0.8rem;
 }
 
 .am-title-row {
@@ -3053,7 +3093,7 @@ body {
 
 .am-title {
   font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-  font-size: 1.85rem;
+  font-size: clamp(1.4rem, 2.8vw, 1.85rem);
   font-weight: 800;
   letter-spacing: -0.4px;
   color: #ffffff;
@@ -3067,7 +3107,7 @@ body {
 
 .am-artist {
   font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--vice-pink);
   white-space: nowrap;
@@ -3086,16 +3126,16 @@ body {
 
 .am-album {
   font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.58);
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  margin: 0;
+  margin: 0.2rem 0 0.2rem 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  max-width: 90%;
 }
 
 /* FOOTER CON CONTROLES INFERIORES */
@@ -3106,6 +3146,7 @@ body {
   width: 100%;
   max-width: 620px;
   margin: 0 auto;
+  padding-top: 0.5rem;
 }
 
 /* PROGRESS BAR */
@@ -3178,21 +3219,89 @@ body {
   width: 100%;
 }
 
+.am-top-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.am-dj-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: #00f0ff;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.am-dj-pill:hover {
+  background: rgba(0, 240, 255, 0.28);
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.45);
+}
+
+.dj-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00f0ff;
+  box-shadow: 0 0 8px #00f0ff;
+  animation: pulseNeon 1.5s infinite;
+}
+
 .am-btn-small {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
   font-family: var(--font-body);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  padding: 0.4rem 0.75rem;
-  border-radius: 999px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .am-btn-small:hover {
   background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.08);
+}
+
+.am-btn-dots {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.am-btn-dots:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.08);
+}
+
+.am-btn-dots svg {
+  width: 22px;
+  height: 22px;
 }
 
 .am-btn-ctrl {
@@ -3245,23 +3354,160 @@ body {
   fill: #000000;
 }
 
-.am-btn-dl {
-  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
-  border: none;
-  color: #ffffff;
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 800;
-  padding: 0.5rem 0.95rem;
-  border-radius: 999px;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(255, 42, 133, 0.4);
-  transition: all 0.2s ease;
+/* MENÚ CONTEXTUAL ESTILO SPOTIFY / APPLE MUSIC */
+.am-context-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: amMenuFadeIn 0.2s ease-out;
 }
 
-.am-btn-dl:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 42, 133, 0.6);
+.am-context-menu.hidden {
+  display: none !important;
+}
+
+@keyframes amMenuFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.am-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+.am-menu-panel {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 440px;
+  background: #191622;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.9), 0 0 35px rgba(255, 42, 133, 0.25);
+  animation: amMenuSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes amMenuSlideUp {
+  from { transform: translateY(30px) scale(0.95); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.am-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding-bottom: 0.75rem;
+}
+
+.am-menu-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  flex-shrink: 0;
+}
+
+.am-menu-track-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.am-menu-track-info h4 {
+  font-family: var(--font-body);
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.am-menu-track-info p {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--vice-pink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0.15rem 0 0;
+}
+
+.am-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.09);
+  margin: 0.2rem 0;
+}
+
+.am-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.72rem 0.85rem;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: all 0.18s ease;
+  width: 100%;
+}
+
+.am-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  transform: translateX(3px);
+}
+
+.am-menu-icon {
+  font-size: 1.15rem;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.am-menu-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.am-menu-tag {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--vice-pink), var(--vice-purple));
+  color: #fff;
+  padding: 0.18rem 0.5rem;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.am-menu-tag.dj-tag {
+  background: linear-gradient(135deg, #00f0ff, #00a8ff);
+  color: #000;
+  font-weight: 800;
 }
 
 /* VISTA DE LETRAS SINCRONIZADAS */

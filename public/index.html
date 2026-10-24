@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" title="Versión desplegada en vivo">v5.3</span>
+          <span class="version-badge" title="Versión desplegada en vivo">v5.4</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -281,14 +281,22 @@
     <div class="player-content">
       
       <!-- Info Track Limpio Estilo Apple Music / Spotify -->
-      <div class="player-track" id="playerTrackWrap" title="Clic para abrir reproductor inmersivo">
-        <div class="track-artwork-wrapper">
+      <div class="player-track" id="playerTrackWrap">
+        <div class="track-artwork-wrapper" title="Clic para abrir reproductor inmersivo">
           <img id="playerCover" src="https://via.placeholder.com/80/1a0933/ff2a85?text=VI" alt="Cover">
         </div>
-        <div class="track-meta">
+        <div class="track-meta" title="Clic para abrir reproductor inmersivo">
           <h4 id="playerTitle">Selecciona una pista</h4>
           <p id="playerArtist">Vice City Radio 98.3</p>
         </div>
+        <!-- Botón 3 puntos a la izquierda junto a la canción -->
+        <button id="btnPlayerMoreLeft" class="player-more-left-btn" title="Más opciones (Descargar MP3, FLAC, Cola)">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+            <circle cx="5" cy="12" r="2.2"></circle>
+            <circle cx="12" cy="12" r="2.2"></circle>
+            <circle cx="19" cy="12" r="2.2"></circle>
+          </svg>
+        </button>
       </div>
 
       <!-- Controles de Audio -->
@@ -347,14 +355,9 @@
         </div>
       </div>
 
-      <!-- Botones de Acción -->
+      <!-- Acciones de barra fija: Limpias y equilibradas con el lado izquierdo -->
       <div class="player-actions">
-        <button id="btnPlayerDlMp3" class="btn-track-action btn-dl-mp3" title="Descargar canción en MP3 320 kbps">
-          <span>📥 MP3 320</span>
-        </button>
-        <button id="btnPlayFullSong" class="btn-track-action btn-full-song" title="Escuchar canción completa">
-          <span>🎧 COMPLETA</span>
-        </button>
+        <!-- Los botones MP3 y Completa se pasaron al menú de 3 puntos para máxima limpieza visual -->
       </div>
 
     </div>
@@ -487,6 +490,11 @@
             <span class="am-menu-text">Descargar canción en MP3 320 kbps</span>
             <span class="am-menu-tag">VIP 320</span>
           </button>
+          <button class="am-menu-item" id="amMenuBtnDownloadFlac">
+            <span class="am-menu-icon">⚡</span>
+            <span class="am-menu-text">Descargar pista en FLAC Lossless</span>
+            <span class="am-menu-tag" style="background: linear-gradient(135deg, #00f0ff, #9d00ff); color: #fff;">FLAC</span>
+          </button>
           <button class="am-menu-item" id="amMenuBtnDj">
             <span class="am-menu-icon">🎛️</span>
             <span class="am-menu-text" id="amMenuDjLabel">Smart DJ: Sincronía y Auto-mix</span>
@@ -554,6 +562,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=530"></script>
+  <script src="app.js?v=540"></script>
 </body>
 </html>

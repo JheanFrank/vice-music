@@ -46,7 +46,7 @@ async function getAudioStreamForVideo(videoId) {
           : format.url;
         const aRes = await fetch(streamUrl, {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(180000)
         });
         if (aRes.ok && aRes.body) {
           console.log(`[Audio Engine] Flujo de audio obtenido exitosamente vía ${inst} (itag ${format.itag})`);

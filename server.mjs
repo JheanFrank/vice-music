@@ -420,7 +420,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '6.0', status: 'online', engine: 'Vice Music MP3 Engine 320 with Anti-Bot Fallback' }));
+      return res.end(JSON.stringify({ version: '6.1', status: 'online', engine: 'Vice Music 3D Coverflow + Fast Direct CDN MP3 Downloader' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -1319,27 +1319,13 @@ function stripOldId3(mp3Buffer) {
               throw new Error('Tiempo de espera agotado al procesar audio en la nube');
             }
 
-            console.log(`[Native MP3 Engine] Descargando audio desde servidor de alta velocidad...`);
-            const fileRes = await fetch(downloadUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://savenow.to/'
-              },
-              signal: AbortSignal.timeout(45000)
+            console.log(`[Native MP3 Engine] Redirigiendo cliente directamente al CDN de alta velocidad: ${downloadUrl}`);
+            res.writeHead(302, {
+              'Location': downloadUrl,
+              'Content-Disposition': `attachment; filename="${safeFilename}.mp3"; filename*=UTF-8''${encodedFilename}.mp3`,
+              'Cache-Control': 'no-cache'
             });
-
-            if (!fileRes.ok) throw new Error(`Error ${fileRes.status} al descargar archivo de audio`);
-
-            const cloudBuffer = Buffer.from(await fileRes.arrayBuffer());
-            const stripped = stripOldId3(cloudBuffer);
-            if (stripped && stripped.length > 50000) {
-              rawMp3 = stripped;
-              console.log(`[Native MP3 Engine] Audio obtenido exitosamente: ${(rawMp3.length / (1024 * 1024)).toFixed(2)} MB`);
-            } else if (downloadUrl) {
-              console.log(`[Native MP3 Engine] Buffer de audio no binario (${cloudBuffer.length} bytes), redirigiendo al cliente directamente a: ${downloadUrl}`);
-              res.writeHead(302, { 'Location': downloadUrl });
-              return res.end();
-            }
+            return res.end();
           } catch (cloudErr) {
             console.error(`[Native MP3 Engine] Error en ambas estrategias:`, cloudErr.message);
             res.writeHead(500, { 'Content-Type': 'application/json' });

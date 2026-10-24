@@ -1,4 +1,4 @@
-// Build trigger: 2026-10-23T22:05:00.0000000Z
+// Build trigger: 2026-10-23T22:30:00.0000000Z
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -7,8 +7,9 @@ import dns from 'dns';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client } from '@distube/ytdl-core';
+import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist } from './db.mjs';
 
-const ytdl = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS] });
+const ytdl = new Ytdl({ clients: [Client.VisionOS, Client.WebEmbedded] });
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -419,7 +420,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '5.6', status: 'online', engine: 'Vice Music Spotify Popup Menu + Native YouTube TV MP3 320' }));
+      return res.end(JSON.stringify({ version: '5.7', status: 'online', engine: 'Vice Music 3D Coverflow Playlist + VisionOS MP3 320 Engine' }));
     }
 
     // 0.05 OBTENER CARÁTULA EN MOVIMIENTO OFICIAL DE APPLE MUSIC (HLS VIDEO / M3U8)
@@ -483,7 +484,35 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 0.0 AUTENTICACIÓN VIP ADMIN
+    // 0.0 AUTENTICACIÓN VIP / REGISTRO / LOGIN CON BASE DE DATOS
+    if (pathname === '/api/register' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const username = (parsed.username || '').trim();
+          const password = (parsed.password || '').trim();
+          if (!username || !password) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Ingresa un usuario y contraseña válidos.' }));
+          }
+          const user = createUser(username, password, 'VIP Member');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: true,
+            user: user.username,
+            role: user.role,
+            token: `vice_token_${Date.now()}`
+          }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
+    }
+
     if (pathname === '/api/login' && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -493,19 +522,20 @@ const server = http.createServer(async (req, res) => {
           const username = (parsed.username || '').trim();
           const password = (parsed.password || '').trim();
 
-          if (username === 'admin' && password === 'admin') {
+          const user = getUser(username);
+          if (user && user.password === password) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({
               success: true,
-              user: 'admin',
-              role: 'VIP Admin',
-              token: 'vice_vip_admin_token_2026'
+              user: user.username,
+              role: user.role || 'VIP Member',
+              token: `vice_token_${Date.now()}`
             }));
           } else {
             res.writeHead(401, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({
               success: false,
-              error: 'Usuario o contraseña incorrectos. Verifica tus credenciales.'
+              error: 'Usuario o contraseña incorrectos. Verifica tus credenciales o regístrate.'
             }));
           }
         } catch (e) {
@@ -514,6 +544,57 @@ const server = http.createServer(async (req, res) => {
         }
       });
       return;
+    }
+
+    // 0.02 PLAYLIST PERSISTENTE POR CADA USUARIO REGISTRADO
+    if (pathname === '/api/playlist') {
+      if (req.method === 'GET') {
+        const user = (reqUrl.searchParams.get('user') || '').trim();
+        const tracks = getPlaylist(user);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, tracks }));
+      }
+
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            const user = (parsed.user || '').trim();
+            const track = parsed.track;
+            if (!user) throw new Error('Usuario requerido');
+            if (!track) throw new Error('Canción requerida');
+            const tracks = addToPlaylist(user, track);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: true, tracks, message: 'Canción guardada en tu playlist' }));
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: e.message }));
+          }
+        });
+        return;
+      }
+
+      if (req.method === 'DELETE') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            const user = (parsed.user || '').trim();
+            const title = (parsed.title || '').trim();
+            const artist = (parsed.artist || '').trim();
+            const tracks = removeFromPlaylist(user, title, artist);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: true, tracks, message: 'Canción eliminada de tu playlist' }));
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: e.message }));
+          }
+        });
+        return;
+      }
     }
 
     // 0.05 TOP 10 COLOMBIA EN VIVO

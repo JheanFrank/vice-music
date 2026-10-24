@@ -2410,6 +2410,13 @@ function playNextTrack() {
     return;
   }
 
+  // 1.5 Si se estaba en modo playlist y la cola se vació (completó todas las canciones de la lista)
+  if (state.currentMode === 'playlist') {
+    stopCurrentPlayback();
+    showTopRightToast('Fin de la Playlist', 'Has completado la lista de canciones', 'info');
+    return;
+  }
+
   // 2. Si se está reproduciendo dentro de un álbum oficial
   if (state.currentAlbum && Array.isArray(state.currentAlbum.tracks) && state.currentAlbum.tracks.length > 0) {
     const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
@@ -2579,45 +2586,63 @@ function openTrackContextMenu(trackData, triggerEl = null) {
   if (!amMoreMenu) return;
   updateSmartDjUI();
 
+  // Bloquear scroll de fondo para que el menú permanezca completamente quieto
+  document.body.style.overflow = 'hidden';
+
   const panel = document.getElementById('amMenuPanel');
-  if (panel && triggerEl) {
-    const rect = triggerEl.getBoundingClientRect();
-    const menuWidth = 250;
-
-    let left = rect.right - menuWidth;
-    if (left < 10) left = 10;
-    if (left + menuWidth > window.innerWidth - 10) {
-      left = window.innerWidth - menuWidth - 10;
-    }
-    panel.style.position = 'fixed';
-    panel.style.left = `${Math.max(10, left)}px`;
-    panel.style.right = 'auto';
-
-    const spaceBelow = window.innerHeight - rect.bottom - 15;
-    const spaceAbove = rect.top - 15;
-
-    if (spaceBelow < 220 && spaceAbove > spaceBelow) {
-      panel.style.top = 'auto';
-      panel.style.bottom = `${Math.max(10, window.innerHeight - rect.top + 8)}px`;
-      panel.style.maxHeight = `${Math.min(spaceAbove, window.innerHeight - 30)}px`;
-    } else {
-      panel.style.top = `${Math.max(10, rect.bottom + 8)}px`;
+  if (panel) {
+    if (window.innerWidth <= 768) {
+      // En móvil: fijar centrado en pantalla para que no se mueva ni se desplace al deslizar
+      panel.style.position = 'fixed';
+      panel.style.left = '50%';
+      panel.style.top = '50%';
       panel.style.bottom = 'auto';
-      panel.style.maxHeight = `${Math.min(spaceBelow, window.innerHeight - 30)}px`;
+      panel.style.right = 'auto';
+      panel.style.transform = 'translate(-50%, -50%)';
+      panel.style.width = 'calc(100% - 36px)';
+      panel.style.maxWidth = '320px';
+      panel.style.maxHeight = '80vh';
+      panel.style.overflowY = 'auto';
+      panel.style.overscrollBehavior = 'contain';
+    } else if (triggerEl) {
+      const rect = triggerEl.getBoundingClientRect();
+      const menuWidth = 250;
+
+      let left = rect.right - menuWidth;
+      if (left < 10) left = 10;
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10;
+      }
+      panel.style.position = 'fixed';
+      panel.style.left = `${Math.max(10, left)}px`;
+      panel.style.right = 'auto';
+      panel.style.transform = 'none';
+
+      const spaceBelow = window.innerHeight - rect.bottom - 15;
+      const spaceAbove = rect.top - 15;
+
+      if (spaceBelow < 220 && spaceAbove > spaceBelow) {
+        panel.style.top = 'auto';
+        panel.style.bottom = `${Math.max(10, window.innerHeight - rect.top + 8)}px`;
+        panel.style.maxHeight = `${Math.min(spaceAbove, window.innerHeight - 30)}px`;
+      } else {
+        panel.style.top = `${Math.max(10, rect.bottom + 8)}px`;
+        panel.style.bottom = 'auto';
+        panel.style.maxHeight = `${Math.min(spaceBelow, window.innerHeight - 30)}px`;
+      }
+      panel.style.overflowY = 'auto';
+      panel.style.overscrollBehavior = 'contain';
+    } else {
+      panel.style.position = 'fixed';
+      panel.style.bottom = '95px';
+      panel.style.right = '25px';
+      panel.style.left = 'auto';
+      panel.style.top = 'auto';
+      panel.style.maxHeight = 'calc(100vh - 120px)';
+      panel.style.overflowY = 'auto';
+      panel.style.overscrollBehavior = 'contain';
+      panel.style.transform = 'none';
     }
-    panel.style.overflowY = 'auto';
-    panel.style.overscrollBehavior = 'contain';
-    panel.style.transform = 'none';
-  } else if (panel) {
-    panel.style.position = 'fixed';
-    panel.style.bottom = '95px';
-    panel.style.right = '25px';
-    panel.style.left = 'auto';
-    panel.style.top = 'auto';
-    panel.style.maxHeight = 'calc(100vh - 120px)';
-    panel.style.overflowY = 'auto';
-    panel.style.overscrollBehavior = 'contain';
-    panel.style.transform = 'none';
   }
 
   amMoreMenu.classList.remove('hidden');
@@ -2628,6 +2653,7 @@ function openMoreMenu(triggerEl = null) {
 }
 
 function closeMoreMenu() {
+  document.body.style.overflow = '';
   if (amMoreMenu) amMoreMenu.classList.add('hidden');
 }
 

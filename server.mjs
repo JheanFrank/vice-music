@@ -490,6 +490,10 @@ const server = http.createServer(async (req, res) => {
         report.rawYtdlFormats = info.formats ? info.formats.length : 0;
       } catch (rErr) {
         report.rawYtdlError = rErr.message;
+        report.rawYtdlCause = rErr.cause ? (rErr.cause.message || String(rErr.cause)) : null;
+        if (rErr.cause && rErr.cause.cause) {
+          report.rawYtdlSubCause = rErr.cause.cause.message || String(rErr.cause.cause);
+        }
       }
 
       // Test YTDL getInfo & download
@@ -507,6 +511,7 @@ const server = http.createServer(async (req, res) => {
           });
           dlStream.on('error', e => {
             report.ytdlError = e.message;
+            report.ytdlCause = e.cause ? (e.cause.message || String(e.cause)) : null;
             resolve();
           });
           setTimeout(() => {
@@ -518,6 +523,10 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (yErr) {
         report.ytdlError = yErr.message;
+        report.ytdlCause = yErr.cause ? (yErr.cause.message || String(yErr.cause)) : null;
+        if (yErr.cause && yErr.cause.cause) {
+          report.ytdlSubCause = yErr.cause.cause.message || String(yErr.cause.cause);
+        }
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -476,37 +476,26 @@ const server = http.createServer(async (req, res) => {
         report.baseJsError = pErr.message;
       }
 
-      // Test YTDL getInfo & download con VisionOS
+      // Test Invidious proxy stream (Funciona desde Render / Cloud IPs sin bloqueos)
       try {
-        const info = await ytdlInstance.getInfo(vid);
-        report.ytdlInfoFormats = info.formats ? info.formats.length : 0;
-        const dlStream = ytdlInstance.download(vid, { filter: { hasAudio: true, hasVideo: false }, quality: 'highestaudio' });
-        await new Promise((resolve) => {
-          dlStream.on('data', c => {
-            report.ytdlDownloadChunks++;
-            if (report.ytdlDownloadChunks >= 3) {
-              dlStream.destroy();
-              resolve();
-            }
-          });
-          dlStream.on('error', e => {
-            report.ytdlError = e.message;
-            report.ytdlCause = e.cause ? (e.cause.message || String(e.cause)) : null;
-            resolve();
-          });
-          setTimeout(() => {
-            if (!report.ytdlError && report.ytdlDownloadChunks === 0) {
-              report.ytdlError = 'Download timed out after 6s';
-            }
-            resolve();
-          }, 6000);
+        const invRes = await fetch(`https://yt.chocolatemoo53.com/api/v1/videos/${vid}?local=true`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(7000)
         });
-      } catch (yErr) {
-        report.ytdlError = yErr.message;
-        report.ytdlCause = yErr.cause ? (yErr.cause.message || String(yErr.cause)) : null;
-        if (yErr.cause && yErr.cause.cause) {
-          report.ytdlSubCause = yErr.cause.cause.message || String(yErr.cause.cause);
+        const invData = await invRes.json();
+        const bestAudio = invData.adaptiveFormats?.find(f => f.itag === '140' || f.itag === '251' || f.type?.includes('audio'));
+        if (bestAudio && bestAudio.url) {
+          report.invidiousUrl = bestAudio.url.substring(0, 60);
+          const aStreamRes = await fetch(bestAudio.url, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(8000)
+          });
+          report.invidiousStatus = aStreamRes.status;
+          report.invidiousType = aStreamRes.headers.get('content-type');
+          report.invidiousLength = aStreamRes.headers.get('content-length');
         }
+      } catch (inErr) {
+        report.invidiousError = inErr.message;
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

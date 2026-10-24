@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=560">
+  <link rel="stylesheet" href="style.css?v=570">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -73,6 +73,12 @@
         </svg>
         <span>HOME</span>
         <span class="pill-mini">TOP 10 🇨🇴</span>
+      </button>
+
+      <button class="view-btn" id="tabPlaylist" data-mode="playlist" title="Ver mi playlist personal en 3D">
+        <span style="font-size: 1.15rem; line-height: 1;">✨</span>
+        <span>MI PLAYLIST 3D</span>
+        <span class="pill-mini" id="playlistBadgeCount" style="background: linear-gradient(135deg, var(--vice-cyan), #9d00ff); color: #fff;">0</span>
       </button>
 
       <button class="view-btn" id="tabAlbums" data-mode="albums">
@@ -250,6 +256,92 @@
         <div id="homeTrendingGrid" class="results-grid"></div>
       </div>
 
+    </section>
+
+    <!-- SECCIÓN MI PLAYLIST 3D (COVER FLOW CAROUSEL ESTILO SPOTIFY / APPLE) -->
+    <section class="playlist-section hidden" id="playlistSection">
+      <div class="playlist-hero-banner">
+        <div class="playlist-badge-glow">✨ TU COLECCIÓN PERSONAL EN 3D ✨</div>
+        <h2 class="playlist-hero-title" id="playlistOwnerTitle">MI PLAYLIST PRIVADA</h2>
+        <p class="playlist-hero-sub" id="playlistOwnerSub">Desliza las carátulas o haz clic en cualquier tarjeta para reproducirla. Tus canciones se sincronizan en tu cuenta.</p>
+      </div>
+
+      <!-- 3D Cover Flow Carousel -->
+      <div class="coverflow-container" id="coverflowContainer">
+        <div class="coverflow-wrapper" id="coverflowWrapper">
+          <button class="coverflow-arrow-btn prev" id="btnCoverflowPrev" title="Anterior canción">‹</button>
+          <div class="coverflow-stage" id="coverflowStage">
+            <!-- Renderizado dinámicamente -->
+          </div>
+          <button class="coverflow-arrow-btn next" id="btnCoverflowNext" title="Siguiente canción">›</button>
+        </div>
+      </div>
+
+      <!-- Subtítulo de la canción activa -->
+      <div class="playlist-active-subtitle" id="playlistActiveSubtitle">
+        <span id="activeSubtitleText">Haz clic en una carátula para activar la reproducción</span>
+      </div>
+
+      <!-- Barra Flotante Glassmorphism (Exacto diseño de la imagen 2) -->
+      <div class="playlist-dock-player" id="playlistDockPlayer">
+        <div class="dock-controls-left">
+          <button class="dock-btn" id="btnDockPrev" title="Canción anterior">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <polygon points="19 20 9 12 19 4 19 20"></polygon>
+              <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5"></line>
+            </svg>
+          </button>
+          <button class="dock-btn dock-play" id="btnDockPlay" title="Reproducir / Pausar">
+            <svg id="dockIconPlay" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+              <polygon points="6 4 19 12 6 20 6 4"></polygon>
+            </svg>
+            <svg id="dockIconPause" class="hidden" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+              <rect x="6" y="4" width="4" height="16"></rect>
+              <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+          </button>
+          <button class="dock-btn" id="btnDockNext" title="Siguiente canción">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <polygon points="5 4 15 12 5 20 5 4"></polygon>
+              <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="dock-track-center" id="dockTrackCenter" title="Clic para escuchar completa">
+          <img id="dockCover" src="https://via.placeholder.com/80/1a0933/ff2a85?text=VI" alt="Cover" class="dock-thumb">
+          <div class="dock-meta">
+            <span class="dock-title" id="dockTitle">Selecciona una pista</span>
+            <span class="dock-artist" id="dockArtist">Mi Playlist</span>
+          </div>
+          <div class="dock-wave-indicator" id="dockWaveIndicator">
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+          </div>
+        </div>
+
+        <div class="dock-controls-right">
+          <button class="dock-btn dock-trash" id="btnDockRemove" title="Eliminar de mi playlist">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+          <button class="dock-btn dock-more" id="btnDockMore" title="Más opciones (Descargar MP3, FLAC)">···</button>
+        </div>
+      </div>
+
+      <!-- Tabla completa de canciones de la playlist -->
+      <div class="playlist-table-container">
+        <div class="playlist-table-header">
+          <h3>TODAS LAS CANCIONES GUARDADAS (<span id="playlistTotalCount">0</span>)</h3>
+        </div>
+        <div class="playlist-tracklist" id="playlistTracklist">
+          <!-- Items generados dinámicamente -->
+        </div>
+      </div>
     </section>
 
     <!-- Catálogo de Resultados (Álbumes o Pistas) -->
@@ -475,6 +567,11 @@
   <div id="amMoreMenu" class="am-context-menu hidden" role="dialog" aria-modal="true">
     <div class="am-menu-backdrop" id="amMenuBackdrop"></div>
     <div class="am-menu-panel" id="amMenuPanel">
+      <button class="am-menu-item" id="amMenuBtnAddPlaylist">
+        <span class="am-menu-icon">❤️</span>
+        <span class="am-menu-text">Añadir a Mi Playlist 3D</span>
+        <span class="am-menu-arrow">›</span>
+      </button>
       <button class="am-menu-item" id="amMenuBtnQueue">
         <span class="am-menu-icon">➕</span>
         <span class="am-menu-text">Añadir a la cola</span>
@@ -554,12 +651,18 @@
           <span id="loginBtnText">INGRESAR AL SISTEMA</span>
           <div id="loginBtnSpinner" class="login-spinner hidden"></div>
         </button>
+
+        <div class="login-toggle-mode">
+          <button type="button" id="btnToggleAuthMode" class="btn-toggle-auth">
+            ¿No tienes cuenta? <strong style="color: var(--vice-cyan);">Regístrate gratis aquí</strong>
+          </button>
+        </div>
       </form>
     </div>
   </div>
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=560"></script>
+  <script src="app.js?v=570"></script>
 </body>
 </html>

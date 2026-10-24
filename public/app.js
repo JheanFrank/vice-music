@@ -2199,25 +2199,7 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
   }
 
   // Iniciar barrita de progreso visual inmediata
-  let currentProg = 8;
-  setDownloadProgress(currentProg, 'Iniciando conexión con satélite de audio...', safeName);
-
-  dlProgressTimer = setInterval(() => {
-    if (currentProg < 30) {
-      currentProg += 3.5;
-      setDownloadProgress(currentProg, 'Extrayendo audio estéreo oficial de alta fidelidad...', safeName);
-    } else if (currentProg < 65) {
-      currentProg += 2;
-      setDownloadProgress(currentProg, 'Codificando a 320 kbps (Estudio Master)...', safeName);
-    } else if (currentProg < 88) {
-      currentProg += 1.2;
-      setDownloadProgress(currentProg, 'Incrustando carátula HD 1000px y metadatos oficiales...', safeName);
-    } else if (currentProg < 96) {
-      currentProg += 0.4;
-      setDownloadProgress(currentProg, 'Transfiriendo archivo MP3 completo a tu dispositivo...', safeName);
-    }
-  }, 450);
-
+  setDownloadProgress(10, 'Iniciando conexión con satélite de audio...', safeName);
   showToast(`⚡ Generando MP3 320 kbps: ${displayTitle}... Observa la barra de progreso.`);
 
   try {
@@ -2254,21 +2236,57 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
       + `&cover=${encodeURIComponent(coverTarget || '')}`
       + `&filename=${encodeURIComponent(safeName)}`;
 
-    // Disparar la descarga nativa directa del navegador (compatible 100% con móvil y escritorio)
+    setDownloadProgress(25, 'Extrayendo audio estéreo oficial y codificando a 320 kbps...', safeName);
+
+    const response = await fetch(downloadApiUrl);
+    if (!response.ok) {
+      let errText = 'Error en el servidor (' + response.status + ')';
+      try {
+        const errJson = await response.json();
+        if (errJson && errJson.error) errText = errJson.error;
+      } catch (_) {}
+      throw new Error(errText);
+    }
+
+    setDownloadProgress(45, 'Transfiriendo archivo MP3 con carátula HD...', safeName);
+    const reader = response.body.getReader();
+    const chunks = [];
+    let receivedBytes = 0;
+    const contentLength = +(response.headers.get('Content-Length') || 0);
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      receivedBytes += value.length;
+      const mb = (receivedBytes / 1048576).toFixed(1);
+      if (contentLength > 0) {
+        const pct = Math.min(98, 45 + Math.round((receivedBytes / contentLength) * 50));
+        setDownloadProgress(pct, `Descargando audio oficial (${mb} MB)...`, safeName);
+      } else {
+        const pct = Math.min(96, 45 + Math.round(receivedBytes / 120000));
+        setDownloadProgress(pct, `Descargando audio oficial (${mb} MB)...`, safeName);
+      }
+    }
+
+    setDownloadProgress(99, 'Guardando archivo en tu dispositivo...', safeName);
+    const blob = new Blob(chunks, { type: 'audio/mpeg' });
+    const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.href = downloadApiUrl;
-    downloadAnchor.setAttribute('download', `${safeName}.mp3`);
-    downloadAnchor.style.display = 'none';
+    downloadAnchor.href = blobUrl;
+    downloadAnchor.download = `${safeName}.mp3`;
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
-    setTimeout(() => {
-      if (document.body.contains(downloadAnchor)) document.body.removeChild(downloadAnchor);
-    }, 2000);
 
-    setDownloadProgress(100, '¡Descarga iniciada en tu dispositivo!', safeName);
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+      if (document.body.contains(downloadAnchor)) document.body.removeChild(downloadAnchor);
+    }, 25000);
+
+    setDownloadProgress(100, '¡Descarga completada con éxito!', safeName);
     setTimeout(() => {
       hideDownloadProgress();
-      showToast(`✅ Descarga iniciada: ${safeName}.mp3`);
+      showToast(`✅ MP3 descargado: ${safeName}.mp3`);
     }, 1500);
   } catch (err) {
     if (dlProgressTimer) {

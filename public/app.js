@@ -1349,9 +1349,24 @@ async function performSearch(query) {
 
       function addAlbum(a) {
         if (!a || !a.title || !a.artist) return;
-        const norm = `${a.title.toLowerCase().trim()}_${a.artist.toLowerCase().trim()}`;
-        if (seen.has(norm)) return;
-        seen.add(norm);
+        a.artist = getFullArtistCredits(a.artist, a.title);
+        const cleanTitle = a.title.toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').replace(/-\s*single/gi, '').trim();
+
+        const existingIdx = combined.findIndex(ex => {
+          const exClean = ex.title.toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').replace(/-\s*single/gi, '').trim();
+          return exClean === cleanTitle;
+        });
+
+        if (existingIdx !== -1) {
+          const existing = combined[existingIdx];
+          const aHasCollab = a.artist.includes('&') || a.artist.includes('x') || a.artist.includes('feat') || a.artist.includes(',');
+          const exHasCollab = existing.artist.includes('&') || existing.artist.includes('x') || existing.artist.includes('feat') || existing.artist.includes(',');
+          if (aHasCollab && !exHasCollab) {
+            existing.artist = a.artist;
+          }
+          return;
+        }
+
         combined.push(a);
       }
 
@@ -1667,9 +1682,10 @@ async function openAlbumDetail(albumId) {
 
     album.tracks.forEach((track, index) => {
       const trackRow = document.createElement('div');
+      const fullRowArtist = getFullArtistCredits(track.artist || album.artist, track.title);
       const trackObj = {
         title: track.title,
-        artist: track.artist || album.artist,
+        artist: fullRowArtist,
         album: album.title,
         cover: album.coverXl,
         preview: track.preview,
@@ -1693,7 +1709,7 @@ async function openAlbumDetail(albumId) {
         </div>
         <div class="track-main-info">
           <h4 title="${track.title}">${track.title}</h4>
-          <p>${formatArtistPills(track.artist)}</p>
+          <p>${formatArtistPills(fullRowArtist)}</p>
         </div>
         <div class="track-duration">${durationMin}</div>
         <div class="track-actions">
@@ -1717,12 +1733,12 @@ async function openAlbumDetail(albumId) {
       trackRow.querySelector('.btn-album-preview').addEventListener('click', () => {
         if (!track.preview) {
           showToast('⚠️ Muestra de 30s no disponible. Reproduciendo canción completa oficial...');
-          playFullSong(track.artist, track.title, album.coverXl, album.title, track.duration, track.preview);
+          playFullSong(fullRowArtist, track.title, album.coverXl, album.title, track.duration, track.preview);
           return;
         }
         loadTrack({
           title: track.title,
-          artist: track.artist,
+          artist: fullRowArtist,
           cover: album.coverXl,
           album: album.title,
           audioUrl: track.preview
@@ -1731,7 +1747,7 @@ async function openAlbumDetail(albumId) {
 
       // Escuchar Canción Completa (Audio Oficial en segundo plano)
       trackRow.querySelector('.btn-album-full').addEventListener('click', () => {
-        playFullSong(track.artist, track.title, album.coverXl, album.title, track.duration, track.preview);
+        playFullSong(fullRowArtist, track.title, album.coverXl, album.title, track.duration, track.preview);
       });
 
       // Menú de 3 puntos: Descargas MP3/FLAC, añadir a cola, etc.
@@ -1922,11 +1938,12 @@ function getFullArtistCredits(artist, title) {
 
 function formatArtistPills(artistString) {
   if (!artistString) return '';
-  const tokens = artistString.split(/(\s*(?:x|X|&|&amp;|ft\.?|feat\.?|con|,)\s*)/i);
+  const separatorRegex = /(\s*(?:&|&amp;|,)\s*|\s+(?:[xX]|ft\.?|feat\.?|con)\s+)/i;
+  const tokens = artistString.split(separatorRegex);
   let html = '';
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
-    if (/^\s*(?:x|X|&|&amp;|ft\.?|feat\.?|con|,)\s*$/i.test(t)) {
+    if (/^\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*$/i.test(t)) {
       html += `<span class="artist-separator">${escapeHtml(t.trim())}</span> `;
     } else {
       const name = t.trim();
@@ -2250,6 +2267,7 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
     const cover = track.album ? (track.album.cover_xl || track.album.cover_big) : (track.artist ? track.artist.picture_xl : '');
     const albumTitle = track.album ? track.album.title : 'Sencillo';
     const albumId = track.album ? `deezer_${track.album.id}` : null;
+    const fullTrackArtist = getFullArtistCredits(track.artist ? (track.artist.name || track.artist) : artistName, track.title);
 
     card.innerHTML = `
       <div class="album-cover-wrapper" title="Clic para escuchar o ver álbum">
@@ -2258,7 +2276,7 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
       </div>
       <div class="album-info">
         <h3 class="album-title" title="${track.title}">${track.title}</h3>
-        <p class="album-artist">${formatArtistPills(track.artist ? (track.artist.name || track.artist) : artistName)}</p>
+        <p class="album-artist">${formatArtistPills(fullTrackArtist)}</p>
         <div class="track-card-actions-single">
           <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview">
             ▶ <span>PREVIEW</span>
@@ -2280,17 +2298,17 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
     card.querySelector('.album-cover-wrapper').addEventListener('click', (e) => {
       e.stopPropagation();
       if (albumId) openAlbumDetail(albumId);
-      else loadTrack({ title: track.title, artist: track.artist ? track.artist.name : artistName, cover, audioUrl: track.preview, album: albumTitle });
+      else loadTrack({ title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
     });
 
     card.querySelector('.btn-single-play').addEventListener('click', (e) => {
       e.stopPropagation();
-      loadTrack({ title: track.title, artist: track.artist ? track.artist.name : artistName, cover, audioUrl: track.preview, album: albumTitle });
+      loadTrack({ title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
     });
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
-      playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle, track.duration, track.preview);
+      playFullSong(fullTrackArtist, track.title, cover, albumTitle, track.duration, track.preview);
     });
 
     const moreBtn = card.querySelector('.btn-single-more');
@@ -2299,7 +2317,7 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
         e.stopPropagation();
         openTrackContextMenu({
           title: track.title,
-          artist: track.artist ? track.artist.name : artistName,
+          artist: fullTrackArtist,
           album: albumTitle,
           albumId: albumId,
           cover: cover,
@@ -2438,6 +2456,28 @@ function loadTrack(track) {
   }
   track.artist = fullArtist;
 
+  // Si la pista solo tiene 1 artista y proviene de Deezer, verificar colaboradores de lanzamiento en segundo plano
+  if (!fullArtist.includes('&') && !fullArtist.includes('x') && !fullArtist.includes('X') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
+    const albId = track.albumId || (state.currentAlbum && state.currentAlbum.id);
+    if (albId && albId.startsWith('deezer_')) {
+      const dzId = albId.replace('deezer_', '');
+      fetchDeezerJsonp(`/album/${dzId}`).then(dzAlb => {
+        if (dzAlb && dzAlb.contributors && dzAlb.contributors.length > 1) {
+          const names = dzAlb.contributors.map(c => c.name).filter(Boolean);
+          if (names.length > 1) {
+            const enriched = names.join(' x ');
+            if (state.currentTrack && state.currentTrack.title === track.title) {
+              state.currentTrack.artist = enriched;
+              playerArtist.innerHTML = formatArtistPills(enriched);
+              if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(enriched);
+              updateMediaSession(state.currentTrack);
+            }
+          }
+        }
+      }).catch(() => {});
+    }
+  }
+
   state.playbackSource = 'preview';
   state.currentTrack = track;
   playerTitle.innerText = track.title;
@@ -2538,6 +2578,21 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     const durParam = trackObj.duration || 0;
     const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}&duration=${encodeURIComponent(durParam)}`);
     const data = await res.json();
+
+    if (data.resolvedArtist && (data.resolvedArtist.includes('&') || data.resolvedArtist.includes('x') || data.resolvedArtist.includes('X') || data.resolvedArtist.includes('feat') || data.resolvedArtist.includes(','))) {
+      state.currentTrack.artist = data.resolvedArtist;
+      playerArtist.innerHTML = formatArtistPills(data.resolvedArtist);
+      if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(data.resolvedArtist);
+      updateMediaSession(state.currentTrack);
+
+      document.querySelectorAll('.album-card, .album-track-item').forEach(card => {
+        const titleEl = card.querySelector('.album-title, h4');
+        if (titleEl && titleEl.innerText.trim().toLowerCase() === title.trim().toLowerCase()) {
+          const artEl = card.querySelector('.album-artist, .track-main-info p');
+          if (artEl) artEl.innerHTML = formatArtistPills(data.resolvedArtist);
+        }
+      });
+    }
 
     if (data.videoId) {
       state.currentTrack.videoId = data.videoId;

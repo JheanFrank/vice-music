@@ -130,6 +130,7 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   
   // Buscar ISRC en Deezer para obtener el Master de Estudio Oficial 100% nítido
   let isrc = isrcParam;
+  let resolvedArtist = cleanArtist;
   if (!isrc) {
     try {
       const dzQueries = [`${primaryArtist} ${cleanTitle}`, `${cleanArtist} ${cleanTitle}`];
@@ -145,6 +146,12 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
             signal: AbortSignal.timeout(2000)
           });
           const trkData = await trkRes.json();
+          if (trkData.contributors && Array.isArray(trkData.contributors) && trkData.contributors.length > 1) {
+            const cNames = trkData.contributors.map(c => c.name).filter(Boolean);
+            if (cNames.length > 1) {
+              resolvedArtist = cNames.join(' x ');
+            }
+          }
           if (trkData.isrc) {
             isrc = trkData.isrc;
             break;
@@ -153,6 +160,24 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       }
     } catch (_) {}
   }
+
+  // Si aún no detectamos colaboradores, consultar iTunes brevemente
+  if (!resolvedArtist.includes('&') && !resolvedArtist.includes('x') && !resolvedArtist.includes('X') && !resolvedArtist.includes('feat') && !resolvedArtist.includes(',')) {
+    try {
+      const itRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanArtist + ' ' + cleanTitle)}&entity=song&limit=3`, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(2000)
+      });
+      const itData = await itRes.json();
+      if (itData.results && itData.results[0] && itData.results[0].artistName) {
+        const itArtist = itData.results[0].artistName;
+        if (itArtist.includes('&') || itArtist.includes(',') || itArtist.includes('feat') || itArtist.includes('ft')) {
+          resolvedArtist = itArtist;
+        }
+      }
+    } catch (_) {}
+  }
+  resolvedArtist = getFullArtistCredits(resolvedArtist, title);
 
   let rawCandidates = [];
   if (isrc) {
@@ -290,7 +315,7 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const selected = scored[0] || null;
   const alternatives = scored.slice(1, 6).map(c => c.id);
 
-  return { selected, alternatives, scored };
+  return { selected, alternatives, scored, resolvedArtist };
 }
 
 async function getAudioStreamForVideo(videoId, altIds = []) {
@@ -827,7 +852,7 @@ async function getAlbumTracksItunes(itunesAlbumId) {
       position: t.trackNumber || idx + 1,
       id: `itunes_${t.trackId}`,
       title: t.trackName || 'Pista',
-      artist: t.artistName || albumInfo.artistName || 'Artista',
+      artist: getFullArtistCredits(t.artistName || albumInfo.artistName || 'Artista', t.trackName),
       duration: Math.round((t.trackTimeMillis || 0) / 1000),
       preview: t.previewUrl || null,
       link: t.trackViewUrl || '',
@@ -838,7 +863,7 @@ async function getAlbumTracksItunes(itunesAlbumId) {
     id: `itunes_${itunesAlbumId}`,
     itunesId: itunesAlbumId,
     title: albumInfo.collectionName || 'Álbum',
-    artist: albumInfo.artistName || 'Artista',
+    artist: getFullArtistCredits(albumInfo.artistName || 'Artista', albumInfo.collectionName),
     coverXl: (albumInfo.artworkUrl100 || '').replace('100x100bb', '1000x1000bb'),
     releaseDate: albumInfo.releaseDate ? albumInfo.releaseDate.substring(0, 10) : 'N/A',
     label: albumInfo.copyright || 'Discográfica',
@@ -1228,9 +1253,24 @@ const server = http.createServer(async (req, res) => {
       const combined = [];
 
       function addAlbum(album, matchedTrackName = null) {
-        const normKey = `${album.title.toLowerCase().trim()}_${album.artist.toLowerCase().trim()}`;
-        if (seenAlbums.has(normKey)) return;
-        seenAlbums.add(normKey);
+        if (!album || !album.title || !album.artist) return;
+        album.artist = getFullArtistCredits(album.artist, album.title);
+        const cleanTitle = album.title.toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').replace(/-\s*single/gi, '').trim();
+
+        const existingIdx = combined.findIndex(ex => {
+          const exClean = ex.title.toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').replace(/-\s*single/gi, '').trim();
+          return exClean === cleanTitle;
+        });
+
+        if (existingIdx !== -1) {
+          const existing = combined[existingIdx];
+          const aHasCollab = album.artist.includes('&') || album.artist.includes('x') || album.artist.includes('feat') || album.artist.includes(',');
+          const exHasCollab = existing.artist.includes('&') || existing.artist.includes('x') || existing.artist.includes('feat') || existing.artist.includes(',');
+          if (aHasCollab && !exHasCollab) {
+            existing.artist = album.artist;
+          }
+          return;
+        }
 
         if (matchedTrackName) {
           album.matchedTrack = matchedTrackName;
@@ -1386,7 +1426,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const { selected, alternatives } = await resolveFullAudio(artistParam, titleParam || q, durationParam);
+        const { selected, alternatives, resolvedArtist } = await resolveFullAudio(artistParam, titleParam || q, durationParam);
 
         if (selected) {
           console.log(`[FullAudio] Seleccionado [Score: ${selected.score}] [${selected.id}] "${selected.title}" (${selected.durStr || 'N/A'}) - Canal: ${selected.channel}`);
@@ -1395,6 +1435,7 @@ const server = http.createServer(async (req, res) => {
             videoId: selected.id,
             videoTitle: selected.title,
             tier: selected.score >= 200 ? 'audio_oficial' : (selected.score >= 100 ? 'letra_lyrics' : 'video_oficial'),
+            resolvedArtist: resolvedArtist || artistParam,
             alternatives: alternatives.filter(id => id !== selected.id).slice(0, 4)
           }));
         }

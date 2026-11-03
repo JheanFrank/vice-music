@@ -28,6 +28,14 @@ const INVIDIOUS_INSTANCES = [
   'https://invidious.jing.rocks'
 ];
 
+function normalizeStr(str) {
+  return (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function parseDurationSec(durStr) {
   if (!durStr) return 0;
   const parts = durStr.trim().split(':').map(Number);
@@ -39,7 +47,9 @@ function parseDurationSec(durStr) {
 
 const BAD_CHANNELS = [
   'latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial',
-  'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music'
+  'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music',
+  'flow trap', 'trap urbano', 'find x', 'maycol estrenos', 'corto goat', 'temazos',
+  'temazos de reggaeton', 'pxxr4ever', 'uforia debut'
 ];
 
 async function fetchYtCandidates(queryTerm, isIsrc = false) {
@@ -93,9 +103,10 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     .filter(a => a.length >= 2);
   const primaryArtist = cleanArtist.split(/\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*/i)[0].trim() || cleanArtist;
 
-  // Palabras clave obligatorias del título
-  const rawTitleWords = cleanTitle.toLowerCase()
-    .replace(/[^\w\sáéíóúüñ]/gi, ' ')
+  // Palabras clave obligatorias del título (normalizadas sin tildes ni acentos)
+  const normCleanTitle = normalizeStr(cleanTitle);
+  const rawTitleWords = normCleanTitle
+    .replace(/[^\w\s]/gi, ' ')
     .split(/\s+/)
     .filter(w => w.length >= 2);
 
@@ -166,16 +177,21 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
 
   function score(c) {
     let s = 0;
-    const t = c.title.toLowerCase();
-    const ch = c.channel.toLowerCase();
+    const t = normalizeStr(c.title);
+    const ch = normalizeStr(c.channel);
     const combined = `${t} ${ch}`;
     
     // Filtro de descarte estricto
-    if (t.includes('parodia') || t.includes('karaoke') || t.includes('reacción') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return -999;
-    if (BAD_CHANNELS.some(b => ch.includes(b))) return -999;
+    if (t.includes('parodia') || t.includes('karaoke') || t.includes('reaccion') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return -999;
+    if (BAD_CHANNELS.some(b => ch.includes(normalizeStr(b)))) return -999;
+
+    // Descartar versiones "Solo" si la pista original es una colaboración con varios artistas
+    if (artistNames.length > 1 && (t.includes('(solo)') || t.includes('version solo') || t.includes('original version/solo') || t.includes('original version / solo'))) {
+      return -999;
+    }
 
     // 1. REQUISITO ESTRICTO DE TÍTULO (OBLIGATORIO)
-    // El video DEBE coincidir con las palabras del título. Si es otra canción (ej: "No Digas"), se descarta de raíz (-1000).
+    // El video DEBE coincidir con las palabras del título sin importar tildes/acentos
     const titleHits = effectiveTitleWords.filter(w => t.includes(w)).length;
     const minRequiredTitleHits = effectiveTitleWords.length <= 2 ? 1 : Math.ceil(effectiveTitleWords.length * 0.5);
     if (titleHits < minRequiredTitleHits) {
@@ -186,7 +202,7 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     // 2. REQUISITO DE ARTISTAS
     let matchedArtistsCount = 0;
     for (const aName of artistNames) {
-      const aWords = aName.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
+      const aWords = normalizeStr(aName).split(/\s+/).filter(w => w.length >= 2);
       if (aWords.some(w => combined.includes(w))) {
         matchedArtistsCount++;
       }
@@ -196,15 +212,15 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       if (matchedArtistsCount === 0) {
         s -= 300; // Penalización si no figura ningún artista
       } else if (matchedArtistsCount === artistNames.length) {
-        s += 90; // Máxima bonificación si figuran TODOS los artistas (ej: Jory Boy Y Bad Bunny)
+        s += 180; // Máxima bonificación si figuran TODOS los artistas
       } else {
-        s += 40;
+        s += 60;
       }
     }
     
     // 3. Requisito Estricto de Remix vs Versión Original
     const isCandidateRemix = /remix|rmx/i.test(t);
-    const isOfficialArtistChannel = artistNames.some(aName => ch.includes(aName.toLowerCase()));
+    const isOfficialArtistChannel = artistNames.some(aName => ch.includes(normalizeStr(aName)));
 
     if (isRemixRequest) {
       if (isCandidateRemix || combined.includes('remix') || combined.includes('rmx') || isOfficialArtistChannel) {
@@ -221,15 +237,15 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     // 4. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
     if (durationParam > 30 && c.durSec > 0) {
       const diff = Math.abs(c.durSec - durationParam);
-      if (diff <= 3) s += 160;
-      else if (diff <= 6) s += 110;
-      else if (diff <= 12) s += 60;
+      if (diff <= 3) s += 200;
+      else if (diff <= 6) s += 140;
+      else if (diff <= 12) s += 70;
       else if (diff <= 20) s += 20;
-      else if (diff > 35) s -= 150; // Descartar intros o videos musicales excesivamente largos
+      else if (diff > 35) s -= 450; // Descartar cortes drásticos de duración o versiones recortadas
     }
     
     // 5. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
-    if (/cancion oficial|canción oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
+    if (/cancion oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
       s += 70;
     } else if (/lyric|letra|lyrics/i.test(t)) {
       s += 45;
@@ -245,8 +261,8 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       s += 500;
     }
     if (c.hasAudioBadge) s += 350;
-    if (c.isVerified) s += 100;
-    if (isOfficialArtistChannel) s += 80;
+    if (c.isVerified) s += 150;
+    if (isOfficialArtistChannel) s += 120;
     
     return s;
   }
@@ -338,6 +354,24 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
       console.warn(`[Audio Engine] YTDL nativo falló para [${vId}]:`, yErr.message);
       lastError = yErr;
       // Rotación automática anti-bot: continúa de inmediato con la siguiente alternativa
+    }
+
+    // 3. Fallback a satélite directo savenow (evita 100% bloqueos de datacenter en Render en descargas consecutivas)
+    try {
+      console.log(`[Audio Engine] Probando satélite directo para [${vId}]...`);
+      const directUrl = await getFullSongMp3Url(vId);
+      if (directUrl) {
+        const dRes = await fetch(directUrl, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(60000)
+        });
+        if (dRes.ok && dRes.body) {
+          console.log(`[Audio Engine] Flujo de audio obtenido exitosamente vía satélite directo para [${vId}]`);
+          return Readable.fromWeb(dRes.body);
+        }
+      }
+    } catch (sErr) {
+      console.warn(`[Audio Engine] Satélite directo falló para [${vId}]:`, sErr.message);
     }
   }
 
@@ -823,7 +857,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.9.5', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.9.6', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

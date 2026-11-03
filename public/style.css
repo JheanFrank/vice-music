@@ -790,10 +790,12 @@ body {
   font-size: 0.88rem;
   font-weight: 700;
   color: var(--vice-pink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-bottom: 1.2rem;
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+  line-height: 1.4;
 }
 
 .btn-open-album {
@@ -5461,15 +5463,18 @@ body {
   font-weight: 700;
   cursor: pointer;
   display: inline-block;
-  padding: 0.05rem 0.35rem;
+  padding: 0.08rem 0.45rem;
   border-radius: 6px;
   background: rgba(0, 240, 255, 0.08);
-  border: 1px solid rgba(0, 240, 255, 0.2);
+  border: 1px solid rgba(0, 240, 255, 0.25);
   transition: all 0.2s ease;
   white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.artist-clickable-pill:hover {
+.artist-clickable-pill:hover,
+.artist-clickable-pill:active {
   background: var(--vice-pink, #ff2a85);
   border-color: var(--vice-pink, #ff2a85);
   color: #fff !important;

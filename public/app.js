@@ -1491,23 +1491,15 @@ function renderAlbums(albums) {
       </div>
       <div class="album-info">
         <h3 class="album-title" title="${album.title}">${album.title}</h3>
-        <p class="album-artist artist-clickable" data-artist="${album.artist}" title="Ver discografía y perfil de ${album.artist}">${album.artist}</p>
+        <p class="album-artist">${formatArtistPills(album.artist)}</p>
         <div class="btn-open-album">VER ÁLBUM COMPLETO ➔</div>
       </div>
     `;
 
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.artist-clickable')) return;
+      if (e.target.closest('.artist-clickable-pill') || e.target.closest('.artist-clickable')) return;
       openAlbumDetail(album.id);
     });
-
-    const artistLink = card.querySelector('.album-artist');
-    if (artistLink) {
-      artistLink.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openArtistProfile(album.artist);
-      });
-    }
 
     resultsGrid.appendChild(card);
   });
@@ -1786,7 +1778,7 @@ function renderTracks(tracks) {
 
       <div class="album-info">
         <h3 class="album-title" title="${track.title}" style="cursor: pointer;">${track.title}</h3>
-        <p class="album-artist artist-clickable" data-artist="${track.artist}" title="Ver discografía y perfil de ${track.artist}">${track.artist}</p>
+        <p class="album-artist">${formatArtistPills(track.artist)}</p>
         
         <div class="track-card-actions-single">
           <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview (30s)">
@@ -1841,15 +1833,6 @@ function renderTracks(tracks) {
       playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
     });
 
-    // Clic en el nombre del artista: abre el perfil del artista
-    const artistEl = card.querySelector('.album-artist');
-    if (artistEl) {
-      artistEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openArtistProfile(track.artist);
-      });
-    }
-
     card.querySelector('.btn-single-play').addEventListener('click', (e) => {
       e.stopPropagation();
       loadTrack({
@@ -1894,11 +1877,11 @@ function renderTracks(tracks) {
 // SISTEMA DE PERFIL DE ARTISTA (SPOTIFY / APPLE MUSIC STYLE)
 function formatArtistPills(artistString) {
   if (!artistString) return '';
-  const tokens = artistString.split(/(\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*)/i);
+  const tokens = artistString.split(/(\s*(?:x|X|&|&amp;|ft\.?|feat\.?|con|,)\s*)/i);
   let html = '';
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
-    if (/^\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*$/i.test(t)) {
+    if (/^\s*(?:x|X|&|&amp;|ft\.?|feat\.?|con|,)\s*$/i.test(t)) {
       html += `<span class="artist-separator">${escapeHtml(t.trim())}</span> `;
     } else {
       const name = t.trim();
@@ -2070,7 +2053,7 @@ async function switchArtistTab(mode, artistName, artistId) {
             </div>
             <div class="ranking-track-meta">
               <span class="ranking-track-title" title="${track.title}">${track.title}</span>
-              <span class="ranking-track-artist">${track.artist ? track.artist.name : artistName}</span>
+              <span class="ranking-track-artist">${formatArtistPills(track.artist ? (track.artist.name || track.artist) : artistName)}</span>
             </div>
           </div>
           <div class="ranking-album-cell">
@@ -2230,7 +2213,7 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
       </div>
       <div class="album-info">
         <h3 class="album-title" title="${track.title}">${track.title}</h3>
-        <p class="album-artist">${track.artist ? track.artist.name : artistName}</p>
+        <p class="album-artist">${formatArtistPills(track.artist ? (track.artist.name || track.artist) : artistName)}</p>
         <div class="track-card-actions-single">
           <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview">
             ▶ <span>PREVIEW</span>
@@ -3822,7 +3805,7 @@ async function loadHomeContent() {
           </div>
           <div class="album-info">
             <h4 class="album-title" title="${album.title}">${album.title}</h4>
-            <p class="album-artist artist-clickable" data-artist="${album.artist}" title="Ver discografía y perfil de ${album.artist}">${album.artist}</p>
+            <p class="album-artist">${formatArtistPills(album.artist)}</p>
             <div class="album-meta">
               <span class="album-tracks-count">${album.nbTracks} canciones</span>
               <span class="album-type-badge">ÁLBUM</span>
@@ -3830,17 +3813,9 @@ async function loadHomeContent() {
           </div>
         `;
         card.addEventListener('click', (e) => {
-          if (e.target.closest('.artist-clickable')) return;
+          if (e.target.closest('.artist-clickable-pill') || e.target.closest('.artist-clickable')) return;
           openAlbumDetail(album.id);
         });
-
-        const albArtistLink = card.querySelector('.album-artist');
-        if (albArtistLink) {
-          albArtistLink.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openArtistProfile(album.artist);
-          });
-        }
 
         homeTrendingGrid.appendChild(card);
       });

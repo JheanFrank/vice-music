@@ -69,7 +69,7 @@ try {
     db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', 'admin', 'VIP Admin');
   }
 
-  console.log('📦 [Database] Motor SQLite nativo activado con éxito en data/vice_music.db');
+  console.log('📦 [Database] Motor SQL Relacional Estándar activado con éxito en data/vice_music.db');
 } catch (e) {
   console.warn('⚠️ [Database] SQLite no disponible, usando almacén JSON persistente:', e.message);
   useJsonStore = true;

@@ -1411,24 +1411,57 @@ async function performSearch(query) {
         clientDeezerTrackPromise
       ]);
 
-      const seen = new Set();
+      // Mapa de artistas enriquecidos con colaboraciones completas (iTunes + créditos)
+      const collabMap = new Map();
+      (backendData.data || []).forEach(t => {
+        const normT = (t.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        if (t.artist && (t.artist.includes('&') || t.artist.includes('x') || t.artist.includes('X') || t.artist.includes('feat') || t.artist.includes('ft') || t.artist.includes(','))) {
+          if (!collabMap.has(normT)) collabMap.set(normT, t.artist);
+        }
+      });
+
       const combinedTracks = [];
 
       function addTrack(t) {
         if (!t || !t.title || !t.artist) return;
-        const norm = `${t.title.toLowerCase().trim()}_${t.artist.toLowerCase().trim()}`;
-        if (seen.has(norm)) return;
-        seen.add(norm);
+        t.artist = getFullArtistCredits(t.artist, t.title);
+        const normT = (t.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        
+        const existingIdx = combinedTracks.findIndex(existing => {
+          const eNorm = (existing.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+          return eNorm === normT;
+        });
+
+        if (existingIdx !== -1) {
+          const existing = combinedTracks[existingIdx];
+          const newHasCollab = t.artist.includes('&') || t.artist.includes('x') || t.artist.includes('feat') || t.artist.includes(',');
+          const oldHasCollab = existing.artist.includes('&') || existing.artist.includes('x') || existing.artist.includes('feat') || existing.artist.includes(',');
+          if (newHasCollab && !oldHasCollab) {
+            existing.artist = t.artist;
+          }
+          return;
+        }
+
         combinedTracks.push(t);
       }
 
-      // Pistas de Deezer JSONP
+      // 1° Agregar pistas del backend (que ya vienen enriquecidas con todos los colaboradores)
+      (backendData.data || []).forEach(t => addTrack(t));
+
+      // 2° Agregar pistas de Deezer JSONP con enriquecimiento de colaboradores
       if (dzTrackData && Array.isArray(dzTrackData.data)) {
         dzTrackData.data.forEach(t => {
+          const normT = (t.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+          let artistName = t.artist ? t.artist.name : 'Artista';
+          if (collabMap.has(normT)) {
+            artistName = collabMap.get(normT);
+          }
+          artistName = getFullArtistCredits(artistName, t.title);
+
           addTrack({
             id: `deezer_${t.id}`,
             title: t.title,
-            artist: t.artist ? t.artist.name : 'Artista',
+            artist: artistName,
             album: t.album ? t.album.title : 'Álbum',
             albumId: t.album ? `deezer_${t.album.id}` : null,
             coverXl: t.album ? (t.album.cover_xl || t.album.cover_big) : (t.artist ? t.artist.picture_xl : ''),
@@ -1440,9 +1473,6 @@ async function performSearch(query) {
           });
         });
       }
-
-      // Pistas del Backend (iTunes)
-      (backendData.data || []).forEach(t => addTrack(t));
 
       state.results = combinedTracks;
       renderTracks(state.results);
@@ -1553,6 +1583,7 @@ async function openAlbumDetail(albumId) {
             if (dzData.contributors && dzData.contributors.length > 1) {
               trackArtist = albumArtistName;
             }
+            trackArtist = getFullArtistCredits(trackArtist, t.title);
             return {
               position: t.track_position || idx + 1,
               id: `deezer_${t.id}`,
@@ -1875,6 +1906,20 @@ function renderTracks(tracks) {
 
 // ========================================================
 // SISTEMA DE PERFIL DE ARTISTA (SPOTIFY / APPLE MUSIC STYLE)
+function getFullArtistCredits(artist, title) {
+  let fullArtist = (artist || '').trim();
+  if (!title) return fullArtist;
+
+  const featMatch = title.match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
+  if (featMatch && featMatch[1]) {
+    const featArtist = featMatch[1].trim();
+    if (!fullArtist.toLowerCase().includes(featArtist.toLowerCase())) {
+      fullArtist = `${fullArtist} ft. ${featArtist}`;
+    }
+  }
+  return fullArtist;
+}
+
 function formatArtistPills(artistString) {
   if (!artistString) return '';
   const tokens = artistString.split(/(\s*(?:x|X|&|&amp;|ft\.?|feat\.?|con|,)\s*)/i);
@@ -2375,11 +2420,23 @@ function updateMediaSessionPosition(position, duration) {
 // ========================================================
 
 function loadTrack(track) {
+  if (!track) return;
+
   // Detener YouTube si estaba sonando
   if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
     ytPlayer.pauseVideo();
     stopYtProgress();
   }
+
+  let fullArtist = getFullArtistCredits(track.artist, track.title);
+  if (state.currentAlbum && state.currentAlbum.artist) {
+    const albArt = state.currentAlbum.artist;
+    if ((albArt.includes('x') || albArt.includes('&') || albArt.includes('feat') || albArt.includes(',')) && 
+        !fullArtist.includes('x') && !fullArtist.includes('&') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
+      fullArtist = albArt;
+    }
+  }
+  track.artist = fullArtist;
 
   state.playbackSource = 'preview';
   state.currentTrack = track;
@@ -2422,10 +2479,19 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     state.audio.pause();
   }
 
+  let fullArtist = getFullArtistCredits(artist, title);
+  if (state.currentAlbum && state.currentAlbum.artist) {
+    const albArt = state.currentAlbum.artist;
+    if ((albArt.includes('x') || albArt.includes('&') || albArt.includes('feat') || albArt.includes(',')) && 
+        !fullArtist.includes('x') && !fullArtist.includes('&') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
+      fullArtist = albArt;
+    }
+  }
+
   state.playbackSource = 'full';
   const trackObj = {
     title,
-    artist,
+    artist: fullArtist,
     cover: cover || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl),
     album: album || (state.currentAlbum && state.currentAlbum.title) || title,
     duration: duration || (state.currentTrack && state.currentTrack.duration) || 0,
@@ -2434,14 +2500,14 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
 
   if (!state.history) state.history = [];
   if (state.history.length === 0 || state.history[state.history.length - 1].title !== title) {
-    state.history.push({ artist, title, cover: trackObj.cover, album: trackObj.album, duration: trackObj.duration });
+    state.history.push({ artist: fullArtist, title, cover: trackObj.cover, album: trackObj.album, duration: trackObj.duration });
     if (state.history.length > 50) state.history.shift();
   }
 
   state.currentTrack = trackObj;
 
   playerTitle.innerText = title;
-  playerArtist.innerHTML = formatArtistPills(artist || 'Artista');
+  playerArtist.innerHTML = formatArtistPills(fullArtist || 'Artista');
   if (trackObj.cover) {
     playerCover.src = trackObj.cover;
   }

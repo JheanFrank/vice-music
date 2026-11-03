@@ -36,6 +36,20 @@ function normalizeStr(str) {
     .trim();
 }
 
+function getFullArtistCredits(artist, title) {
+  let fullArtist = (artist || '').trim();
+  if (!title) return fullArtist;
+
+  const featMatch = title.match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
+  if (featMatch && featMatch[1]) {
+    const featArtist = featMatch[1].trim();
+    if (!fullArtist.toLowerCase().includes(featArtist.toLowerCase())) {
+      fullArtist = `${fullArtist} ft. ${featArtist}`;
+    }
+  }
+  return fullArtist;
+}
+
 function parseDurationSec(durStr) {
   if (!durStr) return 0;
   const parts = durStr.trim().split(':').map(Number);
@@ -483,7 +497,7 @@ async function searchTracksDeezer(q) {
     id: `deezer_${t.id}`,
     deezerId: t.id,
     title: t.title,
-    artist: t.artist ? t.artist.name : 'Artista',
+    artist: getFullArtistCredits(t.artist ? t.artist.name : 'Artista', t.title),
     album: t.album ? t.album.title : 'Álbum',
     albumId: t.album ? `deezer_${t.album.id}` : null,
     deezerAlbumId: t.album ? t.album.id : null,
@@ -710,7 +724,7 @@ async function getAlbumTracksDeezer(deezerAlbumId) {
           position: t.track_position || idx + 1,
           id: `deezer_${t.id}`,
           title: t.title,
-          artist: trackArtist,
+          artist: getFullArtistCredits(trackArtist, t.title),
           duration: t.duration || 0,
           preview: t.preview || null,
           link: t.link || `https://www.deezer.com/track/${t.id}`,
@@ -788,7 +802,7 @@ async function searchTracksItunes(q) {
     id: `itunes_${t.trackId}`,
     itunesId: t.trackId,
     title: t.trackName || 'Pista',
-    artist: t.artistName || 'Artista',
+    artist: getFullArtistCredits(t.artistName || 'Artista', t.trackName),
     album: t.collectionName || 'Álbum',
     albumId: `itunes_${t.collectionId}`,
     itunesAlbumId: t.collectionId,
@@ -857,7 +871,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.9.7', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.9.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1324,14 +1338,14 @@ const server = http.createServer(async (req, res) => {
       // Enriquecer créditos de artistas: si iTunes contiene colaboraciones completas (ej: Jory Boy & Bad Bunny), usarlas
       const itunesMap = new Map();
       for (const it of itunesTracks) {
-        const normT = (it.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        const normT = normalizeStr(it.title).replace(/[\(\[].*?[\)\]]/g, '').trim();
         if (!itunesMap.has(normT)) itunesMap.set(normT, it);
       }
 
       for (const dt of deezerTracks) {
-        const normT = (dt.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        const normT = normalizeStr(dt.title).replace(/[\(\[].*?[\)\]]/g, '').trim();
         const it = itunesMap.get(normT);
-        if (it && it.artist && (it.artist.includes('&') || it.artist.includes('x') || it.artist.includes('feat') || it.artist.includes(','))) {
+        if (it && it.artist && (it.artist.includes('&') || it.artist.includes('x') || it.artist.includes('X') || it.artist.includes('feat') || it.artist.includes('ft') || it.artist.includes(','))) {
           dt.artist = it.artist;
         }
       }

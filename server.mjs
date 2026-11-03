@@ -189,7 +189,7 @@ let cachedTopColombiaTime = 0;
 
 async function getTopColombia() {
   const now = Date.now();
-  if (cachedTopColombia && cachedTopColombia.tracks && cachedTopColombia.tracks.length > 0 && (now - cachedTopColombiaTime < 1000 * 60 * 20)) {
+  if (cachedTopColombia && cachedTopColombia.tracks && cachedTopColombia.tracks.length > 0 && (now - cachedTopColombiaTime < 1000 * 60 * 10)) {
     return cachedTopColombia;
   }
 
@@ -214,27 +214,66 @@ async function getTopColombia() {
         }))
       : [];
 
+    // Artistas Top Mundiales & Colombia en vivo (Deezer Chart Oficial)
+    let artists = [];
+    try {
+      const artChart = await fetchDeezer('/chart/0/artists');
+      if (artChart && Array.isArray(artChart.data)) {
+        artists = artChart.data.slice(0, 10).map((a, idx) => ({
+          rank: idx + 1,
+          id: a.id,
+          name: a.name,
+          picture: a.picture_xl || a.picture_big || a.picture_medium,
+          link: a.link,
+          nbFans: a.nb_fan || null,
+          type: 'artist'
+        }));
+      }
+    } catch (artErr) {
+      console.warn('Chart de artistas fallback:', artErr.message);
+    }
+
     let albums = [];
-    const albQueries = ['Blessd Superstar', 'Feid', 'Karol G'];
-    for (const q of albQueries) {
-      const albRes = await fetchDeezer(`/search/album?q=${encodeURIComponent(q)}&limit=2`);
-      if (albRes && Array.isArray(albRes.data)) {
-        albRes.data.forEach(a => {
-          if (!albums.some(existing => existing.deezerId === a.id)) {
-            albums.push({
-              id: `deezer_${a.id}`,
-              deezerId: a.id,
-              title: a.title,
-              artist: a.artist ? a.artist.name : 'Artista',
-              coverXl: a.cover_xl || a.cover_big || a.cover_medium,
-              nbTracks: a.nb_tracks || '—',
-              releaseDate: 'Oficial',
-              link: a.link || `https://www.deezer.com/album/${a.id}`,
-              lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.link || `https://www.deezer.com/album/${a.id}`)}`,
-              source: 'deezer'
-            });
-          }
-        });
+    try {
+      const albChart = await fetchDeezer('/chart/0/albums');
+      if (albChart && Array.isArray(albChart.data)) {
+        albums = albChart.data.slice(0, 6).map(a => ({
+          id: `deezer_${a.id}`,
+          deezerId: a.id,
+          title: a.title,
+          artist: a.artist ? a.artist.name : 'Artista',
+          coverXl: a.cover_xl || a.cover_big || a.cover_medium,
+          nbTracks: a.nb_tracks || '—',
+          releaseDate: 'Oficial',
+          link: a.link || `https://www.deezer.com/album/${a.id}`,
+          lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.link || `https://www.deezer.com/album/${a.id}`)}`,
+          source: 'deezer'
+        }));
+      }
+    } catch (_) {}
+
+    if (albums.length === 0) {
+      const albQueries = ['Blessd Superstar', 'Feid', 'Karol G'];
+      for (const q of albQueries) {
+        const albRes = await fetchDeezer(`/search/album?q=${encodeURIComponent(q)}&limit=2`);
+        if (albRes && Array.isArray(albRes.data)) {
+          albRes.data.forEach(a => {
+            if (!albums.some(existing => existing.deezerId === a.id)) {
+              albums.push({
+                id: `deezer_${a.id}`,
+                deezerId: a.id,
+                title: a.title,
+                artist: a.artist ? a.artist.name : 'Artista',
+                coverXl: a.cover_xl || a.cover_big || a.cover_medium,
+                nbTracks: a.nb_tracks || '—',
+                releaseDate: 'Oficial',
+                link: a.link || `https://www.deezer.com/album/${a.id}`,
+                lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(a.link || `https://www.deezer.com/album/${a.id}`)}`,
+                source: 'deezer'
+              });
+            }
+          });
+        }
       }
     }
 
@@ -306,14 +345,14 @@ async function getTopColombia() {
     }
 
     if (tracks.length > 0) {
-      cachedTopColombia = { tracks, albums };
+      cachedTopColombia = { tracks, artists, albums };
       cachedTopColombiaTime = now;
     }
-    return { tracks, albums };
+    return { tracks, artists, albums };
   } catch (err) {
     console.error('Error al obtener Top Colombia:', err);
     if (cachedTopColombia) return cachedTopColombia;
-    return { tracks: [], albums: [] };
+    return { tracks: [], artists: [], albums: [] };
   }
 }
 
@@ -472,7 +511,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.7', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -745,7 +784,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 0.05 TOP 10 COLOMBIA EN VIVO
+    // 0.05 TOP 10 COLOMBIA EN VIVO + ARTISTAS TOP MUNDIALES
     if (pathname === '/api/top-colombia') {
       const topData = await getTopColombia();
       res.writeHead(200, {
@@ -754,9 +793,11 @@ const server = http.createServer(async (req, res) => {
       });
       return res.end(JSON.stringify({
         success: true,
-        count: topData.tracks.length,
-        tracks: topData.tracks,
-        albums: topData.albums
+        count: (topData.tracks || []).length,
+        tracks: topData.tracks || [],
+        artists: topData.artists || [],
+        albums: topData.albums || [],
+        updatedAt: new Date().toISOString()
       }));
     }
 
@@ -953,6 +994,8 @@ const server = http.createServer(async (req, res) => {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const artistParam = (reqUrl.searchParams.get('artist') || '').trim();
       const titleParam = (reqUrl.searchParams.get('title') || '').trim();
+      const durationParam = Number(reqUrl.searchParams.get('duration') || 0);
+
       if (!q && !titleParam) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
@@ -1036,58 +1079,78 @@ const server = http.createServer(async (req, res) => {
           return false;
         }
 
-        let selected = null;
-        let selectedTier = '';
+        function scoreCandidate(c, tierType) {
+          let s = 0;
+          const t = (c.title || '').toLowerCase();
+          const ch = (c.channel || '').toLowerCase();
 
-        // TIER 1: AUDIO OFICIAL (Topic, Audio Oficial, Official Audio, Visualizer - Cero intros habladas)
-        const t1Candidates = await fetchYtCandidates(`${cleanQuery} audio oficial`);
-        for (const c of t1Candidates) {
-          if (isTrash(c) || !matchesKeywords(c)) continue;
-          const t = c.title.toLowerCase();
-          const isAudio = c.isTopic || /audio oficial|official audio|\(audio\)|\[audio\]|visualizer|\baudio\b/i.test(t);
-          const isVideo = /video oficial|official video|music video|videoclip/i.test(t);
-          if (isAudio && !isVideo) {
-            selected = c;
-            selectedTier = 'audio_oficial';
-            break;
+          // Sincronía y comparación con la duración de la plataforma oficial (Deezer/iTunes)
+          if (durationParam > 30 && c.durSec > 0) {
+            const diff = Math.abs(c.durSec - durationParam);
+            if (diff <= 3) s += 80;
+            else if (diff <= 8) s += 50;
+            else if (diff <= 16) s += 25;
+            else if (diff > 45) s -= 60; // Descartar cortes extendidos con diálogos largos
           }
+
+          if (c.isTopic) s += 60;
+          if (c.isVerified) s += 40;
+          if (/hear this music|rimas|sony|warner|universal|vevo|bad bunny|eladio|feid|karol|ryan castro|maluma|balvin|don omar/i.test(ch)) s += 45;
+
+          if (tierType === 'audio') {
+            if (c.isTopic || /audio oficial|official audio|\(audio\)|\[audio\]|visualizer/i.test(t)) s += 40;
+            if (/video oficial|official video|music video/i.test(t)) s -= 30;
+          } else if (tierType === 'lyric') {
+            if (/lyric|letra|lyrics/i.test(t)) s += 50;
+          }
+
+          return s;
         }
 
-        // TIER 2: VIDEO CON LETRA (Lyric Video / Letra - Sincronía al segundo con la letra)
+        let selected = null;
+        let selectedTier = '';
+        const alternatives = [];
+
+        // TIER 1: AUDIO OFICIAL (Topic, Audio Oficial, Official Audio, Visualizer)
+        const t1Candidates = (await fetchYtCandidates(`${cleanQuery} audio oficial`)).filter(c => !isTrash(c) && matchesKeywords(c));
+        t1Candidates.sort((a, b) => scoreCandidate(b, 'audio') - scoreCandidate(a, 'audio'));
+        const bestAudio = t1Candidates[0];
+
+        if (bestAudio && (bestAudio.isTopic || bestAudio.isVerified || (durationParam > 0 && Math.abs(bestAudio.durSec - durationParam) <= 15))) {
+          selected = bestAudio;
+          selectedTier = 'audio_oficial';
+          t1Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
+        }
+
+        // TIER 2: VIDEO CON LETRA (Lyric Video / Letra - Sincronía con la letra)
         if (!selected) {
-          const t2Candidates = await fetchYtCandidates(`${cleanQuery} lyric video letra`);
-          for (const c of t2Candidates) {
-            if (isTrash(c) || !matchesKeywords(c)) continue;
-            const t = c.title.toLowerCase();
-            if (/lyric|letra|lyrics/i.test(t)) {
-              selected = c;
-              selectedTier = 'letra_lyrics';
-              break;
-            }
+          const t2Candidates = (await fetchYtCandidates(`${cleanQuery} lyric video letra`)).filter(c => !isTrash(c) && matchesKeywords(c));
+          t2Candidates.sort((a, b) => scoreCandidate(b, 'lyric') - scoreCandidate(a, 'lyric'));
+          const bestLyric = t2Candidates[0];
+          if (bestLyric && /lyric|letra|lyrics/i.test(bestLyric.title)) {
+            selected = bestLyric;
+            selectedTier = 'letra_lyrics';
+            t2Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
           }
         }
 
         // TIER 3: FALLBACK ESTÁNDAR / VIDEO OFICIAL
         if (!selected) {
-          const t3Candidates = await fetchYtCandidates(`${cleanQuery} video oficial`);
-          for (const c of t3Candidates) {
-            if (!isTrash(c) && matchesKeywords(c)) {
-              selected = c;
-              selectedTier = 'video_oficial_fallback';
-              break;
-            }
+          const t3Candidates = (await fetchYtCandidates(cleanQuery)).filter(c => !isTrash(c) && matchesKeywords(c));
+          t3Candidates.sort((a, b) => scoreCandidate(b, 'video') - scoreCandidate(a, 'video'));
+          const bestFallback = t3Candidates[0];
+          if (bestFallback) {
+            selected = bestFallback;
+            selectedTier = 'video_oficial_fallback';
+            t3Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
           }
         }
 
         // FALLBACK FINAL DE SEGURIDAD
         if (!selected && t1Candidates.length > 0) {
-          for (const c of t1Candidates) {
-            if (!isTrash(c) && matchesKeywords(c)) {
-              selected = c;
-              selectedTier = 'fallback';
-              break;
-            }
-          }
+          selected = t1Candidates[0];
+          selectedTier = 'fallback';
+          t1Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
         }
 
         if (selected) {
@@ -1096,7 +1159,8 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({
             videoId: selected.id,
             videoTitle: selected.title,
-            tier: selectedTier
+            tier: selectedTier,
+            alternatives: Array.from(new Set(alternatives)).filter(id => id !== selected.id).slice(0, 4)
           }));
         }
 

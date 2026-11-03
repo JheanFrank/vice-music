@@ -186,18 +186,19 @@ export function addToPlaylist(username, track) {
 export function removeFromPlaylist(username, title, artist) {
   if (!username || !title) return [];
   const cleanUser = username.trim().toLowerCase();
+  const cleanTitle = title.trim().toLowerCase();
 
   if (db && !useJsonStore) {
     try {
-      const stmt = db.prepare('DELETE FROM playlists WHERE lower(username) = ? AND lower(title) = ?');
-      stmt.run(cleanUser, title.toLowerCase());
+      const stmt = db.prepare('DELETE FROM playlists WHERE lower(username) = ? AND trim(lower(title)) = ?');
+      stmt.run(cleanUser, cleanTitle);
       return getPlaylist(cleanUser);
     } catch (_) {}
   }
 
   const store = loadJsonStore();
   if (store.playlists[cleanUser]) {
-    store.playlists[cleanUser] = store.playlists[cleanUser].filter(t => t.title.toLowerCase() !== title.toLowerCase());
+    store.playlists[cleanUser] = store.playlists[cleanUser].filter(t => (t.title || '').trim().toLowerCase() !== cleanTitle);
     saveJsonStore(store);
     return store.playlists[cleanUser];
   }

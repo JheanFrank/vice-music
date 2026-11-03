@@ -14,9 +14,9 @@ try {
   if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
 } catch (_) {}
 
-// Motor de descarga ultra-rápido VisionOS (sin decipher de player ni OOM en servidores Linux / Render)
-let ytdlInstance = new Ytdl({ clients: [Client.VisionOS] });
-console.log('⚡ [YTDL] Motor VisionOS nativo de alta velocidad activado (cero consumo de memoria, sin base.js).');
+// Motor de descarga multi-cliente (Tv + WebEmbedded + VisionOS + Mweb) anti-bloqueo para Render
+let ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS, Client.Mweb] });
+console.log('⚡ [YTDL] Motor multi-cliente nativo (Tv + WebEmbedded + VisionOS) activado con éxito.');
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -216,21 +216,47 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
       }
     }
 
-    // 2. Fallback a YTDL nativo (VisionOS)
+    // 2. Fallback a YTDL nativo multi-cliente (Tv + WebEmbedded + VisionOS)
     try {
-      console.log(`[Audio Engine] Usando motor nativo YTDL VisionOS para [${vId}]...`);
-      const stream = await ytdlInstance.download(vId, {
+      console.log(`[Audio Engine] Usando motor YTDL nativo multi-cliente para [${vId}]...`);
+      const stream = ytdlInstance.download(vId, {
         filter: { hasAudio: true, hasVideo: false },
         quality: 'highestaudio'
       });
-      if (stream) {
-        console.log(`[Audio Engine] Flujo YTDL nativo obtenido con éxito para [${vId}]`);
-        return stream;
-      }
+
+      // Validar recepción de audio sin errores asíncronos de YouTube (como bot check)
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        }, 4000);
+
+        stream.once('error', (err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          }
+        });
+
+        stream.once('readable', () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+      });
+
+      console.log(`[Audio Engine] Flujo YTDL nativo validado con éxito para [${vId}]`);
+      return stream;
     } catch (yErr) {
       console.warn(`[Audio Engine] YTDL nativo falló para [${vId}]:`, yErr.message);
       lastError = yErr;
-      // Rotación automática anti-bot: continúa con la siguiente alternativa
+      // Rotación automática anti-bot: continúa de inmediato con la siguiente alternativa
     }
   }
 

@@ -217,7 +217,38 @@ function initYtPlayer() {
         },
         onStateChange: onYtStateChange,
         onError: (err) => {
-          console.warn('[YouTube Error]', err.data);
+          console.warn('[YouTube Error Code]', err.data);
+          // Si el video tiene restricción de incrustación (código 101/150) o error, probar video alternativo
+          if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
+            const nextVideoId = state.currentTrack.alternativeVideoIds.shift();
+            console.log('[YouTube Fallback] Probando stream alternativo:', nextVideoId);
+            showToast('🔄 Cambiando a stream oficial alternativo...');
+            state.currentTrack.videoId = nextVideoId;
+            try {
+              if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                ytPlayer.loadVideoById(nextVideoId);
+                ytPlayer.playVideo();
+                return;
+              }
+            } catch (fbErr) {
+              console.warn('Error cambiando a stream alternativo:', fbErr);
+            }
+          }
+          // Si fallan todas las fuentes de YouTube, fallback al audio preview nativo
+          const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl;
+          if (fallbackUrl && state.audio) {
+            console.log('[Audio Fallback] Reproduciendo preview oficial nativo:', fallbackUrl);
+            showToast('🎵 Reproduciendo audio oficial...');
+            state.playbackSource = 'preview';
+            state.audio.src = fallbackUrl;
+            state.audio.currentTime = 0;
+            state.audio.playbackRate = state.currentSpeed;
+            state.audio.play().then(() => {
+              setPlayingState(true);
+              startAudioProgress();
+            }).catch(e => console.warn(e));
+            return;
+          }
           showToast('⚠️ Reproducción de stream en progreso...');
         }
       }
@@ -1425,20 +1456,24 @@ function renderTracks(tracks) {
     card.className = 'album-card track-card-modern';
 
     card.innerHTML = `
-      <div class="album-cover-wrapper" title="Clic para escuchar o ver álbum completo">
+      <div class="album-cover-wrapper" title="Clic para escuchar canción">
         <img class="album-cover" src="${track.coverXl}" alt="${track.title}" loading="lazy" onerror="this.src='https://via.placeholder.com/400/1a0933/ff2a85?text=VICE'">
         <div class="cover-overlay-hint">
-          <span>${track.albumId ? '💿 VER ÁLBUM' : '▶ ESCUCHAR'}</span>
+          <span>🎧 ESCUCHAR</span>
         </div>
-        ${track.album ? `
+        ${(track.album && track.albumId) ? `
+          <button class="btn-card-album-link" data-album-id="${track.albumId}" title="Ver álbum completo: ${escapeHtml(track.album)}">
+            💿 Ver Álbum
+          </button>
+        ` : (track.album ? `
           <span class="album-badge-tracks" style="background: rgba(0, 240, 255, 0.2); border: 1px solid var(--vice-cyan); color: var(--vice-cyan);">
             💿 ${track.album}
           </span>
-        ` : ''}
+        ` : '')}
       </div>
 
       <div class="album-info">
-        <h3 class="album-title" title="${track.title}">${track.title}</h3>
+        <h3 class="album-title" title="${track.title}" style="cursor: pointer;">${track.title}</h3>
         <p class="album-artist artist-clickable" data-artist="${track.artist}" title="Ver discografía y perfil de ${track.artist}">${track.artist}</p>
         
         <div class="track-card-actions-single">
@@ -1459,20 +1494,29 @@ function renderTracks(tracks) {
       </div>
     `;
 
-    // Clic en la carátula: si tiene álbum abre el álbum, si no reproduce el preview
+    // Clic en la carátula: REPRODUCE LA CANCIÓN INDIVIDUAL
     card.querySelector('.album-cover-wrapper').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (track.albumId) {
+      const albumBtn = e.target.closest('.btn-card-album-link');
+      if (albumBtn && track.albumId) {
+        e.stopPropagation();
         openAlbumDetail(track.albumId);
-      } else {
-        loadTrack({
-          title: track.title,
-          artist: track.artist,
-          cover: track.coverXl,
-          audioUrl: track.preview,
-          album: track.album
-        });
+        return;
       }
+      e.stopPropagation();
+      playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
+    });
+
+    const albumBadgeBtn = card.querySelector('.btn-card-album-link');
+    if (albumBadgeBtn && track.albumId) {
+      albumBadgeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openAlbumDetail(track.albumId);
+      });
+    }
+
+    card.querySelector('.album-title').addEventListener('click', (e) => {
+      e.stopPropagation();
+      playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
     });
 
     // Clic en el nombre del artista: abre el perfil del artista
@@ -1490,13 +1534,15 @@ function renderTracks(tracks) {
         title: track.title,
         artist: track.artist,
         cover: track.coverXl,
-        audioUrl: track.preview
+        audioUrl: track.preview,
+        duration: track.duration,
+        album: track.album
       });
     });
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
-      playFullSong(track.artist, track.title, track.coverXl, track.album);
+      playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
     });
 
     const moreBtn = card.querySelector('.btn-single-more');
@@ -2036,7 +2082,7 @@ function loadTrack(track) {
 }
 
 // REPRODUCIR CANCIÓN 100% COMPLETA (RESPUESTA INSTANTÁNEA + METADATOS LIMPIOS HD)
-async function playFullSong(artist, title, cover = null, album = null) {
+async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null) {
   // Pausar audio de muestra si está sonando
   if (state.audio) {
     state.audio.pause();
@@ -2047,12 +2093,14 @@ async function playFullSong(artist, title, cover = null, album = null) {
     title,
     artist,
     cover: cover || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl),
-    album: album || (state.currentAlbum && state.currentAlbum.title) || title
+    album: album || (state.currentAlbum && state.currentAlbum.title) || title,
+    duration: duration || (state.currentTrack && state.currentTrack.duration) || 0,
+    preview: preview || (state.currentTrack && state.currentTrack.preview) || ''
   };
 
   if (!state.history) state.history = [];
   if (state.history.length === 0 || state.history[state.history.length - 1].title !== title) {
-    state.history.push({ artist, title, cover: trackObj.cover, album: trackObj.album });
+    state.history.push({ artist, title, cover: trackObj.cover, album: trackObj.album, duration: trackObj.duration });
     if (state.history.length > 50) state.history.shift();
   }
 
@@ -2087,11 +2135,13 @@ async function playFullSong(artist, title, cover = null, album = null) {
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
   try {
-    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}`);
+    const durParam = trackObj.duration || 0;
+    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}&duration=${encodeURIComponent(durParam)}`);
     const data = await res.json();
 
     if (data.videoId) {
       state.currentTrack.videoId = data.videoId;
+      state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
       initYtPlayer();
 
       const tryPlay = () => {
@@ -3084,6 +3134,7 @@ async function loadHomeContent() {
   try {
     let tracks = [];
     let albums = [];
+    let artists = [];
 
     // 1. Probar backend Render
     try {
@@ -3091,6 +3142,7 @@ async function loadHomeContent() {
       const data = await res.json();
       if (data && data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
         tracks = data.tracks;
+        artists = data.artists || [];
         albums = data.albums || [];
       }
     } catch (e) {
@@ -3200,7 +3252,7 @@ async function loadHomeContent() {
 
         row.querySelector('.btn-rank-full').addEventListener('click', (e) => {
           e.stopPropagation();
-          playFullSong(track.artist, track.title, track.coverXl, track.album);
+          playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
         });
 
         row.querySelector('.btn-track-more').addEventListener('click', (e) => {
@@ -3210,8 +3262,10 @@ async function loadHomeContent() {
             artist: track.artist,
             cover: track.coverXl,
             album: track.album,
+            albumId: track.albumId,
             preview: track.preview,
             audioUrl: track.preview,
+            duration: track.duration,
             lucidaUrl: track.lucidaUrl
           }, e.currentTarget);
         });
@@ -3234,6 +3288,55 @@ async function loadHomeContent() {
 
         topRankingList.appendChild(row);
       });
+    }
+
+    // Renderizar Artistas Más Escuchados a Nivel Mundial & Colombia
+    const homeArtistsGrid = document.getElementById('homeArtistsGrid');
+    if (homeArtistsGrid) {
+      homeArtistsGrid.innerHTML = '';
+      const topArtists = (artists && Array.isArray(artists) && artists.length > 0)
+        ? artists
+        : [
+            { name: 'Ryan Castro', picture: 'https://cdn-images.dzcdn.net/images/artist/85e4705e8cab0354605581abd89c703d/500x500-000000-80-0-0.jpg', rank: 1 },
+            { name: 'KAROL G', picture: 'https://cdn-images.dzcdn.net/images/artist/5b0aab23f8d2856951a92f3a9faf70e3/500x500-000000-80-0-0.jpg', rank: 2 },
+            { name: 'Feid', picture: 'https://cdn-images.dzcdn.net/images/artist/e629c93e03b3c225d8d52a42bae71537/500x500-000000-80-0-0.jpg', rank: 3 },
+            { name: 'Bad Bunny', picture: 'https://cdn-images.dzcdn.net/images/artist/044a3f315b041864887a8dd8709e6926/500x500-000000-80-0-0.jpg', rank: 4 },
+            { name: 'Diomedes Diaz', picture: 'https://cdn-images.dzcdn.net/images/artist/fd9922415127264b9708992d5b0908a4/500x500-000000-80-0-0.jpg', rank: 5 },
+            { name: 'Silvestre Dangond', picture: 'https://cdn-images.dzcdn.net/images/artist/615aa8dceb24854b2cfdbe6339067242/500x500-000000-80-0-0.jpg', rank: 6 },
+            { name: 'Beele', picture: 'https://cdn-images.dzcdn.net/images/artist/517e60ed50f56034769b7e845a71e35c/500x500-000000-80-0-0.jpg', rank: 7 },
+            { name: 'Shakira', picture: 'https://cdn-images.dzcdn.net/images/artist/69c569506a8ff6ab0edfecbd1adf94b0/500x500-000000-80-0-0.jpg', rank: 8 },
+            { name: 'J Balvin', picture: 'https://cdn-images.dzcdn.net/images/artist/325eaa46bc25052d0e3d549d60cc8225/500x500-000000-80-0-0.jpg', rank: 9 },
+            { name: 'Don Omar', picture: 'https://cdn-images.dzcdn.net/images/artist/3edb52cebe741e547363a093e26d4655/500x500-000000-80-0-0.jpg', rank: 10 }
+          ];
+
+      topArtists.forEach(art => {
+        const artCard = document.createElement('div');
+        artCard.className = 'artist-bubble-card';
+        artCard.title = `Ver discografía completa de ${art.name}`;
+        artCard.innerHTML = `
+          <div class="artist-bubble-avatar-wrap">
+            <img class="artist-bubble-avatar" src="${art.picture}" alt="${art.name}" loading="lazy" onerror="this.src='https://via.placeholder.com/150/1a0933/00f0ff?text=${encodeURIComponent(art.name[0])}'">
+            <span class="artist-bubble-rank">#${art.rank}</span>
+          </div>
+          <span class="artist-bubble-name">${escapeHtml(art.name)}</span>
+          <span class="artist-bubble-sub">TOP ARTIST</span>
+        `;
+        artCard.addEventListener('click', () => {
+          openArtistProfile(art.name);
+        });
+        homeArtistsGrid.appendChild(artCard);
+      });
+    }
+
+    // Auto-actualización periódica en vivo del Top 10 y Artistas (cada 5 minutos)
+    if (!window._topChartsIntervalSet) {
+      window._topChartsIntervalSet = true;
+      setInterval(() => {
+        if (state.currentMode === 'home') {
+          console.log('[Live Charts] Refrescando charts en vivo...');
+          loadHomeContent();
+        }
+      }, 5 * 60 * 1000);
     }
 
     // Renderizar Álbumes destacados de Colombia

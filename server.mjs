@@ -511,7 +511,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.9.1', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

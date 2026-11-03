@@ -98,6 +98,45 @@ function selectAllVisibleTracks() {
   }
 }
 
+// AÑADIR EN LOTE A LA LISTA DE REPRODUCCIÓN ACTUAL (COLA)
+function batchAddToQueue(atStart = true) {
+  const tracks = Array.from(state.selectedTracks.values());
+  if (tracks.length === 0) {
+    showToast('⚠️ No hay canciones seleccionadas.');
+    return;
+  }
+
+  if (!state.queue) state.queue = [];
+
+  const formattedTracks = tracks.map(t => ({
+    title: t.title,
+    artist: t.artist || 'Artista Desconocido',
+    cover: t.cover || t.coverXl || 'https://via.placeholder.com/300/1a0933/ff2a85?text=VI',
+    preview: t.preview || t.audioUrl || '',
+    audioUrl: t.audioUrl || t.preview || '',
+    album: t.album || 'Vice Music Single',
+    duration: t.duration || 180,
+    videoId: t.videoId || t.video_id || ''
+  }));
+
+  if (atStart) {
+    state.queue.unshift(...formattedTracks);
+  } else {
+    state.queue.push(...formattedTracks);
+  }
+
+  updateQueueBadge();
+  if (typeof renderQueueItems === 'function') {
+    renderQueueItems();
+  }
+
+  const posText = atStart ? 'al principio' : 'al final';
+  showToast(`🎶 ¡${formattedTracks.length} canciones agregadas ${posText} de la lista de reproducción actual!`);
+  showTopRightToast('Lista de Reproducción', `${formattedTracks.length} canciones agregadas ${posText} de la cola.`, 'playlist');
+  clearAllSelections();
+}
+
+// AÑADIR EN LOTE A LA PLAYLIST GUARDADA
 async function batchAddToPlaylist(atStart = true) {
   const tracks = Array.from(state.selectedTracks.values());
   if (tracks.length === 0) {
@@ -192,55 +231,35 @@ function enqueueDownload(track) {
   }
 
   downloadQueue.push(track);
-  updateDownloadQueueIndicator();
 
   if (isProcessingDownloadQueue) {
     showToast(`⏳ "${track.title}" agregada a la lista de espera (Posición #${downloadQueue.length}).`);
+    // Actualizar la insignia del widget existente si ya está en pantalla
+    const badge = document.getElementById('dlWidgetQueueBadge');
+    if (badge) {
+      badge.textContent = `+${downloadQueue.length} en espera`;
+      badge.classList.remove('hidden');
+    }
   } else {
     processDownloadQueue();
   }
 }
 
-function updateDownloadQueueIndicator() {
-  const ind = document.getElementById('downloadQueueIndicator');
-  const titleEl = document.getElementById('dqiTrackTitle');
-  const statusEl = document.getElementById('dqiStatusText');
-  if (!ind) return;
-
-  const totalWaiting = downloadQueue.length;
-  if (!activeDownloadTrack && totalWaiting === 0) {
-    ind.classList.add('hidden');
-    return;
-  }
-
-  ind.classList.remove('hidden');
-  if (activeDownloadTrack) {
-    if (titleEl) titleEl.textContent = activeDownloadTrack.title;
-    if (statusEl) statusEl.textContent = totalWaiting > 0 ? `+${totalWaiting} esperando` : 'Descargando MP3 320k...';
-  } else if (totalWaiting > 0) {
-    if (titleEl) titleEl.textContent = 'En cola...';
-    if (statusEl) statusEl.textContent = `${totalWaiting} en espera`;
-  }
-}
-
-function hideDownloadQueueIndicator() {
-  const ind = document.getElementById('downloadQueueIndicator');
-  if (ind) ind.classList.add('hidden');
-}
-
 async function processDownloadQueue() {
   if (isProcessingDownloadQueue) return;
   if (downloadQueue.length === 0) {
-    hideDownloadQueueIndicator();
+    hideDownloadProgress();
     return;
   }
 
   isProcessingDownloadQueue = true;
-  updateDownloadQueueIndicator();
 
   while (downloadQueue.length > 0) {
     activeDownloadTrack = downloadQueue.shift();
-    updateDownloadQueueIndicator();
+    const trackDisplayName = `${activeDownloadTrack.artist} - ${activeDownloadTrack.title}`;
+    
+    // Iniciar progreso sin ocultar el widget
+    setDownloadProgress(8, 'Iniciando conexión con satélite de audio...', trackDisplayName);
 
     try {
       await executeSingleMp3Download(activeDownloadTrack);
@@ -250,17 +269,18 @@ async function processDownloadQueue() {
     }
 
     activeDownloadTrack = null;
-    updateDownloadQueueIndicator();
 
     if (downloadQueue.length > 0) {
-      showToast(`⚡ Iniciando siguiente descarga (${downloadQueue.length} restantes)...`);
-      await new Promise(r => setTimeout(r, 1200));
+      showToast(`⚡ Preparando siguiente canción (${downloadQueue.length} restantes en cola)...`);
+      setDownloadProgress(5, 'Conectando con la siguiente canción...', `${downloadQueue[0].artist} - ${downloadQueue[0].title}`);
+      // Pausa de 1.8 segundos entre descargas para que el navegador procese el guardado del archivo
+      await new Promise(r => setTimeout(r, 1800));
     }
   }
 
   isProcessingDownloadQueue = false;
-  hideDownloadQueueIndicator();
-  showTopRightToast('🎉 Descargas Completadas', 'Todas las canciones de la lista fueron guardadas en tu dispositivo.', 'success');
+  hideDownloadProgress();
+  showTopRightToast('🎉 Descargas Completadas', 'Todas las canciones seleccionadas se han descargado con éxito.', 'success');
 }
 
 function setupBatchActionBarHandlers() {
@@ -272,8 +292,8 @@ function setupBatchActionBarHandlers() {
 
   if (btnSelectAll) btnSelectAll.addEventListener('click', selectAllVisibleTracks);
   if (btnClear) btnClear.addEventListener('click', clearAllSelections);
-  if (btnPlStart) btnPlStart.addEventListener('click', () => batchAddToPlaylist(true));
-  if (btnPlEnd) btnPlEnd.addEventListener('click', () => batchAddToPlaylist(false));
+  if (btnPlStart) btnPlStart.addEventListener('click', () => batchAddToQueue(true));
+  if (btnPlEnd) btnPlEnd.addEventListener('click', () => batchAddToQueue(false));
   if (btnDownload) btnDownload.addEventListener('click', batchDownloadSelected);
 }
 
@@ -1638,11 +1658,13 @@ async function openAlbumDetail(albumId) {
       const durationMin = formatTime(track.duration);
 
       trackRow.innerHTML = `
-        <label class="custom-track-checkbox row-track-checkbox" title="Seleccionar canción">
-          <input type="checkbox" class="track-select-cb" data-track-key="${trackKey}" ${isSelected ? 'checked' : ''}>
-          <span class="cb-checkmark"></span>
-        </label>
-        <div class="track-number">${trackNum}</div>
+        <div class="track-number">
+          <label class="custom-track-checkbox row-track-checkbox" title="Seleccionar canción">
+            <input type="checkbox" class="track-select-cb" data-track-key="${trackKey}" ${isSelected ? 'checked' : ''}>
+            <span class="cb-checkmark"></span>
+          </label>
+          <span>${trackNum}</span>
+        </div>
         <div class="track-main-info">
           <h4 title="${track.title}">${track.title}</h4>
           <p>${track.artist}</p>
@@ -2493,8 +2515,13 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
 // ========================================================
 let isDownloadingMp3 = false;
 let dlProgressTimer = null;
+let dlHideTimeout = null;
 
 function setDownloadProgress(percent, stepText, trackName) {
+  if (dlHideTimeout) {
+    clearTimeout(dlHideTimeout);
+    dlHideTimeout = null;
+  }
   const topBar = document.getElementById('topProgressBar');
   const topFill = document.getElementById('topProgressFill');
   const widget = document.getElementById('dlFloatingWidget');
@@ -2502,6 +2529,7 @@ function setDownloadProgress(percent, stepText, trackName) {
   const widgetPercent = document.getElementById('dlWidgetPercent');
   const widgetFill = document.getElementById('dlWidgetBarFill');
   const widgetStep = document.getElementById('dlWidgetStep');
+  const queueBadge = document.getElementById('dlWidgetQueueBadge');
 
   if (topBar && topFill) {
     topBar.classList.add('active');
@@ -2514,6 +2542,14 @@ function setDownloadProgress(percent, stepText, trackName) {
     if (widgetPercent) widgetPercent.innerText = `${Math.round(percent)}%`;
     if (widgetFill) widgetFill.style.width = `${percent}%`;
     if (widgetStep && stepText) widgetStep.innerText = stepText;
+    if (queueBadge) {
+      if (downloadQueue && downloadQueue.length > 0) {
+        queueBadge.textContent = `+${downloadQueue.length} en espera`;
+        queueBadge.classList.remove('hidden');
+      } else {
+        queueBadge.classList.add('hidden');
+      }
+    }
   }
 }
 
@@ -2521,6 +2557,10 @@ function hideDownloadProgress() {
   if (dlProgressTimer) {
     clearInterval(dlProgressTimer);
     dlProgressTimer = null;
+  }
+  if (dlHideTimeout) {
+    clearTimeout(dlHideTimeout);
+    dlHideTimeout = null;
   }
   const topBar = document.getElementById('topProgressBar');
   const topFill = document.getElementById('topProgressFill');
@@ -2531,15 +2571,19 @@ function hideDownloadProgress() {
     const widgetPercent = document.getElementById('dlWidgetPercent');
     const widgetFill = document.getElementById('dlWidgetBarFill');
     const widgetStep = document.getElementById('dlWidgetStep');
+    const queueBadge = document.getElementById('dlWidgetQueueBadge');
     if (widgetPercent) widgetPercent.innerText = '100%';
     if (widgetFill) widgetFill.style.width = '100%';
-    if (widgetStep) widgetStep.innerText = '¡Descarga iniciada con éxito!';
+    if (widgetStep) widgetStep.innerText = '¡Descarga completada!';
+    if (queueBadge) queueBadge.classList.add('hidden');
   }
 
-  setTimeout(() => {
-    if (topBar) topBar.classList.remove('active');
-    if (widget) widget.classList.add('hidden');
-    if (topFill) topFill.style.width = '0%';
+  dlHideTimeout = setTimeout(() => {
+    if (downloadQueue.length === 0 && !activeDownloadTrack) {
+      if (topBar) topBar.classList.remove('active');
+      if (widget) widget.classList.add('hidden');
+      if (topFill) topFill.style.width = '0%';
+    }
   }, 2200);
 }
 
@@ -2570,8 +2614,6 @@ async function executeSingleMp3Download(track) {
 
   setDownloadProgress(10, 'Iniciando conexión con satélite de audio...', safeName);
   showToast(`⚡ Generando MP3 320 kbps: ${title}... Observa la barra de progreso.`);
-
-  const pctRing = document.getElementById('dqiPercentText');
 
   try {
     const albumName = extraMeta.album || (state.currentTrack ? state.currentTrack.album : '') || title;
@@ -2607,7 +2649,6 @@ async function executeSingleMp3Download(track) {
       + `&filename=${encodeURIComponent(safeName)}`;
 
     setDownloadProgress(25, 'Extrayendo audio estéreo oficial y codificando a 320 kbps...', safeName);
-    if (pctRing) pctRing.textContent = '25%';
 
     const response = await fetch(downloadApiUrl);
     if (!response.ok) {
@@ -2620,7 +2661,6 @@ async function executeSingleMp3Download(track) {
     }
 
     setDownloadProgress(45, 'Transfiriendo archivo MP3 con carátula HD...', safeName);
-    if (pctRing) pctRing.textContent = '45%';
 
     const reader = response.body.getReader();
     const chunks = [];
@@ -2640,11 +2680,9 @@ async function executeSingleMp3Download(track) {
         pct = Math.min(96, 45 + Math.round(receivedBytes / 120000));
       }
       setDownloadProgress(pct, `Descargando audio oficial (${mb} MB)...`, safeName);
-      if (pctRing) pctRing.textContent = `${pct}%`;
     }
 
     setDownloadProgress(99, 'Guardando archivo en tu dispositivo...', safeName);
-    if (pctRing) pctRing.textContent = '99%';
 
     const blob = new Blob(chunks, { type: 'audio/mpeg' });
     const blobUrl = URL.createObjectURL(blob);
@@ -2659,13 +2697,11 @@ async function executeSingleMp3Download(track) {
       if (document.body.contains(downloadAnchor)) document.body.removeChild(downloadAnchor);
     }, 25000);
 
-    setDownloadProgress(100, '¡Descarga completada con éxito!', safeName);
-    if (pctRing) pctRing.textContent = '100%';
+    setDownloadProgress(100, '¡Archivo descargado!', safeName);
+    showToast(`✅ MP3 descargado: ${safeName}.mp3`);
 
-    setTimeout(() => {
-      hideDownloadProgress();
-      showToast(`✅ MP3 descargado: ${safeName}.mp3`);
-    }, 1500);
+    // Esperar 2 segundos completos para que el navegador procese el guardado del archivo
+    await new Promise(r => setTimeout(r, 2000));
   } catch (err) {
     if (dlProgressTimer) {
       clearInterval(dlProgressTimer);
@@ -3518,13 +3554,12 @@ async function loadHomeContent() {
         const durationFormatted = formatTime(track.duration);
 
         row.innerHTML = `
-          <label class="custom-track-checkbox row-track-checkbox" title="Seleccionar canción">
-            <input type="checkbox" class="track-select-cb" data-track-key="${trackKey}" ${isSelected ? 'checked' : ''}>
-            <span class="cb-checkmark"></span>
-          </label>
-
           <div class="ranking-num">
-            ${index === 0 ? '👑 01' : rankNumStr}
+            <label class="custom-track-checkbox row-track-checkbox" title="Seleccionar canción">
+              <input type="checkbox" class="track-select-cb" data-track-key="${trackKey}" ${isSelected ? 'checked' : ''}>
+              <span class="cb-checkmark"></span>
+            </label>
+            <span>${index === 0 ? '👑 01' : rankNumStr}</span>
           </div>
 
           <div class="ranking-track-cell">
@@ -4629,11 +4664,13 @@ function renderPlaylistTracklist() {
     const isSelected = state.selectedTracks.has(trackKey);
     html += `
       <div class="playlist-row ${isActive ? 'active-row' : ''} ${isSelected ? 'is-selected' : ''}" data-index="${i}">
-        <label class="custom-track-checkbox row-track-checkbox" title="Seleccionar canción">
-          <input type="checkbox" class="track-select-cb" data-track-key="${trackKey}" ${isSelected ? 'checked' : ''}>
-          <span class="cb-checkmark"></span>
-        </label>
-        <div class="pl-col-idx">${i + 1}</div>
+        <div class="pl-col-idx">
+          <label class="custom-track-checkbox row-track-checkbox" title="Seleccionar canción">
+            <input type="checkbox" class="track-select-cb" data-track-key="${trackKey}" ${isSelected ? 'checked' : ''}>
+            <span class="cb-checkmark"></span>
+          </label>
+          <span>${i + 1}</span>
+        </div>
         <div class="pl-col-cover">
           <img src="${escapeHtml(t.cover || 'https://via.placeholder.com/52/1a0933/ff2a85?text=VI')}" alt="${escapeHtml(t.title)}" loading="lazy">
         </div>

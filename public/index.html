@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=790">
+  <link rel="stylesheet" href="style.css?v=791">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.9</span>
+          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.9.1</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -154,6 +154,7 @@
           <span class="dl-widget-title">DESCARGA EN PROCESO (320 KBPS)</span>
           <span class="dl-widget-sub" id="dlWidgetTrack">Artista - Canción</span>
         </div>
+        <span class="dl-widget-queue-badge hidden" id="dlWidgetQueueBadge">+1 en cola</span>
         <span class="dl-widget-percent" id="dlWidgetPercent">0%</span>
       </div>
       <div class="dl-widget-bar-bg">
@@ -704,27 +705,15 @@
       </button>
     </div>
     <div class="batch-bar-right">
-      <button type="button" id="btnBatchPlStart" class="btn-batch-action btn-batch-pl-start" title="Añadir al principio de la playlist">
+      <button type="button" id="btnBatchPlStart" class="btn-batch-action btn-batch-pl-start" title="Añadir al principio de la lista de reproducción actual">
         <span>🔼</span> <span class="btn-batch-label">Al Principio</span>
       </button>
-      <button type="button" id="btnBatchPlEnd" class="btn-batch-action btn-batch-pl-end" title="Añadir al final de la playlist">
+      <button type="button" id="btnBatchPlEnd" class="btn-batch-action btn-batch-pl-end" title="Añadir al final de la lista de reproducción actual">
         <span>🔽</span> <span class="btn-batch-label">Al Final</span>
       </button>
       <button type="button" id="btnBatchDownload" class="btn-batch-action btn-batch-download" title="Descargar todas en MP3 320 kbps una por una secuencialmente">
         <span>📥</span> <span class="btn-batch-label">Descargar</span>
       </button>
-    </div>
-  </div>
-
-  <!-- Indicador Flotante de Cola de Descarga Secuencial -->
-  <div id="downloadQueueIndicator" class="download-queue-indicator hidden" role="status">
-    <div class="dqi-icon">⏳</div>
-    <div class="dqi-info">
-      <div class="dqi-title" id="dqiTrackTitle">Descargando...</div>
-      <div class="dqi-status" id="dqiStatusText">1 en cola</div>
-    </div>
-    <div class="dqi-progress-ring">
-      <span id="dqiPercentText">0%</span>
     </div>
   </div>
 
@@ -835,6 +824,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=790"></script>
+  <script src="app.js?v=791"></script>
 </body>
 </html>

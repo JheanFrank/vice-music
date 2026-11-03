@@ -28,42 +28,213 @@ const INVIDIOUS_INSTANCES = [
   'https://invidious.jing.rocks'
 ];
 
-async function getAudioStreamForVideo(videoId) {
-  // 1. Intentar instancias de proxy Invidious (evita bloqueos de datacenter en Render)
-  for (const inst of INVIDIOUS_INSTANCES) {
-    try {
-      const vRes = await fetch(`${inst}/api/v1/videos/${videoId}?local=true`, {
-        headers: { 'User-Agent': USER_AGENT },
-        signal: AbortSignal.timeout(6000)
-      });
-      if (!vRes.ok) continue;
-      const vData = await vRes.json();
-      const format = vData.adaptiveFormats?.find(f => f.itag === '140' || f.itag === '251') 
-                  || vData.adaptiveFormats?.find(f => f.type?.includes('audio'));
-      if (format && format.url) {
-        const streamUrl = format.url.startsWith('http') && !format.url.includes(new URL(inst).hostname)
-          ? `${inst}${new URL(format.url).pathname}${new URL(format.url).search}`
-          : format.url;
-        const aRes = await fetch(streamUrl, {
-          headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(180000)
-        });
-        if (aRes.ok && aRes.body) {
-          console.log(`[Audio Engine] Flujo de audio obtenido exitosamente vía ${inst} (itag ${format.itag})`);
-          return Readable.fromWeb(aRes.body);
+function parseDurationSec(durStr) {
+  if (!durStr) return 0;
+  const parts = durStr.trim().split(':').map(Number);
+  if (parts.some(isNaN)) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] || 0;
+}
+
+const BAD_CHANNELS = [
+  'latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial',
+  'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music'
+];
+
+async function fetchYtCandidates(queryTerm) {
+  try {
+    const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryTerm)}`, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept-Language': 'es-419,es;q=0.9,en;q=0.8'
+      },
+      signal: AbortSignal.timeout(6500)
+    });
+    const html = await ytRes.text();
+    const startIdx = html.indexOf('var ytInitialData = ');
+    if (startIdx === -1) return [];
+    const endIdx = html.indexOf(';</script>', startIdx);
+    const data = JSON.parse(html.substring(startIdx + 20, endIdx));
+    const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+    const candidates = [];
+    for (const s of sections) {
+      const items = s.itemSectionRenderer?.contents || [];
+      for (const it of items) {
+        const v = it.videoRenderer;
+        if (v && v.videoId && v.videoId.length === 11) {
+          const title = v.title?.runs?.[0]?.text || '';
+          const channel = v.ownerText?.runs?.[0]?.text || '';
+          const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
+          const isVerified = badges.some(b => b && b.includes('VERIFIED'));
+          const isTopic = channel.includes('Topic') || channel.endsWith(' - Topic');
+          const durStr = v.lengthText?.simpleText || v.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText || '';
+          const durSec = parseDurationSec(durStr);
+          candidates.push({ id: v.videoId, title, channel, isVerified, isTopic, durStr, durSec });
         }
       }
-    } catch (e) {
-      console.warn(`[Audio Engine] Intento con ${inst} falló:`, e.message);
+    }
+    return candidates;
+  } catch (_) {
+    return [];
+  }
+}
+
+async function resolveFullAudio(artist, title, durationParam = 0) {
+  const cleanArtist = (artist || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+  const cleanTitle = (title || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+  const isRemixRequest = /remix|rmx/i.test(`${title} ${artist}`);
+  
+  const artistKeywords = cleanArtist.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+  
+  // 1° Búsqueda: Audio Oficial
+  let rawCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} audio oficial`);
+  // 2° Búsqueda: Letra / Lyrics si hay pocos candidatos
+  if (rawCandidates.length < 5) {
+    const lyricCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} lyric video letra`);
+    rawCandidates.push(...lyricCandidates);
+  }
+  // 3° Búsqueda estándar
+  if (rawCandidates.length < 5) {
+    const stdCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle}`);
+    rawCandidates.push(...stdCandidates);
+  }
+
+  // Deduplicar por videoId
+  const seen = new Set();
+  const uniqueCandidates = [];
+  for (const c of rawCandidates) {
+    if (!seen.has(c.id)) {
+      seen.add(c.id);
+      uniqueCandidates.push(c);
     }
   }
 
-  // 2. Fallback a YTDL nativo (VisionOS)
-  console.log('[Audio Engine] Usando motor nativo YTDL VisionOS...');
-  return ytdlInstance.download(videoId, {
-    filter: { hasAudio: true, hasVideo: false },
-    quality: 'highestaudio'
-  });
+  function score(c) {
+    let s = 0;
+    const t = c.title.toLowerCase();
+    const ch = c.channel.toLowerCase();
+    const combined = `${t} ${ch}`;
+    
+    // Filtro de descarte estricto
+    if (t.includes('parodia') || t.includes('karaoke') || t.includes('reacción') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return -999;
+    if (BAD_CHANNELS.some(b => ch.includes(b))) return -999;
+
+    // 1. Requisito Estricto de Artista Primario (Evita canciones de otros artistas)
+    const hasArtist = artistKeywords.some(w => combined.includes(w));
+    if (!hasArtist) {
+      s -= 300;
+    } else {
+      s += 60;
+    }
+    
+    // 2. Requisito Estricto de Remix vs Versión Original
+    const isCandidateRemix = /remix|rmx/i.test(t);
+    const isOfficialArtistChannel = artistKeywords.length > 0 && ch.includes(artistKeywords[0]);
+
+    if (isRemixRequest) {
+      if (isCandidateRemix || combined.includes('remix') || combined.includes('rmx') || isOfficialArtistChannel) {
+        s += 90;
+      } else {
+        s -= 250; // Penalización severa si el usuario pidió Remix pero la pista es solo la versión original
+      }
+    } else {
+      if (isCandidateRemix && !title.toLowerCase().includes('remix')) {
+        s -= 80;
+      }
+    }
+    
+    // 3. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
+    if (durationParam > 30 && c.durSec > 0) {
+      const diff = Math.abs(c.durSec - durationParam);
+      if (diff <= 3) s += 150;
+      else if (diff <= 6) s += 100;
+      else if (diff <= 12) s += 50;
+      else if (diff <= 20) s += 15;
+      else if (diff > 40) s -= 150; // Descartar intros o videos musicales excesivamente largos
+    }
+    
+    // 4. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
+    if (/cancion oficial|canción oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
+      s += 70;
+    } else if (/lyric|letra|lyrics/i.test(t)) {
+      s += 45;
+    } else if (/video oficial|official video|music video/i.test(t)) {
+      s += 20;
+    }
+    
+    if (c.isTopic && hasArtist) s += 25;
+    if (c.isVerified) s += 30;
+    if (isOfficialArtistChannel) s += 40;
+    
+    return s;
+  }
+
+  const scored = uniqueCandidates
+    .filter(c => c.durSec === 0 || (c.durSec >= 60 && c.durSec <= 700))
+    .map(c => ({ ...c, score: score(c) }))
+    .filter(c => c.score > -200)
+    .sort((a, b) => b.score - a.score);
+
+  const selected = scored[0] || null;
+  const alternatives = scored.slice(1, 6).map(c => c.id);
+
+  return { selected, alternatives, scored };
+}
+
+async function getAudioStreamForVideo(videoId, altIds = []) {
+  const candidateIds = [videoId, ...(altIds || [])].filter((id, idx, arr) => id && id.length === 11 && arr.indexOf(id) === idx);
+  let lastError = null;
+
+  for (const vId of candidateIds) {
+    // 1. Intentar instancias de proxy Invidious (evita bloqueos de datacenter en Render)
+    for (const inst of INVIDIOUS_INSTANCES) {
+      try {
+        const vRes = await fetch(`${inst}/api/v1/videos/${vId}?local=true`, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (!vRes.ok) continue;
+        const vData = await vRes.json();
+        const format = vData.adaptiveFormats?.find(f => f.itag === '140' || f.itag === '251') 
+                    || vData.adaptiveFormats?.find(f => f.type?.includes('audio'));
+        if (format && format.url) {
+          const streamUrl = format.url.startsWith('http') && !format.url.includes(new URL(inst).hostname)
+            ? `${inst}${new URL(format.url).pathname}${new URL(format.url).search}`
+            : format.url;
+          const aRes = await fetch(streamUrl, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(180000)
+          });
+          if (aRes.ok && aRes.body) {
+            console.log(`[Audio Engine] Flujo de audio obtenido exitosamente vía ${inst} para [${vId}] (itag ${format.itag})`);
+            return Readable.fromWeb(aRes.body);
+          }
+        }
+      } catch (e) {
+        console.warn(`[Audio Engine] Intento con ${inst} para [${vId}] falló:`, e.message);
+      }
+    }
+
+    // 2. Fallback a YTDL nativo (VisionOS)
+    try {
+      console.log(`[Audio Engine] Usando motor nativo YTDL VisionOS para [${vId}]...`);
+      const stream = await ytdlInstance.download(vId, {
+        filter: { hasAudio: true, hasVideo: false },
+        quality: 'highestaudio'
+      });
+      if (stream) {
+        console.log(`[Audio Engine] Flujo YTDL nativo obtenido con éxito para [${vId}]`);
+        return stream;
+      }
+    } catch (yErr) {
+      console.warn(`[Audio Engine] YTDL nativo falló para [${vId}]:`, yErr.message);
+      lastError = yErr;
+      // Rotación automática anti-bot: continúa con la siguiente alternativa
+    }
+  }
+
+  throw lastError || new Error(`No se pudo obtener el audio para ninguno de los videos probados: ${candidateIds.join(', ')}`);
 }
 
 async function getFullSongMp3Url(videoId) {
@@ -511,7 +682,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.9.1', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.9.2', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1011,165 +1182,16 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const cleanArtist = artistParam.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
-        const cleanTitle = titleParam.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
-        const cleanQuery = (cleanArtist && cleanTitle) ? `${cleanArtist} ${cleanTitle}` : q.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
-
-        function parseDurationSec(durStr) {
-          if (!durStr) return 0;
-          const parts = durStr.trim().split(':').map(Number);
-          if (parts.some(isNaN)) return 0;
-          if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-          if (parts.length === 2) return parts[0] * 60 + parts[1];
-          return parts[0] || 0;
-        }
-
-        const BAD_CHANNELS = [
-          'latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial',
-          'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music'
-        ];
-
-        async function fetchYtCandidates(queryTerm) {
-          try {
-            const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryTerm)}`, {
-              headers: {
-                'User-Agent': USER_AGENT,
-                'Accept-Language': 'es-419,es;q=0.9,en;q=0.8'
-              },
-              signal: AbortSignal.timeout(6000)
-            });
-            const html = await ytRes.text();
-            const startIdx = html.indexOf('var ytInitialData = ');
-            if (startIdx === -1) return [];
-            const endIdx = html.indexOf(';</script>', startIdx);
-            const jsonStr = html.substring(startIdx + 20, endIdx);
-            const data = JSON.parse(jsonStr);
-            const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
-            const candidates = [];
-            for (const s of sections) {
-              const items = s.itemSectionRenderer?.contents || [];
-              for (const it of items) {
-                const v = it.videoRenderer;
-                if (v && v.videoId && v.videoId.length === 11) {
-                  const title = v.title?.runs?.[0]?.text || '';
-                  const channel = v.ownerText?.runs?.[0]?.text || '';
-                  const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
-                  const isVerified = badges.some(b => b && b.includes('VERIFIED'));
-                  const isTopic = channel.includes('Topic') || channel.endsWith(' - Topic');
-                  const durStr = v.lengthText?.simpleText || v.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText || '';
-                  const durSec = parseDurationSec(durStr);
-                  candidates.push({ id: v.videoId, title, channel, isVerified, isTopic, durStr, durSec });
-                }
-              }
-            }
-            return candidates;
-          } catch (_) {
-            return [];
-          }
-        }
-
-        const queryWords = cleanQuery.toLowerCase()
-          .replace(/[^\w\sáéíóúüñ]/gi, ' ')
-          .split(/\s+/)
-          .filter(w => w.length >= 2);
-
-        function matchesKeywords(c) {
-          const text = `${c.title} ${c.channel}`.toLowerCase();
-          const hits = queryWords.filter(w => text.includes(w)).length;
-          return hits >= Math.min(2, queryWords.length);
-        }
-
-        function isTrash(c) {
-          const t = (c.title || '').toLowerCase();
-          const ch = (c.channel || '').toLowerCase();
-          if (t.includes('parodia') || t.includes('karaoke') || t.includes('reacción') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return true;
-          if (BAD_CHANNELS.some(b => ch.includes(b))) return true;
-          if (c.durSec > 0 && (c.durSec < 70 || c.durSec > 600)) return true;
-          return false;
-        }
-
-        function scoreCandidate(c, tierType) {
-          let s = 0;
-          const t = (c.title || '').toLowerCase();
-          const ch = (c.channel || '').toLowerCase();
-
-          // Sincronía y comparación con la duración de la plataforma oficial (Deezer/iTunes)
-          if (durationParam > 30 && c.durSec > 0) {
-            const diff = Math.abs(c.durSec - durationParam);
-            if (diff <= 3) s += 80;
-            else if (diff <= 8) s += 50;
-            else if (diff <= 16) s += 25;
-            else if (diff > 45) s -= 60; // Descartar cortes extendidos con diálogos largos
-          }
-
-          if (c.isTopic) s += 60;
-          if (c.isVerified) s += 40;
-          if (/hear this music|rimas|sony|warner|universal|vevo|bad bunny|eladio|feid|karol|ryan castro|maluma|balvin|don omar/i.test(ch)) s += 45;
-
-          if (tierType === 'audio') {
-            if (c.isTopic || /audio oficial|official audio|\(audio\)|\[audio\]|visualizer/i.test(t)) s += 40;
-            if (/video oficial|official video|music video/i.test(t)) s -= 30;
-          } else if (tierType === 'lyric') {
-            if (/lyric|letra|lyrics/i.test(t)) s += 50;
-          }
-
-          return s;
-        }
-
-        let selected = null;
-        let selectedTier = '';
-        const alternatives = [];
-
-        // TIER 1: AUDIO OFICIAL (Topic, Audio Oficial, Official Audio, Visualizer)
-        const t1Candidates = (await fetchYtCandidates(`${cleanQuery} audio oficial`)).filter(c => !isTrash(c) && matchesKeywords(c));
-        t1Candidates.sort((a, b) => scoreCandidate(b, 'audio') - scoreCandidate(a, 'audio'));
-        const bestAudio = t1Candidates[0];
-
-        if (bestAudio && (bestAudio.isTopic || bestAudio.isVerified || (durationParam > 0 && Math.abs(bestAudio.durSec - durationParam) <= 15))) {
-          selected = bestAudio;
-          selectedTier = 'audio_oficial';
-          t1Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
-        }
-
-        // TIER 2: VIDEO CON LETRA (Lyric Video / Letra - Sincronía con la letra)
-        if (!selected) {
-          const t2Candidates = (await fetchYtCandidates(`${cleanQuery} lyric video letra`)).filter(c => !isTrash(c) && matchesKeywords(c));
-          t2Candidates.sort((a, b) => scoreCandidate(b, 'lyric') - scoreCandidate(a, 'lyric'));
-          const bestLyric = t2Candidates[0];
-          if (bestLyric && /lyric|letra|lyrics/i.test(bestLyric.title)) {
-            selected = bestLyric;
-            selectedTier = 'letra_lyrics';
-            t2Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
-          }
-        }
-
-        // TIER 3: FALLBACK ESTÁNDAR / VIDEO OFICIAL
-        if (!selected) {
-          const t3Candidates = (await fetchYtCandidates(cleanQuery)).filter(c => !isTrash(c) && matchesKeywords(c));
-          t3Candidates.sort((a, b) => scoreCandidate(b, 'video') - scoreCandidate(a, 'video'));
-          const bestFallback = t3Candidates[0];
-          if (bestFallback) {
-            selected = bestFallback;
-            selectedTier = 'video_oficial_fallback';
-            t3Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
-          }
-        }
-
-        // FALLBACK FINAL DE SEGURIDAD
-        if (!selected && t1Candidates.length > 0) {
-          selected = t1Candidates[0];
-          selectedTier = 'fallback';
-          t1Candidates.slice(1, 5).forEach(c => alternatives.push(c.id));
-        }
+        const { selected, alternatives } = await resolveFullAudio(artistParam, titleParam || q, durationParam);
 
         if (selected) {
-          console.log(`[FullAudio] Seleccionado [Tier: ${selectedTier}] [${selected.id}] "${selected.title}" (${selected.durStr || 'N/A'}) - Canal: ${selected.channel}`);
+          console.log(`[FullAudio] Seleccionado [Score: ${selected.score}] [${selected.id}] "${selected.title}" (${selected.durStr || 'N/A'}) - Canal: ${selected.channel}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
             videoId: selected.id,
             videoTitle: selected.title,
-            tier: selectedTier,
-            alternatives: Array.from(new Set(alternatives)).filter(id => id !== selected.id).slice(0, 4)
+            tier: selected.score >= 200 ? 'audio_oficial' : (selected.score >= 100 ? 'letra_lyrics' : 'video_oficial'),
+            alternatives: alternatives.filter(id => id !== selected.id).slice(0, 4)
           }));
         }
 
@@ -1485,35 +1507,20 @@ function stripOldId3(mp3Buffer) {
           } catch (_) {}
         }
         let targetVideoId = (videoIdParam && videoIdParam.length === 11) ? videoIdParam : null;
+        let altVideoIds = [];
 
-        if (!targetVideoId && (q || (artist && title))) {
-          const searchQuery = `${artist || ''} ${title || q} audio`.trim();
-          try {
-            const results = await ytdlInstance.search(searchQuery);
-            if (results && results.length > 0) {
-              const best = results.find(r => r.author?.verified || r.author?.badges?.includes('Official Artist Channel')) || results[0];
-              targetVideoId = best.id;
-              console.log(`[Native MP3 Engine] Video oficial encontrado vía search: [${targetVideoId}] "${best.title}"`);
+        // Resolver con filtros oficiales estrictos y obtener alternativas para tolerancia anti-bot
+        try {
+          const durationVal = Number(reqUrl.searchParams.get('duration') || 0);
+          const resolved = await resolveFullAudio(artist, title || q, durationVal);
+          if (resolved && resolved.selected) {
+            if (!targetVideoId) {
+              targetVideoId = resolved.selected.id;
             }
-          } catch (sErr) {
-            console.warn('[Native MP3 Engine] Búsqueda ytdl falló:', sErr.message);
+            altVideoIds = (resolved.alternatives || []).filter(id => id !== targetVideoId);
           }
-
-          if (!targetVideoId) {
-            try {
-              const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, {
-                headers: { 'User-Agent': USER_AGENT },
-                signal: AbortSignal.timeout(8000)
-              });
-              const html = await ytRes.text();
-              const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-              if (match && match[1]) {
-                targetVideoId = match[1];
-              }
-            } catch (e) {
-              console.warn('[Native Engine] Fallback de videoId falló:', e.message);
-            }
-          }
+        } catch (resErr) {
+          console.warn('[Native MP3 Engine] Error en resolveFullAudio:', resErr.message);
         }
 
         if (!targetVideoId) {
@@ -1521,7 +1528,7 @@ function stripOldId3(mp3Buffer) {
           return res.end(JSON.stringify({ error: 'No se encontró el video en YouTube' }));
         }
 
-        console.log(`[Native MP3 Engine] Generando MP3 320 kbps para "${safeFilename}" (${targetVideoId})...`);
+        console.log(`[Native MP3 Engine] Generando MP3 320 kbps para "${safeFilename}" (${targetVideoId}, alts: ${altVideoIds.join(', ') || 'ninguna'})...`);
 
         // Descarga de carátula oficial 1000x1000 en paralelo
         let coverBuf = null;
@@ -1559,7 +1566,7 @@ function stripOldId3(mp3Buffer) {
 
         console.log(`[Native MP3 Engine] Extrayendo y transmitiendo audio MP3 320 kbps para "${safeFilename}" (${targetVideoId})...`);
 
-        let audioStream = await getAudioStreamForVideo(targetVideoId);
+        let audioStream = await getAudioStreamForVideo(targetVideoId, altVideoIds);
 
         const ffmpeg = spawn(ffmpegPath, [
           '-i', 'pipe:0',

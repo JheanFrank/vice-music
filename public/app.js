@@ -2630,10 +2630,13 @@ async function executeSingleMp3Download(track) {
     const coverTarget = extraMeta.coverUrl || track.cover || (state.currentTrack ? state.currentTrack.cover : '');
     const targetVideoId = videoId || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : '') || '';
 
+    const trackDuration = track.duration || (extraMeta && extraMeta.duration) || (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.duration : 0) || 0;
+
     const downloadApiUrl = `/api/download-mp3?q=${encodeURIComponent(artist + ' ' + title)}`
       + `&videoId=${encodeURIComponent(targetVideoId)}`
       + `&title=${encodeURIComponent(title || '')}`
       + `&artist=${encodeURIComponent(artist || '')}`
+      + `&duration=${encodeURIComponent(String(trackDuration))}`
       + `&albumArtist=${encodeURIComponent(albumArtistName || '')}`
       + `&album=${encodeURIComponent(albumName || '')}`
       + `&publisher=${encodeURIComponent(publisherName || '')}`
@@ -2730,6 +2733,7 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
     artist,
     audioUrl,
     preview: audioUrl,
+    duration: (extraMeta && extraMeta.duration) || (extraMeta && extraMeta.time) || 0,
     videoId: videoId || (extraMeta && extraMeta.videoId),
     video_id: videoId || (extraMeta && extraMeta.videoId),
     album: extraMeta && extraMeta.album,

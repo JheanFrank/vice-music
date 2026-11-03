@@ -854,15 +854,7 @@ function setupEventListeners() {
     });
   }
 
-  // Clic en el nombre del artista en la barra fija
-  if (playerArtist) {
-    playerArtist.classList.add('artist-clickable');
-    playerArtist.addEventListener('click', () => {
-      if (state.currentTrack && state.currentTrack.artist) {
-        openArtistProfile(state.currentTrack.artist);
-      }
-    });
-  }
+  // Clic en el nombre del artista en la barra fija (manejado individualmente por pastillas .artist-clickable-pill)
 
   // Botón Escuchar Canción Completa en la barra fija
   if (btnPlayFullSong) {
@@ -1214,14 +1206,7 @@ function setupEventListeners() {
       }
     });
   }
-  if (amTrackArtist) {
-    amTrackArtist.addEventListener('click', () => {
-      if (state.currentTrack && state.currentTrack.artist) {
-        closeAppleMusicModal();
-        openArtistProfile(state.currentTrack.artist);
-      }
-    });
-  }
+  // Clic en Artista en el modal Apple Music (manejado individualmente por pastillas .artist-clickable-pill)
   if (amProgressTrack) {
     amProgressTrack.addEventListener('click', (e) => {
       const rect = amProgressTrack.getBoundingClientRect();
@@ -2416,7 +2401,7 @@ function loadTrack(track) {
   state.playbackSource = 'preview';
   state.currentTrack = track;
   playerTitle.innerText = track.title;
-  playerArtist.innerText = track.artist;
+  playerArtist.innerHTML = formatArtistPills(track.artist || 'Artista');
   playerCover.src = track.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
 
   if (playerModeBadge) {
@@ -2473,7 +2458,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   state.currentTrack = trackObj;
 
   playerTitle.innerText = title;
-  playerArtist.innerText = artist;
+  playerArtist.innerHTML = formatArtistPills(artist || 'Artista');
   if (trackObj.cover) {
     playerCover.src = trackObj.cover;
   }
@@ -2539,35 +2524,25 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         }, 350);
       }
 
-      // Watchdog Anti-Bloqueo de 3.5s: Si YouTube no arranca o el navegador lo suspende, activa stream alternativo
+      // Watchdog de tolerancia: Si tras 7s no ha iniciado ni está cargando, rota a video alternativo
       if (window.ytWatchdogTimer) clearTimeout(window.ytWatchdogTimer);
       window.ytWatchdogTimer = setTimeout(() => {
-        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function' || ytPlayer.getPlayerState() !== 1) {
-          console.warn('[Watchdog] YouTube no inició en 3.5s. Probando stream alternativo...');
-          if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
-            const nextVid = state.currentTrack.alternativeVideoIds.shift();
-            state.currentTrack.videoId = nextVid;
-            try {
-              if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-                ytPlayer.loadVideoById(nextVid);
-                ytPlayer.playVideo();
-                return;
-              }
-            } catch (_) {}
-          }
-          const nativeUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview);
-          if (nativeUrl) {
-            state.playbackSource = 'preview';
-            state.audio.src = nativeUrl;
-            state.audio.playbackRate = state.currentSpeed;
-            state.audio.play().then(() => {
-              setPlayingState(true);
-              updateMediaSession(trackObj);
-              showToast('⚡ Reproduciendo stream oficial de respaldo.');
-            }).catch(() => {});
-          }
+        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
+        const curState = ytPlayer.getPlayerState();
+        // Si está reproduciendo (1) o cargando/buffering (3), dejar que continúe
+        if (curState === 1 || curState === 3) return;
+
+        if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
+          const nextVid = state.currentTrack.alternativeVideoIds.shift();
+          state.currentTrack.videoId = nextVid;
+          console.warn('[Watchdog] Sintonizando stream alternativo:', nextVid);
+          showToast('🔄 Sintonizando stream oficial alternativo...');
+          try {
+            ytPlayer.loadVideoById(nextVid);
+            ytPlayer.playVideo();
+          } catch (_) {}
         }
-      }, 3500);
+      }, 7000);
     } else {
       const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || (state.currentTrack && state.currentTrack.audioUrl);
       if (fallbackUrl) {
@@ -4001,7 +3976,7 @@ function updateAppleMusicTrackInfo(track) {
   if (!track) return;
 
   if (amTrackTitle) amTrackTitle.innerText = track.title || 'Pista de Audio';
-  if (amTrackArtist) amTrackArtist.innerText = track.artist || 'Artista';
+  if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(track.artist || 'Artista');
   if (amTrackAlbum) amTrackAlbum.innerText = track.album || (state.currentAlbum ? state.currentAlbum.title : 'Álbum Oficial');
 
   const coverUrl = track.cover || (state.currentAlbum && state.currentAlbum.coverXl) || 'https://via.placeholder.com/500/1a0933/ff2a85?text=VI';

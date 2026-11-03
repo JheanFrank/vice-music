@@ -472,7 +472,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.6', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.7', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -633,10 +633,18 @@ const server = http.createServer(async (req, res) => {
           const parsed = JSON.parse(body || '{}');
           const username = (parsed.username || '').trim();
           const password = (parsed.password || '').trim();
+          const accessCode = (parsed.accessCode || parsed.code || '').trim();
+
           if (!username || !password) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: false, error: 'Ingresa un usuario y contraseña válidos.' }));
           }
+
+          if (accessCode !== '3233') {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Código de acceso incorrecto. No tienes permiso para crear una cuenta.' }));
+          }
+
           const user = createUser(username, password, 'VIP Member');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
@@ -692,7 +700,7 @@ const server = http.createServer(async (req, res) => {
         const user = (reqUrl.searchParams.get('user') || '').trim();
         const tracks = getPlaylist(user);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ success: true, tracks }));
+        return res.end(JSON.stringify({ success: true, tracks, playlist: tracks }));
       }
 
       if (req.method === 'POST') {
@@ -707,7 +715,7 @@ const server = http.createServer(async (req, res) => {
             if (!track) throw new Error('Canción requerida');
             const tracks = addToPlaylist(user, track);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: true, tracks, message: 'Canción guardada en tu playlist' }));
+            return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Canción guardada en tu playlist' }));
           } catch (e) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: false, error: e.message }));
@@ -727,7 +735,7 @@ const server = http.createServer(async (req, res) => {
             const artist = (parsed.artist || '').trim();
             const tracks = removeFromPlaylist(user, title, artist);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: true, tracks, message: 'Canción eliminada de tu playlist' }));
+            return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Canción eliminada de tu playlist' }));
           } catch (e) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: false, error: e.message }));
@@ -940,33 +948,20 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ isAlbum: false, data: combinedTracks }));
     }
 
-    // 4. AUDIO COMPLETO VÍA YOUTUBE (Filtro Estricto Anti-Canales Piratas / FusaUrbano)
+    // 4. AUDIO COMPLETO VÍA YOUTUBE (Jerarquía Estricta: 1° Audio Oficial -> 2° Letra/Lyrics -> 3° Video Oficial)
     if (pathname === '/api/fullaudio') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
-      if (!q) {
+      const artistParam = (reqUrl.searchParams.get('artist') || '').trim();
+      const titleParam = (reqUrl.searchParams.get('title') || '').trim();
+      if (!q && !titleParam) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
       }
 
       try {
-        const cleanQuery = q.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
-        const queriesToTry = [
-          `${cleanQuery} audio oficial`,
-          `${cleanQuery} topic`,
-          `${q} audio`,
-          `${cleanQuery} audio`,
-          q,
-          `${cleanQuery} official`,
-          cleanQuery
-        ];
-
-        let videoId = null;
-        let videoTitle = null;
-
-        const BAD_CHANNELS = [
-          'latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial',
-          'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music'
-        ];
+        const cleanArtist = artistParam.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+        const cleanTitle = titleParam.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+        const cleanQuery = (cleanArtist && cleanTitle) ? `${cleanArtist} ${cleanTitle}` : q.replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
 
         function parseDurationSec(durStr) {
           if (!durStr) return 0;
@@ -977,9 +972,12 @@ const server = http.createServer(async (req, res) => {
           return parts[0] || 0;
         }
 
-        for (const queryTerm of queriesToTry) {
-          if (videoId) break;
+        const BAD_CHANNELS = [
+          'latinhype', 'cantoyo', 'karaoke', 'clean hits', 'reaction', 'tutorial',
+          'videos oficiales fm', 'flowkalle', 'gustavo paternina', 'ted sky', 'lover of music'
+        ];
 
+        async function fetchYtCandidates(queryTerm) {
           try {
             const ytRes = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(queryTerm)}`, {
               headers: {
@@ -989,115 +987,116 @@ const server = http.createServer(async (req, res) => {
               signal: AbortSignal.timeout(6000)
             });
             const html = await ytRes.text();
-
             const startIdx = html.indexOf('var ytInitialData = ');
-            if (startIdx !== -1) {
-              const endIdx = html.indexOf(';</script>', startIdx);
-              const jsonStr = html.substring(startIdx + 20, endIdx);
-              const data = JSON.parse(jsonStr);
-              const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
-
-              const candidates = [];
-              for (const s of sections) {
-                const items = s.itemSectionRenderer?.contents || [];
-                for (const it of items) {
-                  const v = it.videoRenderer;
-                  if (v && v.videoId && v.videoId.length === 11) {
-                    const title = v.title?.runs?.[0]?.text || '';
-                    const channel = v.ownerText?.runs?.[0]?.text || '';
-                    const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
-                    const isVerified = badges.some(b => b && b.includes('VERIFIED'));
-                    const isTopic = channel.includes('Topic');
-                    const durStr = v.lengthText?.simpleText || v.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText || '';
-                    const durSec = parseDurationSec(durStr);
-                    candidates.push({ id: v.videoId, title, channel, isVerified, isTopic, durStr, durSec });
-                  }
-                }
-              }
-
-              if (candidates.length > 0) {
-                const queryWords = cleanQuery.toLowerCase()
-                  .replace(/[^\w\sáéíóúüñ]/gi, ' ')
-                  .split(/\s+/)
-                  .filter(w => w.length >= 2);
-
-                function scoreCandidate(c) {
-                  const cTitle = (c.title || '').toLowerCase();
-                  const cChannel = (c.channel || '').toLowerCase();
-                  let score = 0;
-
-                  let matchedTitleWords = 0;
-                  let matchedChannelWords = 0;
-                  for (const w of queryWords) {
-                    if (cTitle.includes(w)) {
-                      score += 25;
-                      matchedTitleWords++;
-                    }
-                    if (cChannel.includes(w)) {
-                      score += 15;
-                      matchedChannelWords++;
-                    }
-                  }
-
-                  // Si el canal coincide con varias palabras del query (nombre de artista oficial)
-                  if (matchedChannelWords >= 2) {
-                    score += 55;
-                  }
-
-                  // Si ninguna palabra clave del query está en el título
-                  if (queryWords.length >= 2 && matchedTitleWords === 0) {
-                    score -= 80;
-                  }
-
-                  // Priorizar canales oficiales "Topic" y versiones de audio oficial (sin intros habladas, sincronía perfecta con letras)
-                  if (c.isTopic) score += 50;
-                  if (cTitle.includes('audio oficial') || cTitle.includes('official audio') || cTitle.includes('pista')) score += 35;
-                  if (c.isVerified) score += 25;
-                  if (cTitle.includes('lyric video') || cTitle.includes('video lyric') || cTitle.includes('audio')) score += 20;
-                  if (cTitle.includes('video oficial') || cTitle.includes('official video') || cTitle.includes('music video')) score += 15;
-
-                  // Penalizar remixes no oficiales, parodias, karaoke, slowed, loops de 1 hora
-                  if (cTitle.includes('karaoke') || cTitle.includes('parodia') || cTitle.includes('reacción') || cTitle.includes('lofi') || cTitle.includes('lo-fi') || cTitle.includes('slowed') || cTitle.includes('1 hour') || cTitle.includes('1 hora') || cTitle.includes('loop')) score -= 100;
-
-                  // Penalizar duraciones sospechosas (cortes < 120s o loops/mixes > 600s)
-                  if (c.durSec > 0 && c.durSec < 120) score -= 90;
-                  if (c.durSec > 600) score -= 100;
-
-                  if (BAD_CHANNELS.some(b => cChannel.includes(b))) score -= 80;
-
-                  return score;
-                }
-
-                candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
-                const best = candidates[0];
-                if (best && scoreCandidate(best) > -40) {
-                  videoId = best.id;
-                  videoTitle = best.title;
-                  console.log(`[FullAudio] Video oficial filtrado seleccionado: [${videoId}] "${videoTitle}" (Canal: ${best.channel}, Duración: ${best.durStr})`);
-                  break;
+            if (startIdx === -1) return [];
+            const endIdx = html.indexOf(';</script>', startIdx);
+            const jsonStr = html.substring(startIdx + 20, endIdx);
+            const data = JSON.parse(jsonStr);
+            const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+            const candidates = [];
+            for (const s of sections) {
+              const items = s.itemSectionRenderer?.contents || [];
+              for (const it of items) {
+                const v = it.videoRenderer;
+                if (v && v.videoId && v.videoId.length === 11) {
+                  const title = v.title?.runs?.[0]?.text || '';
+                  const channel = v.ownerText?.runs?.[0]?.text || '';
+                  const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
+                  const isVerified = badges.some(b => b && b.includes('VERIFIED'));
+                  const isTopic = channel.includes('Topic') || channel.endsWith(' - Topic');
+                  const durStr = v.lengthText?.simpleText || v.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText || '';
+                  const durSec = parseDurationSec(durStr);
+                  candidates.push({ id: v.videoId, title, channel, isVerified, isTopic, durStr, durSec });
                 }
               }
             }
-
-            // Fallback si ytInitialData no arrojó candidatos pero hay coincidencia directa de videoId
-            if (!videoId) {
-              const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-              if (match) {
-                videoId = match[1];
-                videoTitle = queryTerm;
-                break;
-              }
-            }
-          } catch (tryErr) {
-            // Siguiente término de búsqueda
+            return candidates;
+          } catch (_) {
+            return [];
           }
         }
 
-        if (videoId) {
+        const queryWords = cleanQuery.toLowerCase()
+          .replace(/[^\w\sáéíóúüñ]/gi, ' ')
+          .split(/\s+/)
+          .filter(w => w.length >= 2);
+
+        function matchesKeywords(c) {
+          const text = `${c.title} ${c.channel}`.toLowerCase();
+          const hits = queryWords.filter(w => text.includes(w)).length;
+          return hits >= Math.min(2, queryWords.length);
+        }
+
+        function isTrash(c) {
+          const t = (c.title || '').toLowerCase();
+          const ch = (c.channel || '').toLowerCase();
+          if (t.includes('parodia') || t.includes('karaoke') || t.includes('reacción') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return true;
+          if (BAD_CHANNELS.some(b => ch.includes(b))) return true;
+          if (c.durSec > 0 && (c.durSec < 70 || c.durSec > 600)) return true;
+          return false;
+        }
+
+        let selected = null;
+        let selectedTier = '';
+
+        // TIER 1: AUDIO OFICIAL (Topic, Audio Oficial, Official Audio, Visualizer - Cero intros habladas)
+        const t1Candidates = await fetchYtCandidates(`${cleanQuery} audio oficial`);
+        for (const c of t1Candidates) {
+          if (isTrash(c) || !matchesKeywords(c)) continue;
+          const t = c.title.toLowerCase();
+          const isAudio = c.isTopic || /audio oficial|official audio|\(audio\)|\[audio\]|visualizer|\baudio\b/i.test(t);
+          const isVideo = /video oficial|official video|music video|videoclip/i.test(t);
+          if (isAudio && !isVideo) {
+            selected = c;
+            selectedTier = 'audio_oficial';
+            break;
+          }
+        }
+
+        // TIER 2: VIDEO CON LETRA (Lyric Video / Letra - Sincronía al segundo con la letra)
+        if (!selected) {
+          const t2Candidates = await fetchYtCandidates(`${cleanQuery} lyric video letra`);
+          for (const c of t2Candidates) {
+            if (isTrash(c) || !matchesKeywords(c)) continue;
+            const t = c.title.toLowerCase();
+            if (/lyric|letra|lyrics/i.test(t)) {
+              selected = c;
+              selectedTier = 'letra_lyrics';
+              break;
+            }
+          }
+        }
+
+        // TIER 3: FALLBACK ESTÁNDAR / VIDEO OFICIAL
+        if (!selected) {
+          const t3Candidates = await fetchYtCandidates(`${cleanQuery} video oficial`);
+          for (const c of t3Candidates) {
+            if (!isTrash(c) && matchesKeywords(c)) {
+              selected = c;
+              selectedTier = 'video_oficial_fallback';
+              break;
+            }
+          }
+        }
+
+        // FALLBACK FINAL DE SEGURIDAD
+        if (!selected && t1Candidates.length > 0) {
+          for (const c of t1Candidates) {
+            if (!isTrash(c) && matchesKeywords(c)) {
+              selected = c;
+              selectedTier = 'fallback';
+              break;
+            }
+          }
+        }
+
+        if (selected) {
+          console.log(`[FullAudio] Seleccionado [Tier: ${selectedTier}] [${selected.id}] "${selected.title}" (${selected.durStr || 'N/A'}) - Canal: ${selected.channel}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
-            videoId,
-            videoTitle
+            videoId: selected.id,
+            videoTitle: selected.title,
+            tier: selectedTier
           }));
         }
 

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=793">
+  <link rel="stylesheet" href="style.css?v=794">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.9.3</span>
+          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.9.4</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -222,7 +222,7 @@
           <span class="pulse-pink"></span>
           <span>CHART OFICIAL EN VIVO 🇨🇴</span>
         </div>
-        <h2 class="home-hero-title">TOP 10 COLOMBIA</h2>
+        <h2 class="home-hero-title">CANCIONES EN TENDENCIAS EN COLOMBIA</h2>
         <p class="home-hero-subtitle">Los éxitos más escuchados en Colombia hoy, actualizados en tiempo real con carátulas en 1000px HD y audio Master.</p>
       </div>
 
@@ -246,16 +246,16 @@
         </div>
       </div>
 
-      <!-- Artistas Más Escuchados a Nivel Mundial & Colombia (Estilo Spotify / Apple Music) -->
+      <!-- Artistas Populares en Colombia -->
       <div class="home-trending-artists">
         <div class="trending-header">
           <div>
             <div class="home-hero-badge" style="margin-bottom: 0.5rem;">
               <span class="pulse-pink"></span>
-              <span>TOP CHARTS EN VIVO 🌍</span>
+              <span>TOP CHARTS EN VIVO 🇨🇴</span>
             </div>
-            <h3 class="trending-title">👑 ARTISTAS MÁS ESCUCHADOS DEL MOMENTO</h3>
-            <p class="trending-sub">Top artistas globales y tendencias de Colombia actualizadas en tiempo real. Clic para ver perfil y discografía completa.</p>
+            <h3 class="trending-title">👑 ARTISTAS POPULARES EN COLOMBIA</h3>
+            <p class="trending-sub">Los artistas más escuchados y en tendencia en Colombia en tiempo real. Haz clic en cualquiera para explorar su perfil oficial.</p>
           </div>
         </div>
         <div id="homeArtistsGrid" class="artists-bubbles-grid">
@@ -263,12 +263,12 @@
         </div>
       </div>
 
-      <!-- Álbumes y Discografías de Colombia -->
+      <!-- Álbumes y Sencillos Populares en Colombia -->
       <div class="home-trending-albums">
         <div class="trending-header">
           <div>
-            <h3 class="trending-title">🔥 DISCOGRAFÍAS DESTACADAS DE COLOMBIA</h3>
-            <p class="trending-sub">Álbumes oficiales de estudio listos para reproducir o descargar completos en FLAC .ZIP.</p>
+            <h3 class="trending-title">🔥 ÁLBUMES Y SENCILLOS POPULARES EN COLOMBIA</h3>
+            <p class="trending-sub">Lanzamientos y álbumes en tendencia en Colombia listos para escuchar o descargar completos en FLAC .ZIP y MP3 Master.</p>
           </div>
         </div>
         <div id="homeTrendingGrid" class="results-grid"></div>
@@ -517,8 +517,8 @@
     </div>
   </footer>
 
-  <!-- Motor de Audio Completo Oculto (Invisible, sin video en pantalla) -->
-  <div id="hiddenYtWrapper" style="position: fixed; bottom: 0; right: 0; width: 120px; height: 80px; opacity: 0.001; pointer-events: none; z-index: 10;">
+  <!-- Motor de Audio Completo Oculto (Offscreen con opacidad 1 para evitar bloqueos de autoplay en Chromium/Brave/Safari) -->
+  <div id="hiddenYtWrapper" style="position: fixed; bottom: -500px; right: -500px; width: 250px; height: 250px; opacity: 1; pointer-events: none; z-index: -9999;">
     <div id="ytPlayerSlot"></div>
   </div>
 
@@ -824,6 +824,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=793"></script>
+  <script src="app.js?v=794"></script>
 </body>
 </html>

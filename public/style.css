@@ -445,27 +445,33 @@ body {
 }
 
 .btn-back {
-  display: inline-flex;
+  display: inline-flex !important;
+  align-self: flex-start !important;
+  width: auto !important;
+  max-width: fit-content !important;
   align-items: center;
   gap: 0.6rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: var(--text-dim);
-  font-family: var(--font-logo);
-  font-size: 0.8rem;
+  background: rgba(255, 42, 133, 0.12);
+  border: 1px solid rgba(255, 42, 133, 0.45);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
   font-weight: 800;
-  font-style: italic;
-  padding: 0.6rem 1.2rem;
-  border-radius: 10px;
+  letter-spacing: 1px;
+  padding: 0.55rem 1.4rem;
+  border-radius: 9999px;
   cursor: pointer;
   margin-bottom: 2rem;
-  transition: all 0.2s ease;
+  box-shadow: 0 0 15px rgba(255, 42, 133, 0.25);
+  transition: all 0.22s ease;
 }
 
 .btn-back:hover {
   background: var(--vice-pink);
   color: #fff;
   border-color: var(--vice-pink);
+  box-shadow: 0 0 25px rgba(255, 42, 133, 0.6);
+  transform: translateX(-4px);
 }
 
 .btn-back svg {
@@ -2262,11 +2268,13 @@ body {
   padding: 1.2rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(12px);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ranking-header {
   display: grid;
-  grid-template-columns: 50px 1.8fr 1.2fr 80px 220px;
+  grid-template-columns: 75px minmax(200px, 2fr) minmax(130px, 1.2fr) 70px 240px;
   align-items: center;
   padding: 0.6rem 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -2276,6 +2284,7 @@ body {
   letter-spacing: 1.2px;
   color: var(--text-muted);
   text-transform: uppercase;
+  min-width: 680px;
 }
 
 .top-ranking-list {
@@ -2283,6 +2292,7 @@ body {
   flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.5rem;
+  min-width: 680px;
 }
 
 .ranking-loader {
@@ -2299,7 +2309,7 @@ body {
 
 .ranking-row {
   display: grid;
-  grid-template-columns: 80px 1.8fr 1.2fr 80px 220px;
+  grid-template-columns: 75px minmax(200px, 2fr) minmax(130px, 1.2fr) 70px 240px;
   align-items: center;
   padding: 0.65rem 1rem;
   border-radius: 12px;
@@ -5414,6 +5424,64 @@ body {
   .btn-batch-label {
     display: inline;
   }
+
+  /* Optimizaciones de Perfil de Artista en Móvil */
+  .artist-hero {
+    flex-direction: column !important;
+    text-align: center !important;
+    gap: 1.2rem !important;
+  }
+  .artist-hero-avatar-wrap {
+    margin: 0 auto !important;
+    width: 130px !important;
+    height: 130px !important;
+  }
+  .artist-hero-info {
+    align-items: center !important;
+  }
+  .artist-hero-name {
+    font-size: 1.8rem !important;
+  }
+
+  /* Ranking en móvil */
+  .top-ranking-wrapper {
+    padding: 0.6rem;
+  }
+  .ranking-header {
+    min-width: 540px;
+  }
+  .top-ranking-list {
+    min-width: 540px;
+  }
+}
+
+/* Pastillas Interactivas de Artistas para Colaboraciones */
+.artist-clickable-pill {
+  color: var(--vice-cyan, #00f0ff);
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.artist-clickable-pill:hover {
+  background: var(--vice-pink, #ff2a85);
+  border-color: var(--vice-pink, #ff2a85);
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(255, 42, 133, 0.5);
+  transform: translateY(-1px);
+}
+
+.artist-separator {
+  color: var(--text-muted, #7c7694);
+  font-size: 0.85em;
+  font-weight: 600;
+  margin: 0 0.15rem;
 }
 
 

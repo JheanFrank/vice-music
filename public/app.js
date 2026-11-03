@@ -465,6 +465,7 @@ function initYtPlayer() {
     ytPlayer = new YT.Player('ytPlayerSlot', {
       height: '100%',
       width: '100%',
+      host: 'https://www.youtube-nocookie.com',
       playerVars: {
         autoplay: 1,
         controls: 0,
@@ -472,7 +473,8 @@ function initYtPlayer() {
         fs: 0,
         modestbranding: 1,
         rel: 0,
-        playsinline: 1
+        playsinline: 1,
+        origin: window.location.origin
       },
       events: {
         onReady: (event) => {
@@ -1328,9 +1330,13 @@ async function performSearch(query) {
     if (tabTracks) tabTracks.classList.remove('active');
   }
 
+  const artistDetailView = document.getElementById('artistDetailView');
+  if (artistDetailView) artistDetailView.classList.add('hidden');
   if (homeSection) homeSection.classList.add('hidden');
-  albumDetailView.classList.add('hidden');
+  if (albumDetailView) albumDetailView.classList.add('hidden');
+  if (playlistSection) playlistSection.classList.add('hidden');
   catalogSection.classList.remove('hidden');
+  window.scrollTo({ top: catalogSection.offsetTop - 80, behavior: 'smooth' });
 
   loader.classList.remove('hidden');
   resultsGrid.innerHTML = '';
@@ -1601,7 +1607,7 @@ async function openAlbumDetail(albumId) {
       <div class="album-hero-meta">
         <span class="album-badge-type">DISCOGRAFÍA OFICIAL MASTER</span>
         <h2 class="album-hero-title">${album.title}</h2>
-        <p class="album-hero-artist artist-clickable" data-artist="${album.artist}" title="Ver discografía y perfil de ${album.artist}">Por <strong>${album.artist}</strong></p>
+        <p class="album-hero-artist">Por <strong>${formatArtistPills(album.artist)}</strong></p>
         <div class="album-hero-details">
           <span>📅 Lanzamiento: ${album.releaseDate}</span>
           <span>💿 ${album.nbTracks} Canciones</span>
@@ -1679,7 +1685,7 @@ async function openAlbumDetail(albumId) {
         </div>
         <div class="track-main-info">
           <h4 title="${track.title}">${track.title}</h4>
-          <p>${track.artist}</p>
+          <p>${formatArtistPills(track.artist)}</p>
         </div>
         <div class="track-duration">${durationMin}</div>
         <div class="track-actions">
@@ -1901,10 +1907,39 @@ function renderTracks(tracks) {
 
 // ========================================================
 // SISTEMA DE PERFIL DE ARTISTA (SPOTIFY / APPLE MUSIC STYLE)
+function formatArtistPills(artistString) {
+  if (!artistString) return '';
+  const tokens = artistString.split(/(\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*)/i);
+  let html = '';
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*$/i.test(t)) {
+      html += `<span class="artist-separator">${escapeHtml(t.trim())}</span> `;
+    } else {
+      const name = t.trim();
+      if (name) {
+        html += `<span class="artist-clickable-pill" data-artist="${escapeHtml(name)}" title="Ver perfil de ${escapeHtml(name)}">${escapeHtml(name)}</span> `;
+      }
+    }
+  }
+  return html || escapeHtml(artistString);
+}
+
+// Global delegate para clicks en pastillas de artistas individuales
+document.addEventListener('click', (e) => {
+  const pill = e.target.closest('.artist-clickable-pill');
+  if (pill) {
+    e.stopPropagation();
+    e.preventDefault();
+    const artist = pill.getAttribute('data-artist');
+    if (artist) openArtistProfile(artist);
+  }
+});
+
 // ========================================================
 async function openArtistProfile(artistName) {
   if (!artistName) return;
-  const cleanName = artistName.replace(/\s*(feat\.|ft\.|con|&|,).*/i, '').trim() || artistName.trim();
+  const cleanName = artistName.split(/\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*/i)[0].trim() || artistName.trim();
 
   state.previousMode = state.currentMode;
 
@@ -2503,6 +2538,36 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           }
         }, 350);
       }
+
+      // Watchdog Anti-Bloqueo de 3.5s: Si YouTube no arranca o el navegador lo suspende, activa stream alternativo
+      if (window.ytWatchdogTimer) clearTimeout(window.ytWatchdogTimer);
+      window.ytWatchdogTimer = setTimeout(() => {
+        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function' || ytPlayer.getPlayerState() !== 1) {
+          console.warn('[Watchdog] YouTube no inició en 3.5s. Probando stream alternativo...');
+          if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
+            const nextVid = state.currentTrack.alternativeVideoIds.shift();
+            state.currentTrack.videoId = nextVid;
+            try {
+              if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                ytPlayer.loadVideoById(nextVid);
+                ytPlayer.playVideo();
+                return;
+              }
+            } catch (_) {}
+          }
+          const nativeUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview);
+          if (nativeUrl) {
+            state.playbackSource = 'preview';
+            state.audio.src = nativeUrl;
+            state.audio.playbackRate = state.currentSpeed;
+            state.audio.play().then(() => {
+              setPlayingState(true);
+              updateMediaSession(trackObj);
+              showToast('⚡ Reproduciendo stream oficial de respaldo.');
+            }).catch(() => {});
+          }
+        }
+      }, 3500);
     } else {
       const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || (state.currentTrack && state.currentTrack.audioUrl);
       if (fallbackUrl) {
@@ -2702,30 +2767,41 @@ async function executeSingleMp3Download(track) {
     const blob = new Blob(chunks, { type: 'audio/mpeg' });
     const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
+    downloadAnchor.style.display = 'none';
     downloadAnchor.href = blobUrl;
     downloadAnchor.download = `${safeName}.mp3`;
     document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
+    try {
+      downloadAnchor.click();
+    } catch (_) {
+      const clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+      downloadAnchor.dispatchEvent(clickEvt);
+    }
 
     setTimeout(() => {
-      URL.revokeObjectURL(blobUrl);
-      if (document.body.contains(downloadAnchor)) document.body.removeChild(downloadAnchor);
-    }, 25000);
+      try {
+        URL.revokeObjectURL(blobUrl);
+        if (document.body.contains(downloadAnchor)) document.body.removeChild(downloadAnchor);
+      } catch (_) {}
+    }, 45000);
 
     setDownloadProgress(100, '¡Archivo descargado!', safeName);
     showToast(`✅ MP3 descargado: ${safeName}.mp3`);
 
-    // Esperar 2 segundos completos para que el navegador procese el guardado del archivo
-    await new Promise(r => setTimeout(r, 2000));
+    // Pausa para que el navegador complete la escritura del archivo
+    await new Promise(r => setTimeout(r, 2200));
   } catch (err) {
     if (dlProgressTimer) {
       clearInterval(dlProgressTimer);
       dlProgressTimer = null;
     }
-    const topBar = document.getElementById('topProgressBar');
-    const widget = document.getElementById('dlFloatingWidget');
-    if (topBar) topBar.classList.remove('active');
-    if (widget) widget.classList.add('hidden');
+    // Si quedan canciones en cola, no ocultar el widget para mantener la experiencia fluida
+    if (downloadQueue.length === 0) {
+      const topBar = document.getElementById('topProgressBar');
+      const widget = document.getElementById('dlFloatingWidget');
+      if (topBar) topBar.classList.remove('active');
+      if (widget) widget.classList.add('hidden');
+    }
 
     console.error('[executeSingleMp3Download]', err);
     showToast('❌ Error al descargar MP3: ' + err.message);
@@ -3585,7 +3661,7 @@ async function loadHomeContent() {
             </div>
             <div class="ranking-track-meta">
               <span class="ranking-track-title" title="${track.title}">${track.title}</span>
-              <span class="ranking-track-artist artist-clickable" data-artist="${track.artist}" title="Ver discografía y perfil de ${track.artist}">${track.artist}</span>
+              <span class="ranking-track-artist">${formatArtistPills(track.artist)}</span>
             </div>
           </div>
 
@@ -4692,7 +4768,7 @@ function renderPlaylistTracklist() {
         </div>
         <div class="pl-col-meta">
           <span class="pl-title">${escapeHtml(t.title)}</span>
-          <span class="pl-artist pl-track-artist artist-clickable" data-artist="${escapeHtml(t.artist)}" title="Ver perfil del artista">${escapeHtml(t.artist)}</span>
+          <span class="pl-artist pl-track-artist">${formatArtistPills(t.artist)}</span>
         </div>
         <div class="pl-col-album album-clickable" data-artist="${escapeHtml(t.artist)}" data-album="${escapeHtml(t.album || 'Álbum Oficial')}" title="Buscar álbum oficial">${escapeHtml(t.album || 'Álbum Oficial')}</div>
         <div class="pl-col-duration">${durationMin}</div>

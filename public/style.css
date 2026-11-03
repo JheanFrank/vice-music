@@ -5093,5 +5093,377 @@ body {
   color: rgba(255, 255, 255, 0.6);
 }
 
+/* ========================================================
+   BARRA FLOTANTE DE ACCIONES EN LOTE & MULTI-SELECCIÓN (v7.9)
+   ======================================================== */
+.batch-action-bar {
+  position: fixed;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  min-width: 320px;
+  max-width: 92vw;
+  padding: 0.65rem 1.25rem;
+  background: linear-gradient(135deg, rgba(28, 11, 46, 0.96), rgba(13, 5, 25, 0.98));
+  border: 1.5px solid rgba(255, 42, 133, 0.75);
+  border-radius: 50px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.85), 0 0 25px rgba(255, 42, 133, 0.35);
+  animation: batchBarSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.batch-action-bar.hidden {
+  display: none !important;
+}
+
+@keyframes batchBarSlideUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 30px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.batch-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.batch-badge-counter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 42, 133, 0.2);
+  border: 1px solid rgba(255, 42, 133, 0.5);
+  color: #ffffff;
+  padding: 0.35rem 0.8rem;
+  border-radius: 20px;
+  font-family: var(--font-heading, "Montserrat", sans-serif);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.batch-counter-icon {
+  font-size: 0.95rem;
+  filter: drop-shadow(0 0 6px #ff2a85);
+}
+
+.btn-batch-secondary {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid rgba(0, 240, 255, 0.5);
+  color: var(--vice-cyan, #00f0ff);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.4rem 0.75rem;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-batch-secondary:hover {
+  background: rgba(0, 240, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+}
+
+.btn-batch-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.75);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.btn-batch-ghost:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.batch-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-batch-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 25px;
+  font-family: var(--font-heading, "Montserrat", sans-serif);
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: 0.4px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.btn-batch-pl-start {
+  background: linear-gradient(135deg, rgba(255, 154, 0, 0.25), rgba(255, 77, 0, 0.35));
+  border: 1px solid #ff9a00;
+  color: #ffc466;
+}
+
+.btn-batch-pl-start:hover {
+  background: linear-gradient(135deg, rgba(255, 154, 0, 0.4), rgba(255, 77, 0, 0.55));
+  color: #ffffff;
+  box-shadow: 0 0 15px rgba(255, 154, 0, 0.45);
+  transform: translateY(-2px);
+}
+
+.btn-batch-pl-end {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(0, 150, 255, 0.35));
+  border: 1px solid var(--vice-cyan, #00f0ff);
+  color: #bbf7ff;
+}
+
+.btn-batch-pl-end:hover {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), rgba(0, 150, 255, 0.55));
+  color: #ffffff;
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.45);
+  transform: translateY(-2px);
+}
+
+.btn-batch-download {
+  background: linear-gradient(135deg, #ff2a85, #b80058);
+  border: 1px solid #ff66ad;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 42, 133, 0.4);
+}
+
+.btn-batch-download:hover {
+  background: linear-gradient(135deg, #ff4d9e, #d60067);
+  box-shadow: 0 0 20px rgba(255, 42, 133, 0.7);
+  transform: translateY(-2px);
+}
+
+/* ========================================================
+   CHECKBOXES PERSONALIZADOS PARA CANCIONES & FILAS
+   ======================================================== */
+.custom-track-checkbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  z-index: 5;
+}
+
+/* En tarjetas de canciones */
+.card-track-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  background: rgba(10, 4, 18, 0.7);
+  padding: 4px;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+}
+
+/* En filas de pistas / álbumes / ranking */
+.row-track-checkbox {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.custom-track-checkbox input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  cursor: pointer;
+}
+
+.cb-checkmark {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.custom-track-checkbox:hover .cb-checkmark {
+  border-color: var(--vice-pink, #ff2a85);
+  box-shadow: 0 0 8px rgba(255, 42, 133, 0.35);
+}
+
+.custom-track-checkbox input[type="checkbox"]:checked ~ .cb-checkmark {
+  background: linear-gradient(135deg, #ff2a85, #00f0ff);
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(255, 42, 133, 0.6);
+}
+
+.custom-track-checkbox input[type="checkbox"]:checked ~ .cb-checkmark::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2.2px 2.2px 0;
+  transform: rotate(45deg);
+}
+
+/* Estado seleccionado de tarjetas y filas */
+.track-card-modern.is-selected {
+  border: 1.5px solid var(--vice-pink, #ff2a85) !important;
+  box-shadow: 0 0 20px rgba(255, 42, 133, 0.45) !important;
+  transform: translateY(-4px);
+}
+
+.album-track-item.is-selected,
+.ranking-row.is-selected,
+.playlist-row.is-selected {
+  background: rgba(255, 42, 133, 0.16) !important;
+  border-left: 3.5px solid var(--vice-pink, #ff2a85) !important;
+}
+
+/* ========================================================
+   INDICADOR FLOTANTE DE COLA DE DESCARGA SECUENCIAL (v7.9)
+   ======================================================== */
+.download-queue-indicator {
+  position: fixed;
+  bottom: 160px;
+  right: 24px;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.1rem;
+  background: linear-gradient(135deg, rgba(20, 8, 35, 0.95), rgba(9, 3, 18, 0.98));
+  border: 1.5px solid var(--vice-cyan, #00f0ff);
+  border-radius: 35px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 240, 255, 0.35);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: dqiPulse 2s infinite ease-in-out;
+  transition: all 0.3s ease;
+}
+
+.download-queue-indicator.hidden {
+  display: none !important;
+}
+
+@keyframes dqiPulse {
+  0%, 100% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(0, 240, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 25px rgba(0, 240, 255, 0.65);
+  }
+}
+
+.dqi-icon {
+  font-size: 1.3rem;
+  animation: dqiSpin 2s linear infinite;
+}
+
+@keyframes dqiSpin {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(180deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.dqi-info {
+  display: flex;
+  flex-direction: column;
+  max-width: 170px;
+}
+
+.dqi-title {
+  font-family: var(--font-heading, "Montserrat", sans-serif);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dqi-status {
+  font-size: 0.7rem;
+  color: var(--vice-cyan, #00f0ff);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.dqi-progress-ring {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1.5px solid var(--vice-cyan, #00f0ff);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #ffffff;
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* Responsividad en Móviles */
+@media (max-width: 768px) {
+  .batch-action-bar {
+    bottom: 84px;
+    width: 95vw;
+    padding: 0.5rem 0.8rem;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 24px;
+  }
+  .batch-bar-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .batch-bar-right {
+    width: 100%;
+    justify-content: space-around;
+  }
+  .btn-batch-action {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.75rem;
+  }
+  .btn-batch-label {
+    display: inline;
+  }
+  .download-queue-indicator {
+    bottom: 145px;
+    right: 12px;
+    padding: 0.45rem 0.8rem;
+  }
+}
+
+
 
 

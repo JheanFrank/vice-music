@@ -135,6 +135,76 @@ export function getPlaylist(username) {
   return store.playlists[cleanUser] || [];
 }
 
+export function addMultipleToPlaylist(username, tracks, position = 'end') {
+  if (!username || !Array.isArray(tracks) || tracks.length === 0) return getPlaylist(username);
+  const cleanUser = username.trim().toLowerCase();
+
+  const current = getPlaylist(cleanUser);
+  const existingKeys = new Set(current.map(t => `${t.title.toLowerCase().trim()}___${(t.artist || '').toLowerCase().trim()}`));
+  
+  const toAdd = tracks.filter(t => t && t.title && !existingKeys.has(`${t.title.toLowerCase().trim()}___${(t.artist || '').toLowerCase().trim()}`));
+  if (toAdd.length === 0) return current;
+
+  let updatedList = [];
+  if (position === 'start') {
+    updatedList = [...toAdd, ...current];
+  } else {
+    updatedList = [...current, ...toAdd];
+  }
+
+  return setPlaylist(cleanUser, updatedList);
+}
+
+export function setPlaylist(username, fullPlaylist) {
+  if (!username) return [];
+  const cleanUser = username.trim().toLowerCase();
+  const list = Array.isArray(fullPlaylist) ? fullPlaylist : [];
+
+  if (db && !useJsonStore) {
+    try {
+      db.prepare('DELETE FROM playlists WHERE lower(username) = ?').run(cleanUser);
+      const insertStmt = db.prepare(`
+        INSERT INTO playlists (username, title, artist, cover, preview, album, duration, video_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      // Insertar en orden inverso para que ORDER BY id DESC preserve la lista exactamente
+      for (let i = list.length - 1; i >= 0; i--) {
+        const t = list[i];
+        if (t && t.title) {
+          insertStmt.run(
+            cleanUser,
+            t.title,
+            t.artist || 'Desconocido',
+            t.cover || '',
+            t.preview || t.audioUrl || '',
+            t.album || '',
+            t.duration || 0,
+            t.videoId || t.video_id || ''
+          );
+        }
+      }
+      return getPlaylist(cleanUser);
+    } catch (e) {
+      console.warn('Error guardando playlist en SQLite:', e.message);
+    }
+  }
+
+  const store = loadJsonStore();
+  store.playlists[cleanUser] = list.map((t, idx) => ({
+    id: t.id || (Date.now() + idx),
+    title: t.title,
+    artist: t.artist || 'Desconocido',
+    cover: t.cover || '',
+    preview: t.preview || t.audioUrl || '',
+    album: t.album || '',
+    duration: t.duration || 0,
+    videoId: t.videoId || t.video_id || '',
+    created_at: t.created_at || new Date().toISOString()
+  }));
+  saveJsonStore(store);
+  return store.playlists[cleanUser];
+}
+
 export function addToPlaylist(username, track) {
   if (!username || !track || !track.title) throw new Error('Datos de canción incompletos');
   const cleanUser = username.trim().toLowerCase();

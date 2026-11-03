@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client, createPoTokenProvider } from '@distube/ytdl-core';
-import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist } from './db.mjs';
+import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist, addMultipleToPlaylist, setPlaylist } from './db.mjs';
 
 try {
   if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
@@ -511,7 +511,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -749,12 +749,21 @@ const server = http.createServer(async (req, res) => {
           try {
             const parsed = JSON.parse(body || '{}');
             const user = (parsed.user || '').trim();
-            const track = parsed.track;
             if (!user) throw new Error('Usuario requerido');
-            if (!track) throw new Error('Canción requerida');
-            const tracks = addToPlaylist(user, track);
+            
+            let tracks = [];
+            if (Array.isArray(parsed.tracks)) {
+              tracks = addMultipleToPlaylist(user, parsed.tracks, parsed.position || 'end');
+            } else if (Array.isArray(parsed.playlist)) {
+              tracks = setPlaylist(user, parsed.playlist);
+            } else if (parsed.track) {
+              tracks = addToPlaylist(user, parsed.track);
+            } else {
+              throw new Error('Canción o lista requerida');
+            }
+
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Canción guardada en tu playlist' }));
+            return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Playlist actualizada con éxito' }));
           } catch (e) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: false, error: e.message }));

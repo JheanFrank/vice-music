@@ -1,11 +1,12 @@
 {
   "name": "vice-music",
-  "version": "1.0.0",
+  "version": "7.9.0",
   "description": "VICE MUSIC // GTA VI Leonida Lossless Hub",
   "main": "server.mjs",
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "postinstall": "node patch_ytdl.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

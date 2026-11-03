@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=760">
+  <link rel="stylesheet" href="style.css?v=770">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.6</span>
+          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.7</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -754,6 +754,15 @@
           </div>
         </div>
 
+        <div class="login-field-group hidden" id="loginAccessCodeGroup">
+          <label for="loginAccessCode">CÓDIGO DE ACCESO</label>
+          <div class="login-input-wrap">
+            <span class="input-icon">🔑</span>
+            <input type="password" id="loginAccessCode" name="accessCode" placeholder="Ingresa el código de acceso" autocomplete="off">
+            <button type="button" id="btnToggleAccessCode" class="btn-toggle-pwd" title="Mostrar/ocultar código">👁️</button>
+          </div>
+        </div>
+
         <button type="submit" id="btnLoginSubmit" class="btn-login-submit">
           <span id="loginBtnText">INGRESAR AL SISTEMA</span>
           <div id="loginBtnSpinner" class="login-spinner hidden"></div>
@@ -770,6 +779,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=760"></script>
+  <script src="app.js?v=770"></script>
 </body>
 </html>

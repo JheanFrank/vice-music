@@ -866,7 +866,7 @@ function setupEventListeners() {
   if (btnPlayFullSong) {
     btnPlayFullSong.addEventListener('click', () => {
       if (state.currentTrack) {
-        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album);
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album, state.currentTrack.duration, state.currentTrack.preview);
       } else {
         showToast('Selecciona primero una canción para escucharla completa.');
       }
@@ -900,7 +900,7 @@ function setupEventListeners() {
   if (btnPlayFullSongMobile) {
     btnPlayFullSongMobile.addEventListener('click', () => {
       if (state.currentTrack) {
-        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album);
+        playFullSong(state.currentTrack.artist, state.currentTrack.title, state.currentTrack.cover, state.currentTrack.album, state.currentTrack.duration, state.currentTrack.preview);
       } else {
         showToast('Selecciona primero una cancion para escucharla completa.');
       }
@@ -1178,7 +1178,7 @@ function setupEventListeners() {
       closeMoreMenu();
       const t = state.contextTrack || state.currentTrack;
       if (t) {
-        playFullSong(t.artist, t.title, t.cover, t.album);
+        playFullSong(t.artist, t.title, t.cover, t.album, t.duration, t.preview);
       }
     });
   }
@@ -1548,27 +1548,39 @@ async function openAlbumDetail(albumId) {
       const deezerId = albumId.replace('deezer_', '');
       const dzData = await fetchDeezerJsonp(`/album/${deezerId}`);
       if (dzData && !dzData.error) {
+        let albumArtistName = dzData.artist ? dzData.artist.name : 'Artista';
+        if (dzData.contributors && Array.isArray(dzData.contributors) && dzData.contributors.length > 0) {
+          const names = dzData.contributors.map(c => c.name).filter(Boolean);
+          if (names.length > 0) albumArtistName = names.join(' x ');
+        }
+
         album = {
           id: `deezer_${dzData.id}`,
           deezerId: dzData.id,
           title: dzData.title || 'Álbum',
-          artist: dzData.artist ? dzData.artist.name : 'Artista',
+          artist: albumArtistName,
           coverXl: dzData.cover_xl || dzData.cover_big || dzData.cover_medium,
           releaseDate: dzData.release_date || 'Oficial',
           label: dzData.label || 'Discográfica',
           nbTracks: dzData.nb_tracks || (dzData.tracks?.data?.length || 0),
           link: dzData.link || `https://www.deezer.com/album/${dzData.id}`,
           lucidaAlbumZipUrl: `https://lucida.to/?url=${encodeURIComponent(dzData.link || `https://www.deezer.com/album/${dzData.id}`)}`,
-          tracks: (dzData.tracks?.data || []).map((t, idx) => ({
-            position: t.track_position || idx + 1,
-            id: `deezer_${t.id}`,
-            title: t.title,
-            artist: t.artist ? t.artist.name : (dzData.artist ? dzData.artist.name : 'Artista'),
-            duration: t.duration || 0,
-            preview: t.preview || null,
-            link: t.link || `https://www.deezer.com/track/${t.id}`,
-            lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
-          }))
+          tracks: (dzData.tracks?.data || []).map((t, idx) => {
+            let trackArtist = t.artist ? t.artist.name : albumArtistName;
+            if (dzData.contributors && dzData.contributors.length > 1) {
+              trackArtist = albumArtistName;
+            }
+            return {
+              position: t.track_position || idx + 1,
+              id: `deezer_${t.id}`,
+              title: t.title,
+              artist: trackArtist,
+              duration: t.duration || 0,
+              preview: t.preview || null,
+              link: t.link || `https://www.deezer.com/track/${t.id}`,
+              lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
+            };
+          })
         };
       }
     }
@@ -1691,7 +1703,7 @@ async function openAlbumDetail(albumId) {
       trackRow.querySelector('.btn-album-preview').addEventListener('click', () => {
         if (!track.preview) {
           showToast('⚠️ Muestra de 30s no disponible. Reproduciendo canción completa oficial...');
-          playFullSong(track.artist, track.title, album.coverXl, album.title);
+          playFullSong(track.artist, track.title, album.coverXl, album.title, track.duration, track.preview);
           return;
         }
         loadTrack({
@@ -1705,7 +1717,7 @@ async function openAlbumDetail(albumId) {
 
       // Escuchar Canción Completa (Audio Oficial en segundo plano)
       trackRow.querySelector('.btn-album-full').addEventListener('click', () => {
-        playFullSong(track.artist, track.title, album.coverXl, album.title);
+        playFullSong(track.artist, track.title, album.coverXl, album.title, track.duration, track.preview);
       });
 
       // Menú de 3 puntos: Descargas MP3/FLAC, añadir a cola, etc.
@@ -2072,7 +2084,7 @@ async function switchArtistTab(mode, artistName, artistId) {
         row.querySelector('.btn-rank-play').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
         row.querySelector('.btn-rank-full').addEventListener('click', (e) => {
           e.stopPropagation();
-          playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle);
+          playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle, track.duration, track.preview);
         });
         row.querySelector('.btn-track-more').addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2230,7 +2242,7 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
-      playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle);
+      playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle, track.duration, track.preview);
     });
 
     const moreBtn = card.querySelector('.btn-single-more');
@@ -2807,7 +2819,7 @@ function playNextTrack() {
     }
 
     showToast(`⏭️ Siguiente: ${nextItem.title}`);
-    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album);
+    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album, nextItem.duration, nextItem.preview);
     return;
   }
 
@@ -2825,7 +2837,7 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.currentAlbum.tracks.length) {
       const nextTrack = state.currentAlbum.tracks[curIdx + 1];
       showToast(`⏭️ Siguiente en álbum: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist || state.currentAlbum.artist, nextTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title);
+      playFullSong(nextTrack.artist || state.currentAlbum.artist, nextTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title, nextTrack.duration, nextTrack.preview);
       return;
     }
   }
@@ -2837,7 +2849,7 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.rankingTracks.length) {
       const nextTrack = state.rankingTracks[curIdx + 1];
       showToast(`⏭️ Siguiente éxito: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album);
+      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album, nextTrack.duration, nextTrack.preview);
       return;
     }
   }
@@ -2849,7 +2861,7 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.results.length) {
       const nextTrack = state.results[curIdx + 1];
       showToast(`⏭️ Siguiente canción: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle);
+      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle, nextTrack.duration, nextTrack.preview);
       return;
     }
   }
@@ -2896,7 +2908,7 @@ function playPreviousTrack() {
     const prevTrack = state.history.pop();
     if (prevTrack) {
       showToast(`⏮️ Canción anterior: ${prevTrack.title}`);
-      playFullSong(prevTrack.artist, prevTrack.title, prevTrack.cover, prevTrack.album);
+      playFullSong(prevTrack.artist, prevTrack.title, prevTrack.cover, prevTrack.album, prevTrack.duration, prevTrack.preview);
       return;
     }
   }
@@ -2934,7 +2946,7 @@ function playPreviousTrack() {
     if (curIdx > 0) {
       const prevTrack = state.currentAlbum.tracks[curIdx - 1];
       showToast(`⏮️ Pista anterior: ${prevTrack.title}`);
-      playFullSong(prevTrack.artist || state.currentAlbum.artist, prevTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title);
+      playFullSong(prevTrack.artist || state.currentAlbum.artist, prevTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title, prevTrack.duration, prevTrack.preview);
       return;
     }
   }
@@ -2946,7 +2958,7 @@ function playPreviousTrack() {
     if (curIdx > 0) {
       const prevTrack = state.rankingTracks[curIdx - 1];
       showToast(`⏮️ Éxito anterior: ${prevTrack.title}`);
-      playFullSong(prevTrack.artist, prevTrack.title, prevTrack.coverXl || prevTrack.cover, prevTrack.album);
+      playFullSong(prevTrack.artist, prevTrack.title, prevTrack.coverXl || prevTrack.cover, prevTrack.album, prevTrack.duration, prevTrack.preview);
       return;
     }
   }
@@ -3435,7 +3447,7 @@ function renderQueueItems() {
       const i = parseInt(btn.getAttribute('data-index'), 10);
       const track = state.queue.splice(i, 1)[0];
       closeQueueModal();
-      playFullSong(track.artist, track.title, track.cover, track.album);
+      playFullSong(track.artist, track.title, track.cover, track.album, track.duration, track.preview);
       updateQueueBadge();
     });
   });
@@ -4427,7 +4439,7 @@ function setupPlaylistControls() {
       if (!state.userPlaylist || state.userPlaylist.length === 0) return;
       const activeTrack = state.userPlaylist[state.activeCoverflowIndex];
       if (activeTrack) {
-        playFullSong(activeTrack.artist, activeTrack.title, activeTrack.cover, activeTrack.album);
+        playFullSong(activeTrack.artist, activeTrack.title, activeTrack.cover, activeTrack.album, activeTrack.duration, activeTrack.preview);
       }
     });
   }
@@ -4800,7 +4812,7 @@ function playPlaylistTrack(track) {
   renderPlaylistTracklist();
 
   // En la playlist SIEMPRE reproducir la canción 100% completa oficial
-  playFullSong(track.artist, track.title, track.cover, track.album);
+  playFullSong(track.artist, track.title, track.cover, track.album, track.duration, track.preview);
 }
 
 async function addToUserPlaylist(track) {

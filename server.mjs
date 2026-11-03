@@ -85,7 +85,21 @@ async function resolveFullAudio(artist, title, durationParam = 0) {
   const cleanTitle = (title || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
   const isRemixRequest = /remix|rmx/i.test(`${title} ${artist}`);
   
-  const artistKeywords = cleanArtist.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+  // Extraer lista de artistas (admite 'x', '&', 'ft.', 'feat.', ',')
+  const artistNames = cleanArtist
+    .split(/\s*(?:x|&|ft\.?|feat\.?|,)\s*/i)
+    .map(a => a.trim())
+    .filter(a => a.length >= 2);
+
+  // Palabras clave obligatorias del título
+  const rawTitleWords = cleanTitle.toLowerCase()
+    .replace(/[^\w\sáéíóúüñ]/gi, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2);
+
+  const stopWords = new Set(['con', 'del', 'las', 'los', 'por', 'que', 'una', 'uno', 'the', 'and', 'for', 'feat', 'ft']);
+  const titleKeywords = rawTitleWords.filter(w => !stopWords.has(w));
+  const effectiveTitleWords = titleKeywords.length > 0 ? titleKeywords : rawTitleWords;
   
   // 1° Búsqueda: Audio Oficial
   let rawCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} audio oficial`);
@@ -120,17 +134,37 @@ async function resolveFullAudio(artist, title, durationParam = 0) {
     if (t.includes('parodia') || t.includes('karaoke') || t.includes('reacción') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return -999;
     if (BAD_CHANNELS.some(b => ch.includes(b))) return -999;
 
-    // 1. Requisito Estricto de Artista Primario (Evita canciones de otros artistas)
-    const hasArtist = artistKeywords.some(w => combined.includes(w));
-    if (!hasArtist) {
-      s -= 300;
-    } else {
-      s += 60;
+    // 1. REQUISITO ESTRICTO DE TÍTULO (OBLIGATORIO)
+    // El video DEBE coincidir con las palabras del título. Si es otra canción (ej: "No Digas"), se descarta de raíz (-1000).
+    const titleHits = effectiveTitleWords.filter(w => t.includes(w)).length;
+    const minRequiredTitleHits = effectiveTitleWords.length <= 2 ? 1 : Math.ceil(effectiveTitleWords.length * 0.5);
+    if (titleHits < minRequiredTitleHits) {
+      return -1000;
+    }
+    s += Math.round((titleHits / effectiveTitleWords.length) * 120);
+
+    // 2. REQUISITO DE ARTISTAS
+    let matchedArtistsCount = 0;
+    for (const aName of artistNames) {
+      const aWords = aName.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
+      if (aWords.some(w => combined.includes(w))) {
+        matchedArtistsCount++;
+      }
+    }
+
+    if (artistNames.length > 0) {
+      if (matchedArtistsCount === 0) {
+        s -= 300; // Penalización si no figura ningún artista
+      } else if (matchedArtistsCount === artistNames.length) {
+        s += 90; // Máxima bonificación si figuran TODOS los artistas (ej: Jory Boy Y Bad Bunny)
+      } else {
+        s += 40;
+      }
     }
     
-    // 2. Requisito Estricto de Remix vs Versión Original
+    // 3. Requisito Estricto de Remix vs Versión Original
     const isCandidateRemix = /remix|rmx/i.test(t);
-    const isOfficialArtistChannel = artistKeywords.length > 0 && ch.includes(artistKeywords[0]);
+    const isOfficialArtistChannel = artistNames.some(aName => ch.includes(aName.toLowerCase()));
 
     if (isRemixRequest) {
       if (isCandidateRemix || combined.includes('remix') || combined.includes('rmx') || isOfficialArtistChannel) {
@@ -140,21 +174,21 @@ async function resolveFullAudio(artist, title, durationParam = 0) {
       }
     } else {
       if (isCandidateRemix && !title.toLowerCase().includes('remix')) {
-        s -= 80;
+        s -= 120; // Si no era remix, evitar versiones remix
       }
     }
     
-    // 3. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
+    // 4. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
     if (durationParam > 30 && c.durSec > 0) {
       const diff = Math.abs(c.durSec - durationParam);
-      if (diff <= 3) s += 150;
-      else if (diff <= 6) s += 100;
-      else if (diff <= 12) s += 50;
-      else if (diff <= 20) s += 15;
-      else if (diff > 40) s -= 150; // Descartar intros o videos musicales excesivamente largos
+      if (diff <= 3) s += 160;
+      else if (diff <= 6) s += 110;
+      else if (diff <= 12) s += 60;
+      else if (diff <= 20) s += 20;
+      else if (diff > 35) s -= 150; // Descartar intros o videos musicales excesivamente largos
     }
     
-    // 4. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
+    // 5. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
     if (/cancion oficial|canción oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
       s += 70;
     } else if (/lyric|letra|lyrics/i.test(t)) {
@@ -163,7 +197,7 @@ async function resolveFullAudio(artist, title, durationParam = 0) {
       s += 20;
     }
     
-    if (c.isTopic && hasArtist) s += 25;
+    if (c.isTopic && matchedArtistsCount > 0) s += 25;
     if (c.isVerified) s += 30;
     if (isOfficialArtistChannel) s += 40;
     
@@ -557,24 +591,40 @@ async function getAlbumTracksDeezer(deezerAlbumId) {
   const album = await fetchDeezer(`/album/${deezerAlbumId}`);
   if (!album || album.error) return null;
 
+  // Extraer todos los artistas colaboradores oficiales del álbum (ej: Jory Boy x Bad Bunny)
+  let albumArtistName = album.artist ? album.artist.name : 'Artista';
+  if (album.contributors && Array.isArray(album.contributors) && album.contributors.length > 0) {
+    const mainContributors = album.contributors.map(c => c.name).filter(Boolean);
+    if (mainContributors.length > 0) {
+      albumArtistName = mainContributors.join(' x ');
+    }
+  }
+
   const tracks = (album.tracks && Array.isArray(album.tracks.data))
-    ? album.tracks.data.map((t, idx) => ({
-        position: t.track_position || idx + 1,
-        id: `deezer_${t.id}`,
-        title: t.title,
-        artist: t.artist ? t.artist.name : (album.artist ? album.artist.name : 'Artista'),
-        duration: t.duration || 0,
-        preview: t.preview || null,
-        link: t.link || `https://www.deezer.com/track/${t.id}`,
-        lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
-      }))
+    ? album.tracks.data.map((t, idx) => {
+        let trackArtist = t.artist ? t.artist.name : albumArtistName;
+        if (album.contributors && album.contributors.length > 1) {
+          trackArtist = albumArtistName;
+        }
+
+        return {
+          position: t.track_position || idx + 1,
+          id: `deezer_${t.id}`,
+          title: t.title,
+          artist: trackArtist,
+          duration: t.duration || 0,
+          preview: t.preview || null,
+          link: t.link || `https://www.deezer.com/track/${t.id}`,
+          lucidaUrl: `https://lucida.to/?url=${encodeURIComponent(t.link || `https://www.deezer.com/track/${t.id}`)}`
+        };
+      })
     : [];
 
   return {
     id: `deezer_${deezerAlbumId}`,
     deezerId: deezerAlbumId,
     title: album.title || 'Álbum',
-    artist: album.artist ? album.artist.name : 'Artista',
+    artist: albumArtistName,
     coverXl: album.cover_xl || album.cover_big || album.cover_medium,
     releaseDate: album.release_date || 'N/A',
     label: album.label || 'Discográfica',
@@ -708,7 +758,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '7.9.2', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '7.9.3', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1171,6 +1221,21 @@ const server = http.createServer(async (req, res) => {
         searchTracksDeezer(q),
         searchTracksItunes(q)
       ]);
+
+      // Enriquecer créditos de artistas: si iTunes contiene colaboraciones completas (ej: Jory Boy & Bad Bunny), usarlas
+      const itunesMap = new Map();
+      for (const it of itunesTracks) {
+        const normT = (it.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        if (!itunesMap.has(normT)) itunesMap.set(normT, it);
+      }
+
+      for (const dt of deezerTracks) {
+        const normT = (dt.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        const it = itunesMap.get(normT);
+        if (it && it.artist && (it.artist.includes('&') || it.artist.includes('x') || it.artist.includes('feat') || it.artist.includes(','))) {
+          dt.artist = it.artist;
+        }
+      }
 
       const seen = new Set();
       const combinedTracks = [];

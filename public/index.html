@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=770">
+  <link rel="stylesheet" href="style.css?v=780">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -35,7 +35,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.7</span>
+          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v7.8</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -242,6 +242,23 @@
             </div>
             <p>Sincronizando los 10 éxitos más sonados en Colombia...</p>
           </div>
+        </div>
+      </div>
+
+      <!-- Artistas Más Escuchados a Nivel Mundial & Colombia (Estilo Spotify / Apple Music) -->
+      <div class="home-trending-artists">
+        <div class="trending-header">
+          <div>
+            <div class="home-hero-badge" style="margin-bottom: 0.5rem;">
+              <span class="pulse-pink"></span>
+              <span>TOP CHARTS EN VIVO 🌍</span>
+            </div>
+            <h3 class="trending-title">👑 ARTISTAS MÁS ESCUCHADOS DEL MOMENTO</h3>
+            <p class="trending-sub">Top artistas globales y tendencias de Colombia actualizadas en tiempo real. Clic para ver perfil y discografía completa.</p>
+          </div>
+        </div>
+        <div id="homeArtistsGrid" class="artists-bubbles-grid">
+          <!-- Render dinámico -->
         </div>
       </div>
 
@@ -779,6 +796,6 @@
 
   <audio id="audioElement" preload="none"></audio>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=770"></script>
+  <script src="app.js?v=780"></script>
 </body>
 </html>

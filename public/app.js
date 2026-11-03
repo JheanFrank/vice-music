@@ -334,6 +334,7 @@ function openLoginModal(subtitle = null, onLoginSuccess = null) {
   const alertEl = document.getElementById('loginAlert');
   const userInput = document.getElementById('loginUsername');
   const pwdInput = document.getElementById('loginPassword');
+  const accessCodeInput = document.getElementById('loginAccessCode');
 
   if (alertEl) {
     alertEl.classList.add('hidden');
@@ -347,6 +348,7 @@ function openLoginModal(subtitle = null, onLoginSuccess = null) {
 
   if (userInput) userInput.value = '';
   if (pwdInput) pwdInput.value = '';
+  if (accessCodeInput) accessCodeInput.value = '';
 
   if (modal) {
     modal.classList.remove('hidden');
@@ -365,6 +367,7 @@ async function handleLoginSubmit(e) {
   if (e) e.preventDefault();
   const userInput = document.getElementById('loginUsername');
   const pwdInput = document.getElementById('loginPassword');
+  const accessCodeInput = document.getElementById('loginAccessCode');
   const alertEl = document.getElementById('loginAlert');
   const btnSubmit = document.getElementById('btnLoginSubmit');
   const btnText = document.getElementById('loginBtnText');
@@ -372,10 +375,20 @@ async function handleLoginSubmit(e) {
 
   const username = (userInput ? userInput.value : '').trim();
   const password = (pwdInput ? pwdInput.value : '').trim();
+  const accessCode = (accessCodeInput ? accessCodeInput.value : '').trim();
+  const isReg = state.authMode === 'register';
 
   if (!username || !password) {
     if (alertEl) {
       alertEl.textContent = 'Por favor ingresa usuario y contraseña.';
+      alertEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (isReg && !accessCode) {
+    if (alertEl) {
+      alertEl.textContent = 'Por favor ingresa el código de acceso para registrarte.';
       alertEl.classList.remove('hidden');
     }
     return;
@@ -387,14 +400,14 @@ async function handleLoginSubmit(e) {
   if (alertEl) alertEl.classList.add('hidden');
 
   try {
-    const isReg = state.authMode === 'register';
     const targetEndpoint = isReg ? '/api/register' : '/api/login';
     let data = null;
     try {
+      const payload = isReg ? { username, password, accessCode } : { username, password };
       const res = await fetch(targetEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify(payload)
       });
       data = await res.json();
     } catch (netErr) {
@@ -418,9 +431,7 @@ async function handleLoginSubmit(e) {
       closeLoginModal();
       showToast(isReg ? `🎉 ¡Cuenta creada con éxito! Bienvenido, VIP ${session.user}.` : `👑 ¡Sesión iniciada con éxito! Bienvenido, VIP ${session.user}.`);
 
-      if (state.currentMode === 'playlist') {
-        loadUserPlaylist();
-      }
+      loadUserPlaylist();
 
       if (pendingPostAuthAction) {
         const action = pendingPostAuthAction;
@@ -452,6 +463,7 @@ async function handleLoginSubmit(e) {
 function handleLogout() {
   localStorage.removeItem(AUTH_STORAGE_KEY);
   updateAuthUI();
+  loadUserPlaylist();
   showToast('🔒 Sesión cerrada. Se requerirá login para descargar.');
 }
 
@@ -680,6 +692,21 @@ function setupEventListeners() {
       } else {
         pwdInput.type = 'password';
         btnTogglePassword.textContent = '👁️';
+      }
+    });
+  }
+
+  const btnToggleAccessCode = document.getElementById('btnToggleAccessCode');
+  if (btnToggleAccessCode) {
+    btnToggleAccessCode.addEventListener('click', () => {
+      const codeInput = document.getElementById('loginAccessCode');
+      if (!codeInput) return;
+      if (codeInput.type === 'password') {
+        codeInput.type = 'text';
+        btnToggleAccessCode.textContent = '🙈';
+      } else {
+        codeInput.type = 'password';
+        btnToggleAccessCode.textContent = '👁️';
       }
     });
   }
@@ -2060,7 +2087,7 @@ async function playFullSong(artist, title, cover = null, album = null) {
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
   try {
-    const res = await fetch('/api/fullaudio?q=' + encodeURIComponent(artist + ' ' + title));
+    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}`);
     const data = await res.json();
 
     if (data.videoId) {
@@ -2077,7 +2104,8 @@ async function playFullSong(artist, title, cover = null, album = null) {
           setPlayingState(true);
           startYtProgress();
           updateMediaSession(trackObj);
-          showToast('🎧 Reproduciendo canción completa oficial: ' + title);
+          const tierTag = data.tier === 'audio_oficial' ? ' (Audio Oficial)' : (data.tier === 'letra_lyrics' ? ' (Video con Letra)' : '');
+          showToast(`🎧 Reproduciendo: ${title}${tierTag}`);
           return true;
         }
         return false;
@@ -3721,6 +3749,8 @@ function toggleAuthMode() {
   const btnText = document.getElementById('loginBtnText');
   const toggleBtn = document.getElementById('btnToggleAuthMode');
   const alertEl = document.getElementById('loginAlert');
+  const accessCodeGroup = document.getElementById('loginAccessCodeGroup');
+  const accessCodeInput = document.getElementById('loginAccessCode');
   if (alertEl) alertEl.classList.add('hidden');
 
   if (state.authMode === 'register') {
@@ -3728,11 +3758,21 @@ function toggleAuthMode() {
     if (modalSubtitle) modalSubtitle.textContent = 'Crea tu usuario para sincronizar tu Playlist 3D y disfrutar descargas a 320 kbps.';
     if (btnText) btnText.textContent = 'REGISTRARME GRATIS';
     if (toggleBtn) toggleBtn.innerHTML = '¿Ya tienes cuenta? <strong style="color: var(--vice-cyan);">Inicia sesión aquí</strong>';
+    if (accessCodeGroup) accessCodeGroup.classList.remove('hidden');
+    if (accessCodeInput) {
+      accessCodeInput.required = true;
+      accessCodeInput.value = '';
+    }
   } else {
     if (modalTitle) modalTitle.innerHTML = '👑 ACCESO VIP VICE MUSIC 👑';
     if (modalSubtitle) modalSubtitle.textContent = 'Accede con tu cuenta VIP para descargar MP3 a 320 kbps y discografías completas.';
     if (btnText) btnText.textContent = 'INGRESAR AL SISTEMA';
     if (toggleBtn) toggleBtn.innerHTML = '¿No tienes cuenta? <strong style="color: var(--vice-cyan);">Regístrate gratis aquí</strong>';
+    if (accessCodeGroup) accessCodeGroup.classList.add('hidden');
+    if (accessCodeInput) {
+      accessCodeInput.required = false;
+      accessCodeInput.value = '';
+    }
   }
 }
 
@@ -3963,6 +4003,15 @@ function updateDockPlayState(isPlaying) {
   }
 }
 
+function updatePlaylistBadge() {
+  const badge = document.getElementById('playlistBadgeCount');
+  if (badge) {
+    const count = (state.userPlaylist || []).length;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline-flex' : 'none';
+  }
+}
+
 async function loadUserPlaylist() {
   const user = getAuthUser();
   const username = user ? user.user : 'guest';
@@ -3979,16 +4028,32 @@ async function loadUserPlaylist() {
   try {
     const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}`);
     const data = await res.json();
-    if (data && data.success && Array.isArray(data.playlist)) {
-      state.userPlaylist = data.playlist;
+    const serverTracks = (data && data.success && (data.tracks || data.playlist)) ? (data.tracks || data.playlist) : null;
+    if (Array.isArray(serverTracks) && serverTracks.length > 0) {
+      state.userPlaylist = serverTracks;
+      try {
+        localStorage.setItem(`vice_playlist_${username}`, JSON.stringify(state.userPlaylist));
+      } catch (_) {}
     } else {
       const saved = localStorage.getItem(`vice_playlist_${username}`);
-      state.userPlaylist = saved ? JSON.parse(saved) : [];
+      const localTracks = saved ? JSON.parse(saved) : [];
+      state.userPlaylist = localTracks;
+      if (localTracks.length > 0 && username !== 'guest') {
+        localTracks.forEach(t => {
+          fetch('/api/playlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: username, track: t })
+          }).catch(() => {});
+        });
+      }
     }
   } catch (err) {
     const saved = localStorage.getItem(`vice_playlist_${username}`);
     state.userPlaylist = saved ? JSON.parse(saved) : [];
   }
+
+  updatePlaylistBadge();
 
   if (state.activeCoverflowIndex >= state.userPlaylist.length) {
     state.activeCoverflowIndex = Math.max(0, state.userPlaylist.length - 1);
@@ -4283,6 +4348,7 @@ async function addToUserPlaylist(track) {
   } catch (e) {}
 
   state.activeCoverflowIndex = 0;
+  updatePlaylistBadge();
   renderCoverflow();
   renderPlaylistTracklist();
   showToast(`💖 ¡"${playlistItem.title}" añadida a tu Playlist 3D!`);
@@ -4315,7 +4381,7 @@ async function removeFromUserPlaylist(trackOrId) {
     await fetch('/api/playlist', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: username, id: removedTrack.id, title: removedTrack.title })
+      body: JSON.stringify({ user: username, id: removedTrack.id, title: removedTrack.title, artist: removedTrack.artist })
     });
   } catch (err) {
     console.warn('Error eliminando del servidor:', err);
@@ -4325,6 +4391,7 @@ async function removeFromUserPlaylist(trackOrId) {
     localStorage.setItem(`vice_playlist_${username}`, JSON.stringify(state.userPlaylist));
   } catch (e) {}
 
+  updatePlaylistBadge();
   renderCoverflow();
   renderPlaylistTracklist();
   showToast(`🗑️ "${removedTrack.title}" eliminada de tu playlist.`);

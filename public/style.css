@@ -2503,6 +2503,118 @@ body {
   color: var(--text-dim);
 }
 
+/* Sección Trending Artistas Top Mundiales & Colombia */
+.home-trending-artists {
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+.artists-bubbles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 1.25rem;
+  padding: 0.5rem 0;
+}
+
+.artist-bubble-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: rgba(26, 9, 51, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  backdrop-filter: blur(10px);
+}
+
+.artist-bubble-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--vice-cyan);
+  box-shadow: 0 10px 25px rgba(0, 240, 255, 0.25);
+  background: rgba(36, 12, 70, 0.7);
+}
+
+.artist-bubble-avatar-wrap {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  position: relative;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+.artist-bubble-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(0, 240, 255, 0.5);
+  transition: transform 0.3s ease;
+}
+
+.artist-bubble-card:hover .artist-bubble-avatar {
+  border-color: var(--vice-pink);
+  transform: scale(1.05);
+}
+
+.artist-bubble-rank {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: linear-gradient(135deg, var(--vice-pink), var(--vice-cyan));
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 10px;
+  border: 1px solid #1a0933;
+}
+
+.artist-bubble-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.2rem;
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist-bubble-sub {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-card-album-link {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(14, 5, 27, 0.85);
+  border: 1px solid var(--vice-cyan);
+  color: var(--vice-cyan);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  z-index: 5;
+  transition: all 0.2s ease;
+}
+
+.btn-card-album-link:hover {
+  background: var(--vice-cyan);
+  color: #000;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+  transform: scale(1.05);
+}
+
 @media (max-width: 900px) {
   .ranking-header {
     grid-template-columns: 40px 1.6fr 70px 140px;

@@ -1192,29 +1192,42 @@ function setupEventListeners() {
       const t = state.contextTrack || state.currentTrack;
       if (!t) return;
 
-      const targetAlbumId = t.albumId || (state.currentAlbum ? state.currentAlbum.id : null);
-      if (targetAlbumId) {
-        openAlbumDetail(targetAlbumId);
+      // 1. Si la pista ya tiene albumId directo
+      if (t.albumId && t.albumId !== 'null' && t.albumId !== 'undefined') {
+        openAlbumDetail(t.albumId);
         return;
       }
 
-      // Si no tiene albumId directo pero tenemos el nombre del álbum y artista, buscarlo dinámicamente
-      if (t.album && t.album !== 'Álbum Desconocido' && t.album !== 'Álbum Oficial') {
-        showToast(`🔍 Abriendo álbum "${t.album}"...`);
+      const primaryArtist = cleanArtistName((t.artist || '').split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0]);
+      const cleanTitle = (t.title || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+      const cleanAlbum = (t.album && !/^(?:Álbum|Album|Álbum Desconocido|Álbum Oficial)$/i.test(t.album.trim())) ? t.album.trim() : '';
+
+      showToast(`🔍 Localizando álbum oficial...`);
+
+      // 2. Intentar buscar por canción para obtener el ID de su álbum oficial
+      try {
+        const trkSearch = await fetchDeezerJsonp(`/search?q=${encodeURIComponent(primaryArtist + ' ' + cleanTitle)}&limit=1`);
+        if (trkSearch && trkSearch.data && trkSearch.data.length > 0 && trkSearch.data[0].album && trkSearch.data[0].album.id) {
+          openAlbumDetail(`deezer_${trkSearch.data[0].album.id}`);
+          return;
+        }
+      } catch (_) {}
+
+      // 3. Si tiene nombre de álbum, buscarlo en Deezer
+      if (cleanAlbum) {
         try {
-          const q = `${t.artist} ${t.album}`;
-          const searchRes = await fetchDeezerJsonp(`/search/album?q=${encodeURIComponent(q)}&limit=1`);
-          if (searchRes && searchRes.data && searchRes.data.length > 0) {
-            openAlbumDetail(`deezer_${searchRes.data[0].id}`);
+          const albSearch = await fetchDeezerJsonp(`/search/album?q=${encodeURIComponent(primaryArtist + ' ' + cleanAlbum)}&limit=1`);
+          if (albSearch && albSearch.data && albSearch.data.length > 0 && albSearch.data[0].id) {
+            openAlbumDetail(`deezer_${albSearch.data[0].id}`);
             return;
           }
         } catch (_) {}
       }
 
-      // Si no hay álbum separado o falló, ir al perfil del artista para ver su discografía completa
-      if (t.artist) {
-        showToast(`📀 Abriendo discografía de ${t.artist}...`);
-        openArtistProfile(t.artist);
+      // 4. Si no hay álbum separado o falló, ir al perfil del artista para ver su discografía completa
+      if (primaryArtist || t.artist) {
+        showToast(`📀 Abriendo discografía de ${primaryArtist || t.artist}...`);
+        openArtistProfile(primaryArtist || t.artist);
       } else {
         showToast(`📀 No se encontró el álbum de esta canción`);
       }
@@ -1686,8 +1699,34 @@ async function openAlbumDetail(albumId) {
 
     // Si no fue de Deezer o falló, consultar al backend
     if (!album) {
-      const res = await fetch(`/api/album/${albumId}`);
-      album = await res.json();
+      try {
+        const res = await fetch(`/api/album/${albumId}`);
+        album = await res.json();
+      } catch (_) {}
+    }
+
+    if (!album || album.error || !album.tracks || !Array.isArray(album.tracks) || album.tracks.length === 0) {
+      albumHeroContent.innerHTML = `
+        <div style="text-align: center; width: 100%; padding: 3rem 1rem;">
+          <h3 style="color: var(--vice-pink); font-family: var(--font-display); margin-bottom: 0.8rem;">ÁLBUM O SENCILLO INDIVIDUAL</h3>
+          <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1.5rem;">Esta pista forma parte de un lanzamiento individual o su discografía está disponible en el perfil del artista.</p>
+          <button class="vice-btn-primary" id="btnAlbumFallbackArtist" style="margin: 0 auto; display: inline-flex;">
+            💿 EXPLORAR DISCOGRAFÍA DEL ARTISTA
+          </button>
+        </div>
+      `;
+      const btnFallback = document.getElementById('btnAlbumFallbackArtist');
+      if (btnFallback) {
+        btnFallback.addEventListener('click', () => {
+          const t = state.contextTrack || state.currentTrack;
+          if (t && t.artist) {
+            openArtistProfile(t.artist);
+          } else {
+            switchViewMode('albums');
+          }
+        });
+      }
+      return;
     }
 
     state.currentAlbum = album;
@@ -2002,6 +2041,13 @@ function parseDurationSec(raw) {
   return parseInt(str, 10) || 0;
 }
 
+function cleanArtistName(raw) {
+  let name = (raw || '').replace(/^[\(\[\{\s\.,:;\-–—]+|[\)\]\}\s\.,:;\-–—]+$/g, '').trim();
+  name = name.replace(/^(?:ft\.?|feat\.?|con|y|and|&|x)\s+/i, '').trim();
+  name = name.replace(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)$/i, '').trim();
+  return name.replace(/^[\(\[\{\s\.,:;\-–—]+|[\)\]\}\s\.,:;\-–—]+$/g, '').trim();
+}
+
 function getFullArtistCredits(artist, title) {
   let fullArtist = (artist || '').trim();
   if (!title) return fullArtist;
@@ -2009,16 +2055,21 @@ function getFullArtistCredits(artist, title) {
   const featMatch = title.match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
   if (featMatch && featMatch[1]) {
     const existingTokens = fullArtist
-      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
-      .map(t => normalizeStr(t))
+      .split(/\s*(?:&|&amp;|,|\/|\\|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => normalizeStr(cleanArtistName(t)))
       .filter(Boolean);
 
     const featTokens = featMatch[1]
-      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
-      .map(t => t.trim())
+      .split(/\s*(?:&|&amp;|,|\/|\\|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => cleanArtistName(t))
       .filter(Boolean);
 
-    const newArtists = featTokens.filter(fa => !existingTokens.includes(normalizeStr(fa)));
+    const newArtists = featTokens.filter(fa => {
+      const normFa = normalizeStr(fa);
+      if (!normFa || normFa.length < 2) return false;
+      return !existingTokens.some(ex => ex === normFa || ex.includes(normFa) || normFa.includes(ex));
+    });
+
     if (newArtists.length > 0) {
       fullArtist = `${fullArtist} ft. ${newArtists.join(', ')}`;
     }
@@ -2028,13 +2079,13 @@ function getFullArtistCredits(artist, title) {
 
 function formatArtistPills(artistString) {
   if (!artistString) return '';
-  const rawParts = artistString.split(/\s*(?:&|&amp;|,|[xX]|\bft\.?|\bfeat\.?|\bcon)\s+/i);
+  const rawParts = artistString.split(/\s*(?:&amp;|&|,|\/|\\|[xX]|\bft\.?|\bfeat\.?|\bcon\b)\s*/i);
   const seen = new Set();
   const validPills = [];
 
   for (let i = 0; i < rawParts.length; i++) {
-    const name = rawParts[i].replace(/^[\(\[\s]+|[\)\]\s]+$/g, '').trim();
-    if (!name || /^(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)$/i.test(name)) continue;
+    const name = cleanArtistName(rawParts[i]);
+    if (!name || name.length < 2 || /^(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con|y|and)$/i.test(name)) continue;
     const norm = normalizeStr(name);
     if (!seen.has(norm)) {
       seen.add(norm);
@@ -2773,31 +2824,25 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
-
-  // EN MÓVILES: Si la canción ya fue pre-resuelta, iniciar de inmediato sin esperar el fetch para mantener la sesión de audio activa
-  if (isMobileDevice && trackObj.videoId) {
+  // 1. REPRODUCCIÓN INSTANTÁNEA (0ms latency, cero delay, cero reinicios de barra ni letras)
+  // Si la pista ya tiene videoId pre-resuelto (ej: Playlist 3D o en caché)
+  if (trackObj.videoId) {
     state.playbackSource = 'full_stream';
     state.audio.loop = false;
     state.audio.volume = 1;
-    state.audio.src = `/api/stream-live?v=${trackObj.videoId}`;
+    const targetSrc = `/api/stream-live?v=${trackObj.videoId}`;
+    if (!state.audio.src.includes(trackObj.videoId)) {
+      state.audio.src = targetSrc;
+    }
     state.audio.playbackRate = state.currentSpeed;
     state.audio.play().then(() => {
       setPlayingState(true);
       updateMediaSession(trackObj);
       setTimeout(prefetchNextTrack, 2500);
-    }).catch(() => {});
-  } else if (isMobileDevice && trackObj.preview) {
-    // Si no tenemos videoId aún, iniciar preview síncronamente para que el hardware de audio no se suspenda
-    state.playbackSource = 'preview';
-    state.audio.loop = false;
-    state.audio.volume = 1;
-    state.audio.src = trackObj.preview;
-    state.audio.playbackRate = state.currentSpeed;
-    state.audio.play().then(() => {
-      setPlayingState(true);
-      updateMediaSession(trackObj);
-    }).catch(() => {});
+    }).catch(err => {
+      console.warn('[Native Audio Play error]', err);
+    });
+    return; // IMPRESCINDIBLE: Salir aquí. No hacer fetch ni reiniciar la barra de reproducción
   }
 
   try {
@@ -2823,85 +2868,36 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     if (data.videoId) {
       state.currentTrack.videoId = data.videoId;
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
-      initYtPlayer();
 
-      const tryPlay = () => {
+      // Reproducción nativa continua de audio master en alta calidad (0 rebotes de tiempo, 0 parpadeos)
+      const liveSrc = `/api/stream-live?v=${data.videoId}`;
+      state.playbackSource = 'full_stream';
+      state.audio.loop = false;
+      state.audio.volume = 1;
+      if (!state.audio.src.includes(data.videoId)) {
+        state.audio.src = liveSrc;
+      }
+      state.audio.playbackRate = state.currentSpeed;
+      state.audio.play().then(() => {
+        setPlayingState(true);
+        updateMediaSession(trackObj);
+        showToast(`🎧 Reproduciendo: ${title}`);
+        setTimeout(prefetchNextTrack, 2500);
+      }).catch(err => {
+        console.warn('[Native Audio fallback to YouTube]', err);
+        state.playbackSource = 'full';
+        initYtPlayer();
         if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
           ytPlayer.loadVideoById(data.videoId);
           ytPlayer.playVideo();
-          if (typeof ytPlayer.setPlaybackRate === 'function') {
-            ytPlayer.setPlaybackRate(state.currentSpeed);
-          }
           setPlayingState(true);
-          updateMediaSession(trackObj);
-          const tierTag = data.tier === 'audio_oficial' ? ' (Audio Oficial)' : (data.tier === 'letra_lyrics' ? ' (Video con Letra)' : '');
-          showToast(`🎧 Reproduciendo: ${title}${tierTag}`);
-          setTimeout(prefetchNextTrack, 2500);
-          return true;
         }
-        return false;
-      };
-
-      if (isMobileDevice) {
-        // EN MÓVILES (CHROME, BRAVE, SAFARI): REPRODUCCIÓN NATIVA CON SEGUNDO PLANO Y PANTALLA APAGADA
-        const liveSrc = `/api/stream-live?v=${data.videoId}`;
-        if (!state.audio.src.includes(data.videoId)) {
-          state.playbackSource = 'full_stream';
-          state.audio.loop = false;
-          state.audio.volume = 1;
-          state.audio.src = liveSrc;
-          state.audio.playbackRate = state.currentSpeed;
-          state.audio.play().then(() => {
-            setPlayingState(true);
-            updateMediaSession(trackObj);
-            showToast(`🎧 Reproduciendo: ${title}`);
-            setTimeout(prefetchNextTrack, 2500);
-          }).catch(err => {
-            console.warn('[Mobile Native Audio] Reintentando vía YouTube:', err);
-            state.playbackSource = 'full';
-            tryPlay();
-          });
-        } else {
-          setTimeout(prefetchNextTrack, 2500);
-        }
-        return;
-      }
-
-      state.playbackSource = 'full';
-      if (!tryPlay()) {
-        ytPendingVideoId = data.videoId;
-        showToast('⏳ Sintonizando reproductor...');
-        let retries = 0;
-        const interval = setInterval(() => {
-          retries++;
-          if (tryPlay() || retries > 12) {
-            clearInterval(interval);
-          }
-        }, 350);
-      }
-
-      // Watchdog de tolerancia: Si tras 7s no ha iniciado ni está cargando, rota a video alternativo
-      if (window.ytWatchdogTimer) clearTimeout(window.ytWatchdogTimer);
-      window.ytWatchdogTimer = setTimeout(() => {
-        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
-        const curState = ytPlayer.getPlayerState();
-        // Si está reproduciendo (1) o cargando/buffering (3), dejar que continúe
-        if (curState === 1 || curState === 3) return;
-
-        if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
-          const nextVid = state.currentTrack.alternativeVideoIds.shift();
-          state.currentTrack.videoId = nextVid;
-          console.warn('[Watchdog] Sintonizando stream alternativo:', nextVid);
-          showToast('🔄 Sintonizando stream oficial alternativo...');
-          try {
-            ytPlayer.loadVideoById(nextVid);
-            ytPlayer.playVideo();
-          } catch (_) {}
-        }
-      }, 7000);
+      });
+      return;
     } else {
       const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || (state.currentTrack && state.currentTrack.audioUrl);
       if (fallbackUrl) {
+        state.playbackSource = 'preview';
         state.audio.src = fallbackUrl;
         state.audio.playbackRate = state.currentSpeed;
         state.audio.play().then(() => {

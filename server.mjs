@@ -35,6 +35,13 @@ function normalizeStr(str) {
 
 const ARTIST_STOP_WORDS = new Set(['de', 'la', 'el', 'los', 'las', 'del', 'san', 'y', 'e', 'en', 'con', 'por', 'the', 'and', 'of', 'ft', 'feat']);
 
+function cleanArtistName(raw) {
+  let name = (raw || '').replace(/^[\(\[\{\s\.,:;\-–—]+|[\)\]\}\s\.,:;\-–—]+$/g, '').trim();
+  name = name.replace(/^(?:ft\.?|feat\.?|con|y|and|&|x)\s+/i, '').trim();
+  name = name.replace(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)$/i, '').trim();
+  return name.replace(/^[\(\[\{\s\.,:;\-–—]+|[\)\]\}\s\.,:;\-–—]+$/g, '').trim();
+}
+
 function getFullArtistCredits(artist, title) {
   let fullArtist = (artist || '').trim();
   if (!title) return fullArtist;
@@ -42,16 +49,21 @@ function getFullArtistCredits(artist, title) {
   const featMatch = title.match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
   if (featMatch && featMatch[1]) {
     const existingTokens = fullArtist
-      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
-      .map(t => normalizeStr(t))
+      .split(/\s*(?:&|&amp;|,|\/|\\|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => normalizeStr(cleanArtistName(t)))
       .filter(Boolean);
 
     const featTokens = featMatch[1]
-      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
-      .map(t => t.trim())
+      .split(/\s*(?:&|&amp;|,|\/|\\|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => cleanArtistName(t))
       .filter(Boolean);
 
-    const newArtists = featTokens.filter(fa => !existingTokens.includes(normalizeStr(fa)));
+    const newArtists = featTokens.filter(fa => {
+      const normFa = normalizeStr(fa);
+      if (!normFa || normFa.length < 2) return false;
+      return !existingTokens.some(ex => ex === normFa || ex.includes(normFa) || normFa.includes(ex));
+    });
+
     if (newArtists.length > 0) {
       fullArtist = `${fullArtist} ft. ${newArtists.join(', ')}`;
     }
@@ -114,9 +126,17 @@ async function fetchYtCandidates(queryTerm, isIsrc = false) {
   }
 }
 
+const RESOLVED_AUDIO_CACHE = new Map();
+
 async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = '') {
   const cleanArtist = (artist || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
   const cleanTitle = (title || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+  const durNum = Math.round(Number(durationParam) || 0);
+  const cacheKey = `${normalizeStr(cleanArtist)}:::${normalizeStr(cleanTitle)}:::${durNum}`;
+
+  if (RESOLVED_AUDIO_CACHE.has(cacheKey)) {
+    return RESOLVED_AUDIO_CACHE.get(cacheKey);
+  }
   const isRemixRequest = /remix|rmx/i.test(`${title} ${artist}`);
   const userWantsFemale = /female|mujer|femenin/i.test(`${title} ${artist}`);
   const userWantsLive = /en vivo|live|concierto|en directo/i.test(`${title} ${artist}`);
@@ -175,51 +195,52 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       dzQueries.push(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'remix' : ''}`);
       dzQueries.push(`${cleanArtist} ${cleanTitle}`);
 
-      for (const q of dzQueries) {
-        const dzRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q.trim())}&limit=5`, {
-          headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(2500)
+      const dzResponses = await Promise.all(
+        dzQueries.map(q => 
+          fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q.trim())}&limit=5`, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(2000)
+          }).then(r => r.json()).catch(() => null)
+        )
+      );
+
+      for (const dzData of dzResponses) {
+        if (!dzData || !dzData.data || !Array.isArray(dzData.data) || dzData.data.length === 0) continue;
+        const priNorm = normalizeStr(primaryArtist);
+        const bestDz = dzData.data.find(d => {
+          const dTitle = normalizeStr(d.title || '');
+          const dArtist = normalizeStr(d.artist?.name || '');
+
+          if (effectiveTitleWords.length > 0) {
+            const dWords = dTitle.replace(/[^\w\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 2);
+            const titleMatch = effectiveTitleWords.every(w => dWords.includes(w));
+            if (!titleMatch) return false;
+            const extraWords = dWords.filter(w => !effectiveTitleWords.includes(w) && !stopWords.has(w) && !/remix|rmx|versi|version|official|oficial/i.test(w));
+            if (extraWords.length >= 2) return false;
+          }
+
+          if (originalRequestedArtists.length > 0) {
+            const allReqMatch = originalRequestedArtists.every(reqArt => {
+              const tokens = normalizeStr(reqArt).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+              return tokens.length === 0 || tokens.some(t => dArtist.includes(t) || dTitle.includes(t));
+            });
+            if (!allReqMatch) return false;
+          }
+
+          if (!dArtist.includes(priNorm) && !priNorm.includes(dArtist)) return false;
+          if (!userWantsFemale && /female version|version femenina|versión femenina/i.test(dTitle)) return false;
+          if (isRemixRequest && !/remix|rmx/i.test(dTitle)) return false;
+          return true;
         });
-        const dzData = await dzRes.json();
-        if (dzData.data && Array.isArray(dzData.data) && dzData.data.length > 0) {
-          // Filtrar el mejor candidato de Deezer validando que corresponda al artista solicitado
-          const priNorm = normalizeStr(primaryArtist);
-          const bestDz = dzData.data.find(d => {
-            const dTitle = normalizeStr(d.title || '');
-            const dArtist = normalizeStr(d.artist?.name || '');
 
-            // 1. TÍTULO: Las palabras clave del título solicitado deben estar en el título de Deezer
-            if (effectiveTitleWords.length > 0) {
-              const dWords = dTitle.replace(/[^\w\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 2);
-              const titleMatch = effectiveTitleWords.every(w => dWords.includes(w));
-              if (!titleMatch) return false;
-              // Si el título de Deezer tiene palabras adicionales que alteran la canción (ej: "No Te Hagas la Loca" vs "No Te Hagas")
-              const extraWords = dWords.filter(w => !effectiveTitleWords.includes(w) && !stopWords.has(w) && !/remix|rmx|versi|version|official|oficial/i.test(w));
-              if (extraWords.length >= 2) return false;
-            }
-
-            // 2. ARTISTAS: Si se solicitaron artistas específicos (ej: Bad Bunny), Deezer DEBE incluirlo
-            if (originalRequestedArtists.length > 0) {
-              const allReqMatch = originalRequestedArtists.every(reqArt => {
-                const tokens = normalizeStr(reqArt).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
-                return tokens.length === 0 || tokens.some(t => dArtist.includes(t) || dTitle.includes(t));
-              });
-              if (!allReqMatch) return false;
-            }
-
-            if (!dArtist.includes(priNorm) && !priNorm.includes(dArtist)) return false;
-            if (!userWantsFemale && /female version|version femenina|versión femenina/i.test(dTitle)) return false;
-            if (isRemixRequest && !/remix|rmx/i.test(dTitle)) return false;
-            return true;
-          });
-
-          if (bestDz && bestDz.id) {
-            if ((!durationParam || durationParam < 30 || durationParam === 180) && bestDz.duration > 30) {
-              durationParam = bestDz.duration;
-            }
+        if (bestDz && bestDz.id) {
+          if ((!durationParam || durationParam < 30 || durationParam === 180) && bestDz.duration > 30) {
+            durationParam = bestDz.duration;
+          }
+          try {
             const trkRes = await fetch(`https://api.deezer.com/track/${bestDz.id}`, {
               headers: { 'User-Agent': USER_AGENT },
-              signal: AbortSignal.timeout(2000)
+              signal: AbortSignal.timeout(1800)
             });
             const trkData = await trkRes.json();
             if (trkData.contributors && Array.isArray(trkData.contributors) && trkData.contributors.length > 1) {
@@ -227,7 +248,6 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
                 !c.role || c.role.toLowerCase() === 'main' || c.role.toLowerCase() === 'featured'
               );
               const cNames = performingContributors.map(c => c.name).filter(Boolean);
-              // Validar que los artistas originales solicitados no hayan sido borrados
               const allReqInContribs = originalRequestedArtists.every(reqArt => {
                 const tokens = normalizeStr(reqArt).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
                 return tokens.length === 0 || cNames.some(cn => {
@@ -244,7 +264,8 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
               isrc = trkData.isrc;
               break;
             }
-          }
+          } catch (_) {}
+          break;
         }
       }
     } catch (_) {}
@@ -577,7 +598,11 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
   }
 
-  return { selected, alternatives, scored, resolvedArtist };
+  const resolutionResult = { selected, alternatives, scored, resolvedArtist };
+  if (selected && selected.id) {
+    RESOLVED_AUDIO_CACHE.set(cacheKey, resolutionResult);
+  }
+  return resolutionResult;
 }
 
 async function getAudioStreamForVideo(videoId, altIds = []) {
@@ -1193,7 +1218,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.2.0', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

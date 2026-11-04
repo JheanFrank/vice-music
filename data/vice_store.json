@@ -10,169 +10,169 @@
   "playlists": {
     "admin": [
       {
-        "id": 25,
+        "id": 40,
         "title": "Ojala",
         "artist": "Bryant Myers x Darell x Almighty x De La Ghetto",
         "cover": "https://cdn-images.dzcdn.net/images/cover/11f74a8d83139d8fd211c0254f3c113c/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/b/f/b/0/bfb91ce97197ff8c72e406307a886602.mp3?hdnea=exp=1793828139~acl=/api/1/1/b/f/b/0/bfb91ce97197ff8c72e406307a886602.mp3*~data=user_id=0,application_id=42~hmac=ed48f6fc694f02f8a4657eb90f3eed4a9e83654045849f7240c514c9e1205e9b",
         "album": "Ojalá",
         "duration": 305,
-        "videoId": "",
-        "created_at": "2026-11-04 21:20:38"
+        "videoId": "NdkqaNhr_7U",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 24,
+        "id": 39,
         "title": "S91",
         "artist": "KAROL G",
         "cover": "https://cdn-images.dzcdn.net/images/cover/c3af01b3beff3b7bd55e53663f89ed1d/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/1/c/6/0/1c65f557ec720ee87f8add2e94391510.mp3?hdnea=exp=1793828139~acl=/api/1/1/1/c/6/0/1c65f557ec720ee87f8add2e94391510.mp3*~data=user_id=0,application_id=42~hmac=f788e7a0b315fa8b2aaedb709652e0144522d79e9e2eae64360f17990295a169",
         "album": "S91",
         "duration": 173,
-        "videoId": "",
-        "created_at": "2026-11-04 21:20:38"
+        "videoId": "NWy5NL2Wl8k",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 23,
+        "id": 38,
         "title": "UNA NOCHE EN MEDELLÍN (REMIX)",
         "artist": "KAROL G",
         "cover": "https://cdn-images.dzcdn.net/images/cover/c5d0d9f82ea59b57b5046d984d2cb4d4/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/6/4/c/0/64c9718fb211c0995538ebae91ac2764.mp3?hdnea=exp=1793828138~acl=/api/1/1/6/4/c/0/64c9718fb211c0995538ebae91ac2764.mp3*~data=user_id=0,application_id=42~hmac=b06fe8f537c43e829f67cdafb8c476db652b913713378c993771f21fd88927a1",
         "album": "MAÑANA SERÁ BONITO (BICHOTA SEASON)",
         "duration": 205,
-        "videoId": "",
-        "created_at": "2026-11-04 21:20:38"
+        "videoId": "jWNXYYVHeJI",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 22,
+        "id": 37,
         "title": "QLONA",
         "artist": "KAROL G",
         "cover": "https://cdn-images.dzcdn.net/images/cover/eacb2df2f49b1e67266ed70c8debd8d3/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/5/0/f/0/50fa52da19dc81ec09f283151ce4bdb8.mp3?hdnea=exp=1793828138~acl=/api/1/1/5/0/f/0/50fa52da19dc81ec09f283151ce4bdb8.mp3*~data=user_id=0,application_id=42~hmac=fa4477989df5ede16eace8c2791dde0aed7d9b1db8dad06a308e2fbb2bac55de",
         "album": "MAÑANA SERÁ BONITO (BICHOTA SEASON)",
         "duration": 172,
-        "videoId": "",
-        "created_at": "2026-11-04 21:20:37"
+        "videoId": "BeUOBoSPWvA",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 21,
+        "id": 36,
         "title": "En Señal de Victoria. (Live)",
         "artist": "Haffit David",
         "cover": "https://cdn-images.dzcdn.net/images/cover/fda54af1154a9ff59a50d9f701483e2e/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/a/b/b/0/abbcce8dc1f70972f458603181a18a39.mp3?hdnea=exp=1793828138~acl=/api/1/1/a/b/b/0/abbcce8dc1f70972f458603181a18a39.mp3*~data=user_id=0,application_id=42~hmac=b2dd03c0d4132fd9d9b53d43d8f60a6a7214450d6527f1744fc5dc5733cdd467",
         "album": "En Victoria (Live)",
         "duration": 346,
-        "videoId": "",
-        "created_at": "2026-11-04 21:20:37"
+        "videoId": "UkRFMp1Oh-s",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 14,
+        "id": 35,
         "title": "Dichavate",
         "artist": "Ya Ice Dilan",
         "cover": "https://cdn-images.dzcdn.net/images/cover/e838f4636527d966ff4d8b328f2d1b7a/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/b/7/d/0/b7d05efd5de528651125849404a7f8bf.mp3?hdnea=exp=1792827435~acl=/api/1/1/b/7/d/0/b7d05efd5de528651125849404a7f8bf.mp3*~data=user_id=0,application_id=42~hmac=3319aeb1da3d93cf8415e8f644b11e613b7f4b8f69353649f87a090f7e19e578",
         "album": "Dichavate",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 07:34:32"
+        "videoId": "1FI5yCctmPw",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 13,
+        "id": 34,
         "title": "COMPA COLETO (uy_como)",
         "artist": "Aria Vega",
         "cover": "https://cdn-images.dzcdn.net/images/cover/6b5f0fe26ea243ad25df802e49c8c458/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/0/e/5/0/0e59e0659a2ceef64ef1759bc97be3df.mp3?hdnea=exp=1792827435~acl=/api/1/1/0/e/5/0/0e59e0659a2ceef64ef1759bc97be3df.mp3*~data=user_id=0,application_id=42~hmac=93a3b54faff7a7ca406dfa98adcfe22bd5f4a708cc8f668bd02a6259de799f2d",
         "album": "COMPA COLETO (uy_como)",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 07:34:18"
+        "videoId": "_RZQcpPViMA",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 12,
+        "id": 33,
         "title": "PARADIXE",
         "artist": "Feid",
         "cover": "https://cdn-images.dzcdn.net/images/cover/30a6bd3549f923ae529321b18a41d149/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/f/b/0/0/fb001ff019d4f41ca2b6ce75981c5e4a.mp3?hdnea=exp=1792823099~acl=/api/1/1/f/b/0/0/fb001ff019d4f41ca2b6ce75981c5e4a.mp3*~data=user_id=0,application_id=42~hmac=daefbcab730e045b4167630b4e0376a19ada68627cc3f9b41fae73f0549107e5",
         "album": "EL GREEN PRINT: La Saga (Disc 2) - EL CLUB DE LAS 19 FLORES",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 06:18:42"
+        "videoId": "ezDYC4N40Wk",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 11,
+        "id": 32,
         "title": "CHÉVERE (premium_remix)",
         "artist": "Aria Vega",
         "cover": "https://cdn-images.dzcdn.net/images/cover/ceefffd186cac0549a6f2982720cfda1/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/b/9/c/0/b9c4a496d5795660da0c4c72e8c6df0c.mp3?hdnea=exp=1792823099~acl=/api/1/1/b/9/c/0/b9c4a496d5795660da0c4c72e8c6df0c.mp3*~data=user_id=0,application_id=42~hmac=8bf0e110d7b697a2a188a6551de1530da643ae1a2446579befa6ba21a89ba6f9",
         "album": "CHÉVERE (premium_remix)",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 06:18:34"
+        "videoId": "bD-Zn52QsHQ",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 10,
+        "id": 31,
         "title": "CULE POCO (sirena_besarico_costeña)",
         "artist": "Aria Vega",
         "cover": "https://cdn-images.dzcdn.net/images/cover/cb4fe285a77700ab9388b9cfa52ca290/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/9/c/c/0/9ccac86d2a4277dbb8a3829ffca9b816.mp3?hdnea=exp=1792823099~acl=/api/1/1/9/c/c/0/9ccac86d2a4277dbb8a3829ffca9b816.mp3*~data=user_id=0,application_id=42~hmac=5a8fcdc42e3c64829a4054b4be04e254e1a642760c35f016c1bbc317a70ee7ff",
         "album": "CULE POCO (sirena_besarico_costeña)",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 06:18:21"
+        "videoId": "9MHzkVRX1NI",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 9,
+        "id": 30,
         "title": "SUPERESTRELLA",
         "artist": "Aitana",
         "cover": "https://cdn-images.dzcdn.net/images/cover/bb555088d6be0371389c9f18d6e25f64/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/d/c/8/0/dc80c7b1862f52717deeb757f358d9a8.mp3?hdnea=exp=1792823099~acl=/api/1/1/d/c/8/0/dc80c7b1862f52717deeb757f358d9a8.mp3*~data=user_id=0,application_id=42~hmac=626ff3830529e419a5c84b3b73993ef112b130099a192545ce6d1e518264eaec",
         "album": "CUARTO AZUL",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 06:18:07"
+        "videoId": "bAWQ7B3rRAo",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 8,
+        "id": 29,
         "title": "OKI DOKI",
         "artist": "KAROL G",
         "cover": "https://cdn-images.dzcdn.net/images/cover/eacb2df2f49b1e67266ed70c8debd8d3/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/8/7/8/0/878c93d349a99a8c5360dec2d55fda28.mp3?hdnea=exp=1792821609~acl=/api/1/1/8/7/8/0/878c93d349a99a8c5360dec2d55fda28.mp3*~data=user_id=0,application_id=42~hmac=e0a8ccac65b96d4ee0080818954c929e491df6e186ebbfe976ed04ae57336b14",
         "album": "MAÑANA SERÁ BONITO (BICHOTA SEASON)",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 05:45:29"
+        "videoId": "A4S6MOVzF34",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 7,
+        "id": 28,
         "title": "La Plena (W Sound 05)",
         "artist": "W Sound",
         "cover": "https://cdn-images.dzcdn.net/images/cover/45ecd7776486b3d6c12976a39f2d0a1b/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/d/7/a/0/d7a701e8cff7e62010e41b494ff5852f.mp3?hdnea=exp=1792817905~acl=/api/1/1/d/7/a/0/d7a701e8cff7e62010e41b494ff5852f.mp3*~data=user_id=0,application_id=42~hmac=5561a753c49aedf03895364d70200b1791510a172ad4ccb56f86b1efb6d35746",
         "album": "La Plena (W Sound 05)",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 04:44:31"
+        "videoId": "OE3-jAJEwfE",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 6,
+        "id": 27,
         "title": "Dile",
         "artist": "Don Omar",
         "cover": "https://cdn-images.dzcdn.net/images/cover/c2671dbf906c83e7cf2b9597a5c0560c/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/3/a/b/0/3abf5125ad2dc83d53ab273068bba7d7.mp3?hdnea=exp=1792817905~acl=/api/1/1/3/a/b/0/3abf5125ad2dc83d53ab273068bba7d7.mp3*~data=user_id=0,application_id=42~hmac=9d892e243f6c347e976649cc0dbbbc4fb651a92972b6011d2fb7181450e81acb",
         "album": "The Last Don",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 04:44:29"
+        "videoId": "ja240-bp8eQ",
+        "created_at": "2026-11-04 21:31:02"
       },
       {
-        "id": 4,
+        "id": 26,
         "title": "BbY WOW",
         "artist": "KAROL G",
         "cover": "https://cdn-images.dzcdn.net/images/cover/f794dd1931dac42fc13f938850b686c6/1000x1000-000000-80-0-0.jpg",
         "preview": "https://cdnt-preview.dzcdn.net/api/1/1/f/f/5/0/ff58853da92388977e15b6744ad73228.mp3?hdnea=exp=1792817699~acl=/api/1/1/f/f/5/0/ff58853da92388977e15b6744ad73228.mp3*~data=user_id=0,application_id=42~hmac=941c4886a9045074a5b9bddf098a9325c4782d358fac711f0c1eb0f68614fe5e",
         "album": "NO ME ARREPIENTO DE SENTIR TANTO",
         "duration": 180,
-        "videoId": "",
-        "created_at": "2026-10-24 04:42:47"
+        "videoId": "fRIhCiUVaKs",
+        "created_at": "2026-11-04 21:31:02"
       }
     ]
   }

@@ -1471,7 +1471,8 @@ const server = http.createServer(async (req, res) => {
             const user = (parsed.user || '').trim();
             const title = (parsed.title || '').trim();
             const artist = (parsed.artist || '').trim();
-            const tracks = removeFromPlaylist(user, title, artist);
+            const id = parsed.id ? parseInt(parsed.id, 10) : null;
+            const tracks = removeFromPlaylist(user, title, artist, id);
             res.writeHead(200, playlistHeaders);
             return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Canción eliminada de tu playlist' }));
           } catch (e) {

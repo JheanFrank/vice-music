@@ -5377,16 +5377,15 @@ async function addToUserPlaylist(track) {
       body: JSON.stringify({ user: username, track: playlistItem })
     });
     const data = await res.json();
-    if (data && data.success && data.track) {
-      playlistItem.id = data.track.id;
+    if (data && data.success && Array.isArray(data.tracks)) {
+      state.userPlaylist = data.tracks;
     } else {
-      playlistItem.id = Date.now();
+      state.userPlaylist.unshift(playlistItem);
     }
   } catch (err) {
-    playlistItem.id = Date.now();
+    state.userPlaylist.unshift(playlistItem);
   }
 
-  state.userPlaylist.unshift(playlistItem);
   try {
     localStorage.setItem(`vice_playlist_${username}`, JSON.stringify(state.userPlaylist));
   } catch (e) {}
@@ -5422,11 +5421,15 @@ async function removeFromUserPlaylist(trackOrId) {
   }
 
   try {
-    await fetch('/api/playlist', {
+    const res = await fetch('/api/playlist', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: username, id: removedTrack.id, title: removedTrack.title, artist: removedTrack.artist })
     });
+    const data = await res.json();
+    if (data && data.success && Array.isArray(data.tracks)) {
+      state.userPlaylist = data.tracks;
+    }
   } catch (err) {
     console.warn('Error eliminando del servidor:', err);
   }

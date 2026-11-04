@@ -299,15 +299,19 @@ export function addToPlaylist(username, track) {
   return store.playlists[cleanUser];
 }
 
-export function removeFromPlaylist(username, title, artist) {
-  if (!username || !title) return [];
+export function removeFromPlaylist(username, title, artist, id = null) {
+  if (!username) return [];
   const cleanUser = username.trim().toLowerCase();
-  const cleanTitle = title.trim().toLowerCase();
+  const cleanTitle = (title || '').trim().toLowerCase();
+  const numId = id ? parseInt(id, 10) : null;
 
   if (db && !useJsonStore) {
     try {
-      const stmt = db.prepare('DELETE FROM playlists WHERE lower(username) = ? AND trim(lower(title)) = ?');
-      stmt.run(cleanUser, cleanTitle);
+      if (numId && !isNaN(numId)) {
+        db.prepare('DELETE FROM playlists WHERE lower(username) = ? AND id = ?').run(cleanUser, numId);
+      } else if (cleanTitle) {
+        db.prepare('DELETE FROM playlists WHERE lower(username) = ? AND trim(lower(title)) = ?').run(cleanUser, cleanTitle);
+      }
       const resTracks = getPlaylist(cleanUser);
       try {
         const store = loadJsonStore();
@@ -320,7 +324,11 @@ export function removeFromPlaylist(username, title, artist) {
 
   const store = loadJsonStore();
   if (store.playlists[cleanUser]) {
-    store.playlists[cleanUser] = store.playlists[cleanUser].filter(t => (t.title || '').trim().toLowerCase() !== cleanTitle);
+    store.playlists[cleanUser] = store.playlists[cleanUser].filter(t => {
+      if (numId && t.id && t.id === numId) return false;
+      if (cleanTitle && (t.title || '').trim().toLowerCase() === cleanTitle) return false;
+      return true;
+    });
     saveJsonStore(store);
     return store.playlists[cleanUser];
   }

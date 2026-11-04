@@ -109,13 +109,34 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const cleanArtist = (artist || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
   const cleanTitle = (title || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
   const isRemixRequest = /remix|rmx/i.test(`${title} ${artist}`);
-  
-  // Extraer lista de artistas (admite 'x', '&', 'ft.', 'feat.', ',')
-  const artistNames = cleanArtist
-    .split(/\s*(?:x|&|ft\.?|feat\.?|,)\s*/i)
-    .map(a => a.trim())
-    .filter(a => a.length >= 2);
-  const primaryArtist = cleanArtist.split(/\s*(?:x|X|&|ft\.?|feat\.?|con|,)\s*/i)[0].trim() || cleanArtist;
+  const userWantsFemale = /female|mujer|femenin/i.test(`${title} ${artist}`);
+
+  // Extraer lista completa de artistas tanto del campo artist como de cualquier (feat. ...) en el título
+  let allArtistNames = [];
+  const fullRawArtist = getFullArtistCredits(artist, title);
+
+  const extractedFromFeat = [];
+  const featMatch = (title || '').match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
+  if (featMatch && featMatch[1]) {
+    const featTokens = featMatch[1].split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i);
+    featTokens.forEach(t => {
+      const name = t.trim();
+      if (name.length >= 2) extractedFromFeat.push(name);
+    });
+  }
+
+  const artistTokens = fullRawArtist.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i);
+  artistTokens.forEach(t => {
+    const name = t.trim();
+    if (name.length >= 2) allArtistNames.push(name);
+  });
+  extractedFromFeat.forEach(f => {
+    if (!allArtistNames.some(a => a.toLowerCase() === f.toLowerCase())) {
+      allArtistNames.push(f);
+    }
+  });
+
+  const primaryArtist = allArtistNames[0] || cleanArtist;
 
   // Palabras clave obligatorias del título (normalizadas sin tildes ni acentos)
   const normCleanTitle = normalizeStr(cleanTitle);
@@ -127,34 +148,51 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const stopWords = new Set(['con', 'del', 'las', 'los', 'por', 'que', 'una', 'uno', 'the', 'and', 'for', 'feat', 'ft']);
   const titleKeywords = rawTitleWords.filter(w => !stopWords.has(w));
   const effectiveTitleWords = titleKeywords.length > 0 ? titleKeywords : rawTitleWords;
-  
-  // Buscar ISRC en Deezer para obtener el Master de Estudio Oficial 100% nítido
+
+  // Buscar ISRC y Colaboradores Oficiales en Deezer
   let isrc = isrcParam;
   let resolvedArtist = cleanArtist;
   if (!isrc) {
     try {
-      const dzQueries = [`${primaryArtist} ${cleanTitle}`, `${cleanArtist} ${cleanTitle}`];
+      const dzQueries = [];
+      if (extractedFromFeat.length > 0) {
+        dzQueries.push(`${cleanTitle} ${extractedFromFeat.slice(0, 2).join(' ')}`);
+        dzQueries.push(`${cleanTitle} ${isRemixRequest ? 'remix' : ''}`);
+      }
+      dzQueries.push(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'remix' : ''}`);
+      dzQueries.push(`${cleanArtist} ${cleanTitle}`);
+
       for (const q of dzQueries) {
-        const dzRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=1`, {
+        const dzRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q.trim())}&limit=5`, {
           headers: { 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(2500)
         });
         const dzData = await dzRes.json();
-        if (dzData.data && dzData.data[0] && dzData.data[0].id) {
-          const trkRes = await fetch(`https://api.deezer.com/track/${dzData.data[0].id}`, {
-            headers: { 'User-Agent': USER_AGENT },
-            signal: AbortSignal.timeout(2000)
-          });
-          const trkData = await trkRes.json();
-          if (trkData.contributors && Array.isArray(trkData.contributors) && trkData.contributors.length > 1) {
-            const cNames = trkData.contributors.map(c => c.name).filter(Boolean);
-            if (cNames.length > 1) {
-              resolvedArtist = cNames.join(' x ');
+        if (dzData.data && Array.isArray(dzData.data) && dzData.data.length > 0) {
+          // Filtrar el mejor candidato de Deezer evitando versiones femeninas no pedidas
+          const bestDz = dzData.data.find(d => {
+            const dTitle = (d.title || '').toLowerCase();
+            if (!userWantsFemale && /female version|version femenina|versión femenina/i.test(dTitle)) return false;
+            if (isRemixRequest && !/remix|rmx/i.test(dTitle)) return false;
+            return true;
+          }) || dzData.data[0];
+
+          if (bestDz && bestDz.id) {
+            const trkRes = await fetch(`https://api.deezer.com/track/${bestDz.id}`, {
+              headers: { 'User-Agent': USER_AGENT },
+              signal: AbortSignal.timeout(2000)
+            });
+            const trkData = await trkRes.json();
+            if (trkData.contributors && Array.isArray(trkData.contributors) && trkData.contributors.length > 1) {
+              const cNames = trkData.contributors.map(c => c.name).filter(Boolean);
+              if (cNames.length > 1) {
+                resolvedArtist = cNames.join(' x ');
+              }
             }
-          }
-          if (trkData.isrc) {
-            isrc = trkData.isrc;
-            break;
+            if (trkData.isrc) {
+              isrc = trkData.isrc;
+              break;
+            }
           }
         }
       }
@@ -185,22 +223,28 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     rawCandidates.push(...isrcCandidates);
   }
 
+  // Búsquedas dirigidas con colaboradores para garantizar versiones reales con invitados
+  if (extractedFromFeat.length > 0) {
+    const featCandidates = await fetchYtCandidates(`${cleanTitle} ${extractedFromFeat.slice(0, 3).join(' ')} audio`);
+    rawCandidates.push(...featCandidates);
+  }
+
   // 1° Búsqueda: YouTube Music Master Topic con artista principal y título
-  const topicCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} Topic`);
+  const topicCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} Topic`);
   rawCandidates.push(...topicCandidates);
 
   // 2° Búsqueda: Audio Oficial
-  const audioOficialCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} audio oficial`);
+  const audioOficialCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} audio oficial`);
   rawCandidates.push(...audioOficialCandidates);
 
   // 3° Búsqueda: Letra / Lyrics si hay pocos candidatos
   if (rawCandidates.length < 8) {
-    const lyricCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} lyric video letra`);
+    const lyricCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} lyric video letra`);
     rawCandidates.push(...lyricCandidates);
   }
   // 4° Búsqueda estándar
   if (rawCandidates.length < 6) {
-    const stdCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle}`);
+    const stdCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''}`);
     rawCandidates.push(...stdCandidates);
   }
 
@@ -220,88 +264,98 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     const ch = normalizeStr(c.channel);
     const combined = `${t} ${ch}`;
     
-    // Filtro de descarte estricto
-    if (t.includes('parodia') || t.includes('karaoke') || t.includes('reaccion') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) return -999;
-    if (BAD_CHANNELS.some(b => ch.includes(normalizeStr(b)))) return -999;
+    // 1. DESCARTE ESTRICTO DE VERSIONES NO DESEADAS
+    if (!userWantsFemale && /female version|version femenina|versión femenina|version mujer|versión mujer|cover femenino/i.test(t)) {
+      return -9999;
+    }
+    if (t.includes('parodia') || t.includes('karaoke') || t.includes('reaccion') || t.includes('reaction') || t.includes('tutorial') || t.includes('1 hour') || t.includes('1 hora') || t.includes('slowed') || t.includes('loop')) {
+      return -9999;
+    }
+    if (BAD_CHANNELS.some(b => ch.includes(normalizeStr(b)))) return -9999;
 
-    // Descartar versiones "Solo" si la pista original es una colaboración con varios artistas
-    if (artistNames.length > 1 && (t.includes('(solo)') || t.includes('version solo') || t.includes('original version/solo') || t.includes('original version / solo'))) {
-      return -999;
+    // Descartar versiones "Solo" si la pista original es una colaboración o remix
+    if ((allArtistNames.length > 1 || isRemixRequest) && (t.includes('(solo)') || t.includes('version solo') || t.includes('original version/solo') || t.includes('original version / solo'))) {
+      return -9999;
     }
 
-    // 1. REQUISITO ESTRICTO DE TÍTULO (OBLIGATORIO)
+    // 2. REQUISITO OBLIGATORIO DE TÍTULO (INQUEBRANTABLE)
     // El video DEBE coincidir con las palabras del título sin importar tildes/acentos
-    const titleHits = effectiveTitleWords.filter(w => t.includes(w)).length;
-    const minRequiredTitleHits = effectiveTitleWords.length <= 2 ? 1 : Math.ceil(effectiveTitleWords.length * 0.5);
-    if (titleHits < minRequiredTitleHits) {
-      return -1000;
-    }
-    s += Math.round((titleHits / effectiveTitleWords.length) * 120);
-
-    // 2. REQUISITO DE ARTISTAS
-    let matchedArtistsCount = 0;
-    for (const aName of artistNames) {
-      const aWords = normalizeStr(aName).split(/\s+/).filter(w => w.length >= 2);
-      if (aWords.some(w => combined.includes(w))) {
-        matchedArtistsCount++;
+    if (effectiveTitleWords.length === 1) {
+      if (!t.includes(effectiveTitleWords[0])) {
+        return -9999;
       }
+      s += 160;
+    } else {
+      const matchedWords = effectiveTitleWords.filter(w => t.includes(w));
+      if (matchedWords.length < Math.ceil(effectiveTitleWords.length * 0.6)) {
+        return -9999;
+      }
+      s += Math.round((matchedWords.length / effectiveTitleWords.length) * 160);
     }
 
-    if (artistNames.length > 0) {
+    // 3. REQUISITO OBLIGATORIO DE ARTISTAS (INQUEBRANTABLE)
+    // El video DEBE mencionar a al menos UNO de los artistas legítimos (en título o canal)
+    if (allArtistNames.length > 0) {
+      let matchedArtistsCount = 0;
+      for (const aName of allArtistNames) {
+        const aWords = normalizeStr(aName).split(/\s+/).filter(w => w.length >= 2);
+        if (aWords.length > 0 && aWords.some(w => combined.includes(w))) {
+          matchedArtistsCount++;
+        }
+      }
+
       if (matchedArtistsCount === 0) {
-        s -= 300; // Penalización si no figura ningún artista
-      } else if (matchedArtistsCount === artistNames.length) {
-        s += 180; // Máxima bonificación si figuran TODOS los artistas
-      } else {
-        s += 60;
+        return -9999; // DISQUALIFIED! Ni los artistas coinciden -> JAMÁS se reproduce
+      }
+
+      s += matchedArtistsCount * 130;
+      if (matchedArtistsCount === allArtistNames.length) {
+        s += 280; // Bonificación máxima si figuran TODOS los artistas
       }
     }
     
-    // 3. Requisito Estricto de Remix vs Versión Original
+    // 4. Requisito Estricto de Remix vs Versión Original
     const isCandidateRemix = /remix|rmx/i.test(t);
-    const isOfficialArtistChannel = artistNames.some(aName => ch.includes(normalizeStr(aName)));
+    const isOfficialArtistChannel = allArtistNames.some(aName => ch.includes(normalizeStr(aName)));
 
     if (isRemixRequest) {
       if (isCandidateRemix || combined.includes('remix') || combined.includes('rmx') || isOfficialArtistChannel) {
-        s += 90;
+        s += 200;
       } else {
-        s -= 250; // Penalización severa si el usuario pidió Remix pero la pista es solo la versión original
+        s -= 450; // Penalización severa si el usuario pidió Remix pero el video es la versión sin invitados
       }
     } else {
-      if (isCandidateRemix && !title.toLowerCase().includes('remix')) {
-        s -= 120; // Si no era remix, evitar versiones remix
+      if (isCandidateRemix && !cleanTitle.includes('remix')) {
+        s -= 250; // Si no era remix, evitar versiones remix
       }
     }
     
-    // 4. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
+    // 5. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
     if (durationParam > 30 && c.durSec > 0) {
       const diff = Math.abs(c.durSec - durationParam);
       if (diff <= 3) s += 200;
       else if (diff <= 6) s += 140;
       else if (diff <= 12) s += 70;
       else if (diff <= 20) s += 20;
-      else if (diff > 35) s -= 450; // Descartar cortes drásticos de duración o versiones recortadas
+      else if (diff > 45) s -= 450;
     }
     
-    // 5. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
+    // 6. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
     if (/cancion oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
-      s += 70;
+      s += 80;
     } else if (/lyric|letra|lyrics/i.test(t)) {
-      s += 45;
+      s += 50;
     } else if (/video oficial|official video|music video/i.test(t)) {
-      s += 20;
+      s += 30;
     }
     
-    // Bonificación SUPREMA para canales Topic (YouTube Music / Auto-generated by YouTube / Master oficial de discográfica en máxima fidelidad sin distorsión)
-    if (c.fromIsrc && titleHits >= minRequiredTitleHits) {
-      s += 1200;
-    }
+    // Bonificación para canales oficiales y Topic
     if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic') || c.hasAudioBadge) {
-      s += 500;
+      s += 150;
     }
-    if (c.hasAudioBadge) s += 350;
-    if (c.isVerified) s += 150;
-    if (isOfficialArtistChannel) s += 120;
+    if (c.hasAudioBadge) s += 100;
+    if (c.isVerified) s += 80;
+    if (isOfficialArtistChannel) s += 140;
     
     return s;
   }
@@ -309,7 +363,7 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const scored = uniqueCandidates
     .filter(c => c.durSec === 0 || (c.durSec >= 60 && c.durSec <= 700))
     .map(c => ({ ...c, score: score(c) }))
-    .filter(c => c.score > -200)
+    .filter(c => c.score > -1000)
     .sort((a, b) => b.score - a.score);
 
   const selected = scored[0] || null;

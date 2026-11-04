@@ -5916,37 +5916,27 @@ body {
     flex-shrink: 0 !important;
   }
 
-  /* En móvil: Ocultar las líneas que se mueven que se ven feas en pantallas pequeñas y mostrar título/artista limpios */
+  /* En móvil: En el dock mostrar SOLO la carátula limpia (cero texto ni iniciales cortadas) */
   .dock-wave-indicator,
-  #dockWaveIndicator {
+  #dockWaveIndicator,
+  .dock-meta {
     display: none !important;
   }
   .dock-track-center {
-    flex: 1 !important;
-    min-width: 0 !important;
-    padding: 0.22rem 0.55rem 0.22rem 0.3rem !important;
-    gap: 0.45rem !important;
-  }
-  .dock-meta {
+    flex: 0 0 auto !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
     display: flex !important;
-    flex-direction: column !important;
-    min-width: 0 !important;
-    flex: 1 !important;
-    overflow: hidden !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
-  .dock-title {
-    font-size: 0.76rem !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    max-width: 110px !important;
-  }
-  .dock-artist {
-    font-size: 0.65rem !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    max-width: 110px !important;
+  .dock-thumb {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 50% !important;
+    border: 2px solid var(--vice-cyan) !important;
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.5) !important;
   }
 
   /* 6. Canciones Guardadas de Colección 3D (Cero recortes, títulos de canciones 100% visibles) */

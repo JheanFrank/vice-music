@@ -199,23 +199,42 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     } catch (_) {}
   }
 
-  // Si aún no detectamos colaboradores, consultar iTunes brevemente
+  // Si aún no detectamos colaboradores, consultar iTunes brevemente con validación estricta
   if (!resolvedArtist.includes('&') && !resolvedArtist.includes('x') && !resolvedArtist.includes('X') && !resolvedArtist.includes('feat') && !resolvedArtist.includes(',')) {
     try {
-      const itRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanArtist + ' ' + cleanTitle)}&entity=song&limit=3`, {
+      const itRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanArtist + ' ' + cleanTitle)}&entity=song&limit=5`, {
         headers: { 'User-Agent': USER_AGENT },
         signal: AbortSignal.timeout(2000)
       });
       const itData = await itRes.json();
-      if (itData.results && itData.results[0] && itData.results[0].artistName) {
-        const itArtist = itData.results[0].artistName;
-        if (itArtist.includes('&') || itArtist.includes(',') || itArtist.includes('feat') || itArtist.includes('ft')) {
-          resolvedArtist = itArtist;
+      if (itData.results && Array.isArray(itData.results)) {
+        const cleanPriNorm = normalizeStr(primaryArtist);
+        const match = itData.results.find(r => {
+          const rTitle = normalizeStr(r.trackName || '');
+          if (!userWantsFemale && /female|femenin/i.test(rTitle)) return false;
+          const rArtist = normalizeStr(r.artistName || '');
+          const rPrimary = rArtist.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          return rArtist.includes(cleanPriNorm) || cleanPriNorm.includes(rPrimary);
+        });
+        if (match && match.artistName) {
+          const itArtist = match.artistName;
+          if (itArtist.includes('&') || itArtist.includes(',') || itArtist.includes('feat') || itArtist.includes('ft') || itArtist.includes('x') || itArtist.includes('X')) {
+            resolvedArtist = itArtist;
+          }
         }
       }
     } catch (_) {}
   }
   resolvedArtist = getFullArtistCredits(resolvedArtist, title);
+
+  // Actualizar allArtistNames con resolvedArtist para maximizar coincidencia en YouTube
+  const resolvedTokens = resolvedArtist.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i);
+  resolvedTokens.forEach(t => {
+    const name = t.trim();
+    if (name.length >= 2 && !allArtistNames.some(a => a.toLowerCase() === name.toLowerCase())) {
+      allArtistNames.push(name);
+    }
+  });
 
   let rawCandidates = [];
   if (isrc) {
@@ -227,6 +246,9 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   if (extractedFromFeat.length > 0) {
     const featCandidates = await fetchYtCandidates(`${cleanTitle} ${extractedFromFeat.slice(0, 3).join(' ')} audio`);
     rawCandidates.push(...featCandidates);
+  } else if (allArtistNames.length > 1) {
+    const multiArtistCandidates = await fetchYtCandidates(`${cleanTitle} ${allArtistNames.slice(0, 3).join(' ')} audio`);
+    rawCandidates.push(...multiArtistCandidates);
   }
 
   // 1° Búsqueda: YouTube Music Master Topic con artista principal y título
@@ -634,21 +656,44 @@ async function getTopColombia() {
           type: 'artist'
         }));
       } else {
-        const globalArt = await fetchDeezer('/chart/0/artists');
-        if (globalArt && Array.isArray(globalArt.data)) {
-          artists = globalArt.data.slice(0, 10).map((a, idx) => ({
-            rank: idx + 1,
-            id: a.id,
-            name: a.name,
-            picture: a.picture_xl || a.picture_big || a.picture_medium,
-            link: a.link,
-            nbFans: a.nb_fan || null,
-            type: 'artist'
-          }));
+        // Fallback 1: Extraer los artistas únicos más populares de la playlist oficial Top Colombia
+        if (plData && plData.tracks && Array.isArray(plData.tracks.data)) {
+          const seenArt = new Set();
+          for (const t of plData.tracks.data) {
+            if (t.artist && t.artist.name && !seenArt.has(t.artist.name.toLowerCase())) {
+              seenArt.add(t.artist.name.toLowerCase());
+              artists.push({
+                rank: artists.length + 1,
+                id: t.artist.id,
+                name: t.artist.name,
+                picture: t.artist.picture_xl || t.artist.picture_big || t.artist.picture_medium,
+                link: t.artist.link || `https://www.deezer.com/artist/${t.artist.id}`,
+                nbFans: null,
+                type: 'artist'
+              });
+              if (artists.length >= 10) break;
+            }
+          }
         }
       }
     } catch (artErr) {
       console.warn('Chart de artistas Colombia fallback:', artErr.message);
+    }
+
+    // Fallback 2: Superestrellas 100% auténticas de Colombia si los servicios externos están caídos
+    if (artists.length === 0) {
+      artists = [
+        { rank: 1, id: 13915127, name: 'Ryan Castro', picture: 'https://cdn-images.dzcdn.net/images/artist/85e4705e8cab0354605581abd89c703d/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 2, id: 4894676, name: 'KAROL G', picture: 'https://cdn-images.dzcdn.net/images/artist/5b0aab23f8d2856951a92f3a9faf70e3/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 3, id: 5041443, name: 'Feid', picture: 'https://cdn-images.dzcdn.net/images/artist/e629c93e03b3c225d8d52a42bae71537/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 4, id: 10583405, name: 'Bad Bunny', picture: 'https://cdn-images.dzcdn.net/images/artist/044a3f315b041864887a8dd8709e6926/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 5, id: 74614, name: 'Diomedes Diaz', picture: 'https://cdn-images.dzcdn.net/images/artist/fd9922415127264b9708992d5b0908a4/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 6, id: 388172, name: 'Silvestre Dangond', picture: 'https://cdn-images.dzcdn.net/images/artist/615aa8dceb24854b2cfdbe6339067242/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 7, id: 64790472, name: 'Beele', picture: 'https://cdn-images.dzcdn.net/images/artist/517e60ed50f56034769b7e845a71e35c/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 8, id: 160, name: 'Shakira', picture: 'https://cdn-images.dzcdn.net/images/artist/69c569506a8ff6ab0edfecbd1adf94b0/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 9, id: 574229, name: 'J Balvin', picture: 'https://cdn-images.dzcdn.net/images/artist/325eaa46bc25052d0e3d549d60cc8225/500x500-000000-80-0-0.jpg', type: 'artist' },
+        { rank: 10, id: 89617302, name: 'Blessd', picture: 'https://cdn-images.dzcdn.net/images/artist/23fc8c0353fa282b7db5b6a71eec8bce/500x500-000000-80-0-0.jpg', type: 'artist' }
+      ];
     }
 
     // Álbumes y Sencillos Populares en Colombia (extraídos de los éxitos de Colombia)
@@ -950,7 +995,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.0.1', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.0.2', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

@@ -2313,16 +2313,17 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
     card.querySelector('.album-cover-wrapper').addEventListener('click', (e) => {
       e.stopPropagation();
       if (albumId) openAlbumDetail(albumId);
-      else loadTrack({ title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
+      else loadTrack({ id: track.id ? `deezer_${track.id}` : null, deezerId: track.id, title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
     });
 
     card.querySelector('.btn-single-play').addEventListener('click', (e) => {
       e.stopPropagation();
-      loadTrack({ title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
+      loadTrack({ id: track.id ? `deezer_${track.id}` : null, deezerId: track.id, title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
     });
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
+      state.currentTrack = { id: track.id ? `deezer_${track.id}` : null, deezerId: track.id, title: track.title, artist: fullTrackArtist };
       playFullSong(fullTrackArtist, track.title, cover, albumTitle, track.duration, track.preview);
     });
 
@@ -2471,14 +2472,16 @@ function loadTrack(track) {
   }
   track.artist = fullArtist;
 
-  // Si la pista solo tiene 1 artista y proviene de Deezer, verificar colaboradores de lanzamiento en segundo plano
+  // Si la pista solo tiene 1 artista y proviene de Deezer, verificar colaboradores de la canción en segundo plano
   if (!fullArtist.includes('&') && !fullArtist.includes('x') && !fullArtist.includes('X') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
-    const albId = track.albumId || (state.currentAlbum && state.currentAlbum.id);
-    if (albId && albId.startsWith('deezer_')) {
-      const dzId = albId.replace('deezer_', '');
-      fetchDeezerJsonp(`/album/${dzId}`).then(dzAlb => {
-        if (dzAlb && dzAlb.contributors && dzAlb.contributors.length > 1) {
-          const names = dzAlb.contributors.map(c => c.name).filter(Boolean);
+    const trkId = (track.id && track.id.startsWith('deezer_'))
+      ? track.id.replace('deezer_', '')
+      : (track.deezerId || null);
+
+    if (trkId) {
+      fetchDeezerJsonp(`/track/${trkId}`).then(dzTrk => {
+        if (dzTrk && dzTrk.contributors && Array.isArray(dzTrk.contributors) && dzTrk.contributors.length > 1) {
+          const names = dzTrk.contributors.map(c => c.name).filter(Boolean);
           if (names.length > 1) {
             const enriched = names.join(' x ');
             if (state.currentTrack && state.currentTrack.title === track.title) {
@@ -2486,10 +2489,43 @@ function loadTrack(track) {
               playerArtist.innerHTML = formatArtistPills(enriched);
               if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(enriched);
               updateMediaSession(state.currentTrack);
+              document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
+                const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
+                if (titleEl && titleEl.innerText.trim().toLowerCase() === track.title.trim().toLowerCase()) {
+                  const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
+                  if (artEl) artEl.innerHTML = formatArtistPills(enriched);
+                }
+              });
             }
           }
         }
       }).catch(() => {});
+    } else {
+      const albId = track.albumId || (state.currentAlbum && state.currentAlbum.id);
+      if (albId && albId.startsWith('deezer_')) {
+        const dzId = albId.replace('deezer_', '');
+        fetchDeezerJsonp(`/album/${dzId}`).then(dzAlb => {
+          if (dzAlb && dzAlb.contributors && dzAlb.contributors.length > 1) {
+            const names = dzAlb.contributors.map(c => c.name).filter(Boolean);
+            if (names.length > 1) {
+              const enriched = names.join(' x ');
+              if (state.currentTrack && state.currentTrack.title === track.title) {
+                state.currentTrack.artist = enriched;
+                playerArtist.innerHTML = formatArtistPills(enriched);
+                if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(enriched);
+                updateMediaSession(state.currentTrack);
+                document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
+                  const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
+                  if (titleEl && titleEl.innerText.trim().toLowerCase() === track.title.trim().toLowerCase()) {
+                    const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
+                    if (artEl) artEl.innerHTML = formatArtistPills(enriched);
+                  }
+                });
+              }
+            }
+          }
+        }).catch(() => {});
+      }
     }
   }
 
@@ -2589,6 +2625,33 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
+  // Si la pista solo tiene 1 artista, consultar Deezer track para extraer todos los colaboradores oficiales (ej: Bad Bunny en "No Te Hagas")
+  const activeDzId = (state.currentTrack && state.currentTrack.id && state.currentTrack.id.startsWith('deezer_'))
+    ? state.currentTrack.id.replace('deezer_', '')
+    : ((state.currentTrack && state.currentTrack.deezerId) || null);
+
+  if (activeDzId && !fullArtist.includes('&') && !fullArtist.includes('x') && !fullArtist.includes('X') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
+    fetchDeezerJsonp(`/track/${activeDzId}`).then(dzTrk => {
+      if (dzTrk && dzTrk.contributors && Array.isArray(dzTrk.contributors) && dzTrk.contributors.length > 1) {
+        const collabNames = dzTrk.contributors.map(c => c.name).filter(Boolean);
+        if (collabNames.length > 1) {
+          const multiArtist = collabNames.join(' x ');
+          state.currentTrack.artist = multiArtist;
+          playerArtist.innerHTML = formatArtistPills(multiArtist);
+          if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(multiArtist);
+          updateMediaSession(state.currentTrack);
+          document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
+            const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
+            if (titleEl && titleEl.innerText.trim().toLowerCase() === title.trim().toLowerCase()) {
+              const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
+              if (artEl) artEl.innerHTML = formatArtistPills(multiArtist);
+            }
+          });
+        }
+      }
+    }).catch(() => {});
+  }
+
   try {
     const durParam = trackObj.duration || 0;
     const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}&duration=${encodeURIComponent(durParam)}`);
@@ -2600,10 +2663,10 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(data.resolvedArtist);
       updateMediaSession(state.currentTrack);
 
-      document.querySelectorAll('.album-card, .album-track-item').forEach(card => {
-        const titleEl = card.querySelector('.album-title, h4');
+      document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
+        const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
         if (titleEl && titleEl.innerText.trim().toLowerCase() === title.trim().toLowerCase()) {
-          const artEl = card.querySelector('.album-artist, .track-main-info p');
+          const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
           if (artEl) artEl.innerHTML = formatArtistPills(data.resolvedArtist);
         }
       });
@@ -3686,6 +3749,28 @@ async function loadHomeContent() {
       }
     } catch (e) {
       console.warn('Backend top-colombia no respondió, intentando JSONP:', e.message);
+    }
+
+    // Asegurar que nunca se filtren artistas globales en Colombia
+    if (artists && artists.some(a => /drake|linkin park|taylor swift|noah kahan/i.test(a.name || ''))) {
+      artists = [];
+    }
+
+    // Intentar obtener artistas de Colombia directamente vía JSONP desde el navegador
+    if (!artists || artists.length === 0) {
+      try {
+        const artChart = await fetchDeezerJsonp('/chart/73/artists');
+        if (artChart && Array.isArray(artChart.data) && artChart.data.length > 0) {
+          artists = artChart.data.slice(0, 10).map((a, idx) => ({
+            rank: idx + 1,
+            id: a.id,
+            name: a.name,
+            picture: a.picture_xl || a.picture_big || a.picture_medium,
+            link: a.link,
+            type: 'artist'
+          }));
+        }
+      } catch (_) {}
     }
 
     // 2. Fallback JSONP directo con playlist oficial Deezer Top Colombia (1116188451)

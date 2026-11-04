@@ -2707,40 +2707,27 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         return false;
       };
 
-      // En dispositivos móviles, activar flujo nativo de audio para soportar reproducción continua con pantalla bloqueada / en segundo plano
-      if (isMobileDevice) {
-        state.playbackSource = 'full_stream';
-        state.audio.src = `/api/stream-live?v=${encodeURIComponent(data.videoId)}`;
-        state.audio.playbackRate = state.currentSpeed || 1;
-        state.audio.play().then(() => {
-          setPlayingState(true);
-          updateMediaSession(trackObj);
-          const tierTag = data.tier === 'audio_oficial' ? ' (Audio Oficial)' : (data.tier === 'letra_lyrics' ? ' (Video con Letra)' : '');
-          showToast(`🎧 Reproduciendo (segundo plano activo): ${title}${tierTag}`);
-        }).catch((err) => {
-          console.warn('[Stream Live] Fallback automático a YouTube Player:', err);
-          state.playbackSource = 'full';
-          if (!tryPlay()) {
-            ytPendingVideoId = data.videoId;
-            let retries = 0;
-            const interval = setInterval(() => {
-              retries++;
-              if (tryPlay() || retries > 12) clearInterval(interval);
-            }, 350);
+      state.playbackSource = 'full';
+      if (!tryPlay()) {
+        ytPendingVideoId = data.videoId;
+        showToast('⏳ Sintonizando reproductor...');
+        let retries = 0;
+        const interval = setInterval(() => {
+          retries++;
+          if (tryPlay() || retries > 12) {
+            clearInterval(interval);
           }
-        });
-      } else {
-        if (!tryPlay()) {
-          ytPendingVideoId = data.videoId;
-          showToast('⏳ Sintonizando reproductor...');
-          let retries = 0;
-          const interval = setInterval(() => {
-            retries++;
-            if (tryPlay() || retries > 12) {
-              clearInterval(interval);
-            }
-          }, 350);
-        }
+        }, 350);
+      }
+
+      // Mantener viva la sesión de audio del sistema en teléfonos con bucle silencioso nativo
+      if (isMobileDevice) {
+        try {
+          state.audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+          state.audio.loop = true;
+          state.audio.volume = 0.001;
+          state.audio.play().catch(() => {});
+        } catch (_) {}
       }
 
       // Watchdog de tolerancia: Si tras 7s no ha iniciado ni está cargando, rota a video alternativo

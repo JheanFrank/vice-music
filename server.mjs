@@ -295,6 +295,16 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
     if (BAD_CHANNELS.some(b => ch.includes(normalizeStr(b)))) return -9999;
 
+    // Descartar versiones "En Vivo" / "Live" / "Concierto" si la pista original NO es en vivo (evita audio feo de estadio)
+    const userWantsLive = /en vivo|live|concierto|en directo/i.test(`${cleanTitle} ${cleanArtist}`);
+    if (!userWantsLive) {
+      if (/en vivo|live at|concierto|en directo|live session|show en vivo|acustico|acústico|los carlos julios/i.test(t) || 
+          /los carlos julios/i.test(ch) || 
+          /\(live\)|\blive\b|\[live\]/i.test(c.title)) {
+        return -9999; // DISQUALIFIED! Jamás poner concierto en vivo si el usuario no pidió en vivo
+      }
+    }
+
     // Descartar versiones "Solo" si la pista original es una colaboración o remix
     if ((allArtistNames.length > 1 || isRemixRequest) && (t.includes('(solo)') || t.includes('version solo') || t.includes('original version/solo') || t.includes('original version / solo'))) {
       return -9999;
@@ -355,27 +365,32 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     // 5. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
     if (durationParam > 30 && c.durSec > 0) {
       const diff = Math.abs(c.durSec - durationParam);
-      if (diff <= 3) s += 200;
-      else if (diff <= 6) s += 140;
-      else if (diff <= 12) s += 70;
-      else if (diff <= 20) s += 20;
-      else if (diff > 45) s -= 450;
+      if (diff > 35) {
+        return -9999; // DISQUALIFIED! Más de 35s de diferencia con el preview oficial no es la misma versión
+      }
+      if (diff <= 3) s += 350;
+      else if (diff <= 7) s += 220;
+      else if (diff <= 14) s += 120;
+      else if (diff <= 22) s += 40;
+      else s -= 250;
     }
     
     // 6. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
     if (/cancion oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
-      s += 80;
+      s += 200;
     } else if (/lyric|letra|lyrics/i.test(t)) {
-      s += 50;
+      s += 90;
     } else if (/video oficial|official video|music video/i.test(t)) {
-      s += 30;
+      s += 50;
     }
     
-    // Bonificación para canales oficiales y Topic
-    if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic') || c.hasAudioBadge) {
-      s += 150;
+    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic) y sellos discográficos
+    if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic')) {
+      s += 500; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
     }
-    if (c.hasAudioBadge) s += 100;
+    if (c.hasAudioBadge || /provided to youtube/i.test(combined)) {
+      s += 350;
+    }
     if (c.isVerified) s += 80;
     if (isOfficialArtistChannel) s += 140;
     
@@ -1001,7 +1016,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.0.6', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.0.7', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

@@ -518,19 +518,24 @@ function initYtPlayer() {
               console.warn('Error cambiando a stream alternativo:', fbErr);
             }
           }
-          // Si fallan todas las fuentes de YouTube, fallback al audio preview nativo
-          const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl;
-          if (fallbackUrl && state.audio) {
-            console.log('[Audio Fallback] Reproduciendo preview oficial nativo:', fallbackUrl);
-            showToast('🎵 Reproduciendo audio oficial...');
-            state.playbackSource = 'preview';
-            state.audio.src = fallbackUrl;
-            state.audio.currentTime = 0;
+          // Si falla YouTube iframe (ej: código 101/150 por restricciones de incrustación), reproducir el audio completo nativo vía servidor
+          if (state.currentTrack && state.currentTrack.videoId && state.audio) {
+            console.log('[Native Audio Fallback] Transfiriendo a flujo de audio nativo del servidor:', state.currentTrack.videoId);
+            showToast('🎧 Reproduciendo en alta fidelidad...');
+            state.playbackSource = 'full_stream';
+            state.audio.src = `/api/stream-live?v=${state.currentTrack.videoId}`;
             state.audio.playbackRate = state.currentSpeed;
             state.audio.play().then(() => {
               setPlayingState(true);
-              startAudioProgress();
-            }).catch(e => console.warn(e));
+              updateMediaSession(state.currentTrack);
+            }).catch(() => {
+              const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl;
+              if (fallbackUrl) {
+                state.playbackSource = 'preview';
+                state.audio.src = fallbackUrl;
+                state.audio.play().catch(() => {});
+              }
+            });
             return;
           }
           showToast('⚠️ Reproducción de stream en progreso...');
@@ -2608,14 +2613,12 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   const thisRequestId = ++currentPlayRequestId;
   primeAudioPlayback();
 
-  // Pausar y descargar completamente audio de muestra si está sonando para que NUNCA se duplique
+  // Pausar audio anterior sin destruir el canal de autorización en móviles
   if (state.audio) {
     try {
       state.audio.pause();
       state.audio.currentTime = 0;
       state.audio.loop = false;
-      state.audio.removeAttribute('src');
-      state.audio.load();
     } catch (_) {}
   }
 
@@ -5168,6 +5171,7 @@ function renderPlaylistTracklist() {
 
 function playPlaylistTrack(track) {
   if (!track) return;
+  primeAudioPlayback();
   state.currentTrack = track;
   state.currentMode = 'playlist';
 

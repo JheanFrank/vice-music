@@ -24,7 +24,6 @@ const motionArtworkCache = new Map();
 const INVIDIOUS_INSTANCES = [
   'https://yt.chocolatemoo53.com',
   'https://invidious.nerdvpn.de',
-  'https://inv.tux.pizza',
   'https://invidious.jing.rocks'
 ];
 
@@ -170,13 +169,16 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
         });
         const dzData = await dzRes.json();
         if (dzData.data && Array.isArray(dzData.data) && dzData.data.length > 0) {
-          // Filtrar el mejor candidato de Deezer evitando versiones femeninas no pedidas
+          // Filtrar el mejor candidato de Deezer validando que corresponda al artista solicitado
+          const priNorm = normalizeStr(primaryArtist);
           const bestDz = dzData.data.find(d => {
             const dTitle = (d.title || '').toLowerCase();
+            const dArtist = normalizeStr(d.artist?.name || '');
+            if (!dArtist.includes(priNorm) && !priNorm.includes(dArtist)) return false;
             if (!userWantsFemale && /female version|version femenina|versión femenina/i.test(dTitle)) return false;
             if (isRemixRequest && !/remix|rmx/i.test(dTitle)) return false;
             return true;
-          }) || dzData.data[0];
+          });
 
           if (bestDz && bestDz.id) {
             const trkRes = await fetch(`https://api.deezer.com/track/${bestDz.id}`, {
@@ -185,7 +187,10 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
             });
             const trkData = await trkRes.json();
             if (trkData.contributors && Array.isArray(trkData.contributors) && trkData.contributors.length > 1) {
-              const cNames = trkData.contributors.map(c => c.name).filter(Boolean);
+              const performingContributors = trkData.contributors.filter(c => 
+                !c.role || c.role.toLowerCase() === 'main' || c.role.toLowerCase() === 'featured'
+              );
+              const cNames = performingContributors.map(c => c.name).filter(Boolean);
               if (cNames.length > 1) {
                 resolvedArtist = cNames.join(' x ');
               }
@@ -387,24 +392,27 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       else s -= 250;
     }
     
-    // 6. Jerarquía Estricta: 1° Audio Oficial > 2° Letra/Lyrics > 3° Video Oficial
+    // 6. Jerarquía Estricta: 1° Audio Oficial / Topic > 2° Letra/Lyrics > 3° Video Oficial
     if (/cancion oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
-      s += 200;
+      s += 450; // Bonificación prioritaria para pistas de puro audio de estudio sin efectos de video
     } else if (/lyric|letra|lyrics/i.test(t)) {
-      s += 90;
+      s += 200;
     } else if (/video oficial|official video|music video/i.test(t)) {
-      s += 50;
+      s += 60;
     }
     
     // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic) y canal del artista
     if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic')) {
-      s += 600; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
+      s += 700; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
     }
     if (isOfficialArtistChannel) {
       s += 500; // Canal oficial del artista
-    } else if (!c.isTopic && !c.isVerified) {
-      // PENALIZACIÓN SEVERA a canales de terceros desconocidos (ej: "JORGE CASTILLA", bootlegs, covers)
+    } else if (!c.isTopic) {
+      // PENALIZACIÓN SEVERA a canales de terceros desconocidos (ej: bootlegs, covers, "Jorge Castilla")
       s -= 450;
+      if (/cover|homenaje|karaoke|imitador|pista|acapella/i.test(t)) {
+        return -9999;
+      }
     }
 
     if (c.hasAudioBadge || /provided to youtube/i.test(combined)) {
@@ -441,8 +449,14 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
         });
         if (!vRes.ok) continue;
         const vData = await vRes.json();
-        const format = vData.adaptiveFormats?.find(f => f.itag === '140' || f.itag === '251') 
-                    || vData.adaptiveFormats?.find(f => f.type?.includes('audio'));
+        const audioFormats = (vData.adaptiveFormats || []).filter(f => 
+          (f.type && f.type.includes('audio')) || 
+          (f.mimeType && f.mimeType.includes('audio')) ||
+          ['251', '140', '250', '249'].includes(String(f.itag))
+        );
+        // Priorizar mayor bitrate para máxima fidelidad HD (192k Opus / 128k AAC) y nunca itag 139 (48k)
+        audioFormats.sort((a, b) => Number(b.bitrate || b.audioBitrate || 0) - Number(a.bitrate || a.audioBitrate || 0));
+        const format = audioFormats[0];
         if (format && format.url) {
           const streamUrl = format.url.startsWith('http') && !format.url.includes(new URL(inst).hostname)
             ? `${inst}${new URL(format.url).pathname}${new URL(format.url).search}`
@@ -1034,7 +1048,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.0', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.1.1', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1390,7 +1404,11 @@ const server = http.createServer(async (req, res) => {
           '-i', 'pipe:0',
           '-vn',
           '-c:a', 'libmp3lame',
-          '-b:a', '192k',
+          '-b:a', '256k',
+          '-ar', '44100',
+          '-ac', '2',
+          '-af', 'volume=1.35',
+          '-flush_packets', '1',
           '-f', 'mp3',
           'pipe:1'
         ]);

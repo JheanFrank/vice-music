@@ -2002,6 +2002,18 @@ function normalizeStr(str) {
     .trim();
 }
 
+function parseDurationSec(raw) {
+  if (!raw) return 0;
+  if (typeof raw === 'number') return raw;
+  const str = String(raw).trim();
+  if (str.includes(':')) {
+    const parts = str.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return parseInt(str, 10) || 0;
+}
+
 function getFullArtistCredits(artist, title) {
   let fullArtist = (artist || '').trim();
   if (!title) return fullArtist;
@@ -2695,7 +2707,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     cover: cover || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl),
     album: album || (state.currentAlbum && state.currentAlbum.title) || title,
     albumId: (state.currentTrack && state.currentTrack.albumId) || (state.currentAlbum && state.currentAlbum.id) || null,
-    duration: duration || (state.currentTrack && state.currentTrack.duration) || 0,
+    duration: parseDurationSec(duration || (state.currentTrack && state.currentTrack.duration) || 0),
     preview: preview || (state.currentTrack && state.currentTrack.preview) || ''
   };
 

@@ -191,6 +191,9 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
           });
 
           if (bestDz && bestDz.id) {
+            if ((!durationParam || durationParam < 30 || durationParam === 180) && bestDz.duration > 30) {
+              durationParam = bestDz.duration;
+            }
             const trkRes = await fetch(`https://api.deezer.com/track/${bestDz.id}`, {
               headers: { 'User-Agent': USER_AGENT },
               signal: AbortSignal.timeout(2000)
@@ -328,8 +331,11 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       }
     }
 
-    // Descartar versiones "Solo" si la pista original es una colaboración o remix
-    if ((allArtistNames.length > 1 || isRemixRequest) && (t.includes('(solo)') || t.includes('version solo') || t.includes('original version/solo') || t.includes('original version / solo'))) {
+    // Descartar versiones "Solo" o "Versión Original" sin invitados si la pista original es una colaboración o remix
+    if ((allArtistNames.length > 1 || isRemixRequest) && 
+        (t.includes('(solo)') || t.includes('version solo') || t.includes('versión solo') || 
+         t.includes('original version/solo') || t.includes('original version / solo') || 
+         t.includes('version original') || t.includes('versión original') || t.includes('(original)'))) {
       return -9999;
     }
 
@@ -373,6 +379,11 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
         return -9999; // DISQUALIFIED! Ni los artistas coinciden -> JAMÁS se reproduce
       }
 
+      // Si la canción original tiene 2 o más artistas (colaboración), descalificar si solo coincide 1 artista
+      if (allArtistNames.length >= 2 && matchedArtistsCount < 2) {
+        return -9999; // DISQUALIFIED! Falta la colaboración (ej: versión solista de Bryant Myers sin Darell/Almighty)
+      }
+
       s += matchedArtistsCount * 130;
       if (matchedArtistsCount === allArtistNames.length) {
         s += 280; // Bonificación máxima si figuran TODOS los artistas
@@ -396,19 +407,18 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
     
     // 5. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
-    // Nota: durationParam === 180 era el valor por defecto antiguo, no descalificar si es 180
     if (durationParam > 30 && durationParam !== 180 && c.durSec > 0) {
       const diff = Math.abs(c.durSec - durationParam);
-      if (diff > 35) {
-        return -9999; // DISQUALIFIED! Más de 35s de diferencia con el preview oficial no es la misma versión
+      if (diff > 25) {
+        return -9999; // DISQUALIFIED! Más de 25s de diferencia con el preview oficial no es la misma versión
       }
-      if (diff <= 3) s += 350;
-      else if (diff <= 7) s += 220;
+      if (diff <= 3) s += 400;
+      else if (diff <= 7) s += 250;
       else if (diff <= 14) s += 120;
-      else if (diff <= 22) s += 40;
+      else if (diff <= 20) s += 40;
       else s -= 250;
     } else if (c.durSec >= 290 && c.durSec <= 325 && (durationParam === 0 || durationParam === 180)) {
-      s += 300; // Gran bonificación si dura alrededor de 5 minutos (duración estándar de Ojalá 5:05)
+      s += 350; // Gran bonificación si dura alrededor de 5 minutos (duración estándar de Ojalá 5:05)
     }
     
     // Descarte absoluto de covers, homenajes o imitadores
@@ -1069,7 +1079,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.7', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.1.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1678,7 +1688,8 @@ const server = http.createServer(async (req, res) => {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const artistParam = (reqUrl.searchParams.get('artist') || '').trim();
       const titleParam = (reqUrl.searchParams.get('title') || '').trim();
-      const durationParam = Number(reqUrl.searchParams.get('duration') || 0);
+      const rawDurParam = (reqUrl.searchParams.get('duration') || '').trim();
+      const durationParam = parseDurationSec(rawDurParam) || parseInt(rawDurParam, 10) || 0;
 
       if (!q && !titleParam) {
         res.writeHead(400, { 'Content-Type': 'application/json' });

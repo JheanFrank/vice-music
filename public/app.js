@@ -1354,7 +1354,12 @@ async function performSearch(query) {
 
         const existingIdx = combined.findIndex(ex => {
           const exClean = ex.title.toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').replace(/-\s*single/gi, '').trim();
-          return exClean === cleanTitle;
+          if (exClean !== cleanTitle) return false;
+          const exA = (ex.artist || '').toLowerCase();
+          const aA = (a.artist || '').toLowerCase();
+          const primaryEx = exA.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          const primaryA = aA.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          return exA.includes(primaryA) || aA.includes(primaryEx);
         });
 
         if (existingIdx !== -1) {
@@ -1426,12 +1431,14 @@ async function performSearch(query) {
         clientDeezerTrackPromise
       ]);
 
-      // Mapa de artistas enriquecidos con colaboraciones completas (iTunes + créditos)
+      // Mapa de artistas enriquecidos con colaboraciones completas (indexado por título + artista principal)
       const collabMap = new Map();
       (backendData.data || []).forEach(t => {
         const normT = (t.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        const primaryA = (t.artist || '').toLowerCase().split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+        const key = `${normT}:::${primaryA}`;
         if (t.artist && (t.artist.includes('&') || t.artist.includes('x') || t.artist.includes('X') || t.artist.includes('feat') || t.artist.includes('ft') || t.artist.includes(','))) {
-          if (!collabMap.has(normT)) collabMap.set(normT, t.artist);
+          if (!collabMap.has(key)) collabMap.set(key, t.artist);
         }
       });
 
@@ -1441,10 +1448,16 @@ async function performSearch(query) {
         if (!t || !t.title || !t.artist) return;
         t.artist = getFullArtistCredits(t.artist, t.title);
         const normT = (t.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
+        const primaryT = (t.artist || '').toLowerCase().split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
         
+        // Solo son la misma canción si coinciden en título Y en artista principal
         const existingIdx = combinedTracks.findIndex(existing => {
           const eNorm = (existing.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
-          return eNorm === normT;
+          if (eNorm !== normT) return false;
+          const ePrimary = (existing.artist || '').toLowerCase().split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          const eFull = (existing.artist || '').toLowerCase();
+          const tFull = (t.artist || '').toLowerCase();
+          return eFull.includes(primaryT) || tFull.includes(ePrimary) || (existing.id === t.id);
         });
 
         if (existingIdx !== -1) {
@@ -1468,8 +1481,10 @@ async function performSearch(query) {
         dzTrackData.data.forEach(t => {
           const normT = (t.title || '').toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').trim();
           let artistName = t.artist ? t.artist.name : 'Artista';
-          if (collabMap.has(normT)) {
-            artistName = collabMap.get(normT);
+          const primaryA = artistName.toLowerCase().split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          const key = `${normT}:::${primaryA}`;
+          if (collabMap.has(key)) {
+            artistName = collabMap.get(key);
           }
           artistName = getFullArtistCredits(artistName, t.title);
 

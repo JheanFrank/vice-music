@@ -1313,7 +1313,12 @@ const server = http.createServer(async (req, res) => {
 
         const existingIdx = combined.findIndex(ex => {
           const exClean = ex.title.toLowerCase().replace(/[\(\[].*?[\)\]]/g, '').replace(/-\s*single/gi, '').trim();
-          return exClean === cleanTitle;
+          if (exClean !== cleanTitle) return false;
+          const exA = normalizeStr(ex.artist);
+          const alA = normalizeStr(album.artist);
+          const primaryEx = exA.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          const primaryAl = alA.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          return exA.includes(primaryAl) || alA.includes(primaryEx);
         });
 
         if (existingIdx !== -1) {
@@ -1429,16 +1434,21 @@ const server = http.createServer(async (req, res) => {
         searchTracksItunes(q)
       ]);
 
-      // Enriquecer créditos de artistas: si iTunes contiene colaboraciones completas (ej: Jory Boy & Bad Bunny), usarlas
-      const itunesMap = new Map();
-      for (const it of itunesTracks) {
-        const normT = normalizeStr(it.title).replace(/[\(\[].*?[\)\]]/g, '').trim();
-        if (!itunesMap.has(normT)) itunesMap.set(normT, it);
-      }
-
+      // Enriquecer créditos de artistas: si iTunes contiene colaboraciones completas del MISMO artista (ej: Jory Boy -> Jory Boy & Bad Bunny), usarlas
       for (const dt of deezerTracks) {
         const normT = normalizeStr(dt.title).replace(/[\(\[].*?[\)\]]/g, '').trim();
-        const it = itunesMap.get(normT);
+        const normDtArtist = normalizeStr(dt.artist);
+        const primaryDt = normDtArtist.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+
+        const it = itunesTracks.find(itCandidate => {
+          const normItT = normalizeStr(itCandidate.title).replace(/[\(\[].*?[\)\]]/g, '').trim();
+          if (normItT !== normT) return false;
+          const normItArtist = normalizeStr(itCandidate.artist);
+          const primaryIt = normItArtist.split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+          // Solo si coinciden en artista principal (ej: Jory Boy está en Jory Boy & Bad Bunny). NUNCA mezclar artistas distintos (ej: Karol G con Bigknot Records)
+          return normItArtist.includes(primaryDt) || normDtArtist.includes(primaryIt);
+        });
+
         if (it && it.artist && (it.artist.includes('&') || it.artist.includes('x') || it.artist.includes('X') || it.artist.includes('feat') || it.artist.includes('ft') || it.artist.includes(','))) {
           dt.artist = it.artist;
         }

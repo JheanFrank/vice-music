@@ -146,6 +146,9 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
   });
 
+  // Guardar copia inmutable de los artistas originalmente solicitados
+  const originalRequestedArtists = [...allArtistNames];
+
   const primaryArtist = allArtistNames[0] || cleanArtist;
 
   // Palabras clave obligatorias del título (normalizadas sin tildes ni acentos)
@@ -182,8 +185,28 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
           // Filtrar el mejor candidato de Deezer validando que corresponda al artista solicitado
           const priNorm = normalizeStr(primaryArtist);
           const bestDz = dzData.data.find(d => {
-            const dTitle = (d.title || '').toLowerCase();
+            const dTitle = normalizeStr(d.title || '');
             const dArtist = normalizeStr(d.artist?.name || '');
+
+            // 1. TÍTULO: Las palabras clave del título solicitado deben estar en el título de Deezer
+            if (effectiveTitleWords.length > 0) {
+              const dWords = dTitle.replace(/[^\w\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 2);
+              const titleMatch = effectiveTitleWords.every(w => dWords.includes(w));
+              if (!titleMatch) return false;
+              // Si el título de Deezer tiene palabras adicionales que alteran la canción (ej: "No Te Hagas la Loca" vs "No Te Hagas")
+              const extraWords = dWords.filter(w => !effectiveTitleWords.includes(w) && !stopWords.has(w) && !/remix|rmx|versi|version|official|oficial/i.test(w));
+              if (extraWords.length >= 2) return false;
+            }
+
+            // 2. ARTISTAS: Si se solicitaron artistas específicos (ej: Bad Bunny), Deezer DEBE incluirlo
+            if (originalRequestedArtists.length > 0) {
+              const allReqMatch = originalRequestedArtists.every(reqArt => {
+                const tokens = normalizeStr(reqArt).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+                return tokens.length === 0 || tokens.some(t => dArtist.includes(t) || dTitle.includes(t));
+              });
+              if (!allReqMatch) return false;
+            }
+
             if (!dArtist.includes(priNorm) && !priNorm.includes(dArtist)) return false;
             if (!userWantsFemale && /female version|version femenina|versión femenina/i.test(dTitle)) return false;
             if (isRemixRequest && !/remix|rmx/i.test(dTitle)) return false;
@@ -204,7 +227,16 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
                 !c.role || c.role.toLowerCase() === 'main' || c.role.toLowerCase() === 'featured'
               );
               const cNames = performingContributors.map(c => c.name).filter(Boolean);
-              if (cNames.length > 1) {
+              // Validar que los artistas originales solicitados no hayan sido borrados
+              const allReqInContribs = originalRequestedArtists.every(reqArt => {
+                const tokens = normalizeStr(reqArt).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+                return tokens.length === 0 || cNames.some(cn => {
+                  const cnNorm = normalizeStr(cn);
+                  return tokens.some(t => cnNorm.includes(t));
+                });
+              });
+
+              if (allReqInContribs && cNames.length > 1) {
                 resolvedArtist = cNames.join(' x ');
               }
             }
@@ -354,7 +386,33 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       s += Math.round((matchedWords.length / effectiveTitleWords.length) * 160);
     }
 
-    // 3. REQUISITO OBLIGATORIO DE ARTISTAS (INQUEBRANTABLE)
+    // Penalización severa por palabras ajenas importantes en el título que no formaban parte de la canción
+    const candidateTitleWords = t.replace(/[^\w\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
+    const extraForeignWords = candidateTitleWords.filter(w => 
+      !effectiveTitleWords.includes(w) && 
+      !stopWords.has(w) && 
+      !ARTIST_STOP_WORDS.has(w) &&
+      !allArtistNames.some(a => normalizeStr(a).includes(w)) &&
+      !/remix|rmx|official|oficial|video|audio|lyrics|letra|videoclip|music|tema|hd|4k|track|topic/i.test(w)
+    );
+    if (extraForeignWords.length >= 2) {
+      s -= 400; // Por ejemplo, "la loca" cuando la canción es sólo "no te hagas"
+    }
+
+    // 3. REQUISITO OBLIGATORIO DE ARTISTAS SOLICITADOS (INQUEBRANTABLE)
+    // Todos los artistas que fueron originalmente solicitados DEBEN coincidir en el video
+    if (originalRequestedArtists.length > 0) {
+      for (const reqArt of originalRequestedArtists) {
+        const reqTokens = normalizeStr(reqArt).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+        if (reqTokens.length > 0) {
+          const reqMatched = reqTokens.some(w => new RegExp('\\b' + w + '\\b', 'i').test(combined));
+          if (!reqMatched) {
+            return -9999; // DISQUALIFIED! Falta un artista solicitado obligatoriamente (ej: Bad Bunny)
+          }
+        }
+      }
+    }
+
     // El video DEBE incluir al artista principal (con límite de palabra, descartando preposiciones como "de", "la")
     const primaryTokens = normalizeStr(primaryArtist)
       .split(/\s+/)
@@ -460,8 +518,64 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     .filter(c => c.score > -1000)
     .sort((a, b) => b.score - a.score);
 
-  const selected = scored[0] || null;
-  const alternatives = scored.slice(1, 6).map(c => c.id);
+  let selected = scored[0] || null;
+  let alternatives = scored.slice(1, 6).map(c => c.id);
+
+  // Rescate inteligente si ningún candidato cumplió el 100% de los colaboradores solicitados (ej: Bad Bunny x Noriel - No Te Hagas)
+  if (!selected) {
+    const fallbackScored = uniqueCandidates
+      .filter(c => c.durSec === 0 || (c.durSec >= 60 && c.durSec <= 700))
+      .map(c => {
+        let s = 0;
+        const t = normalizeStr(c.title);
+        const ch = normalizeStr(c.channel);
+        const combined = `${t} ${ch}`;
+        
+        // El título DEBE coincidir con las palabras clave solicitadas
+        if (effectiveTitleWords.length > 0 && !effectiveTitleWords.every(w => t.includes(w))) {
+          return { ...c, score: -9999 };
+        }
+
+        // Si se solicitó a Bad Bunny, es OBLIGATORIO que el video contenga a Bad Bunny
+        const hasBadBunny = originalRequestedArtists.some(a => /bad\s*bunny/i.test(a));
+        if (hasBadBunny) {
+          if (!combined.includes('bad') || !combined.includes('bunny')) {
+            return { ...c, score: -9999 }; // DISQUALIFIED! Falta Bad Bunny
+          }
+          s += 500;
+        } else {
+          // Requiere al menos el artista principal
+          const priTokens = normalizeStr(primaryArtist).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+          if (priTokens.length > 0 && !priTokens.some(w => combined.includes(w))) {
+            return { ...c, score: -9999 };
+          }
+          s += 300;
+        }
+
+        // Penalizar canciones con títulos extraños que agregan palabras no pedidas (ej: "No Te Hagas La Loca" cuando pidieron "No Te Hagas")
+        const candidateTitleWords = t.replace(/[^\w\s]/gi, ' ').split(/\s+/).filter(w => w.length >= 3);
+        const extraForeignWords = candidateTitleWords.filter(w => 
+          !effectiveTitleWords.includes(w) && 
+          !stopWords.has(w) && 
+          !ARTIST_STOP_WORDS.has(w) &&
+          !allArtistNames.some(a => normalizeStr(a).includes(w)) &&
+          !/remix|rmx|official|oficial|video|audio|lyrics|letra|videoclip|music|tema|hd|4k|track|topic/i.test(w)
+        );
+        if (extraForeignWords.length >= 2) s -= 400;
+
+        if (/audio oficial|audio/i.test(t)) s += 200;
+        if (/video oficial|official video/i.test(t)) s += 100;
+        return { ...c, score: s };
+      })
+      .filter(c => c.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    if (fallbackScored.length > 0) {
+      selected = fallbackScored[0];
+      alternatives = fallbackScored.slice(1, 6).map(c => c.id);
+      console.log(`[FullAudio Rescue] Rescatada pista auténtica para "${title}": [${selected.id}] "${selected.title}"`);
+    }
+  }
 
   return { selected, alternatives, scored, resolvedArtist };
 }
@@ -471,7 +585,50 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
   let lastError = null;
 
   for (const vId of candidateIds) {
-    // 1. Intentar instancias de proxy Invidious (evita bloqueos de datacenter en Render)
+    // 1. Motor Primario: YTDL nativo multi-cliente (Tv + WebEmbedded + VisionOS + Mweb)
+    // Conexión directa a googlevideo.com sin desconexiones a mitad de pista
+    try {
+      console.log(`[Audio Engine] Usando motor YTDL nativo multi-cliente para [${vId}]...`);
+      const stream = ytdlInstance.download(vId, {
+        filter: { hasAudio: true, hasVideo: false },
+        quality: 'highestaudio'
+      });
+
+      // Validar recepción de audio sin errores asíncronos de YouTube
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        }, 4000);
+
+        stream.once('error', (err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          }
+        });
+
+        stream.once('readable', () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+      });
+
+      console.log(`[Audio Engine] Flujo YTDL nativo validado con éxito para [${vId}]`);
+      return stream;
+    } catch (yErr) {
+      console.warn(`[Audio Engine] YTDL nativo falló para [${vId}]:`, yErr.message);
+      lastError = yErr;
+    }
+
+    // 2. Fallback a instancias de proxy Invidious
     for (const inst of INVIDIOUS_INSTANCES) {
       try {
         const vRes = await fetch(`${inst}/api/v1/videos/${vId}?local=true`, {
@@ -504,49 +661,6 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
       } catch (e) {
         console.warn(`[Audio Engine] Intento con ${inst} para [${vId}] falló:`, e.message);
       }
-    }
-
-    // 2. Fallback a YTDL nativo multi-cliente (Tv + WebEmbedded + VisionOS)
-    try {
-      console.log(`[Audio Engine] Usando motor YTDL nativo multi-cliente para [${vId}]...`);
-      const stream = ytdlInstance.download(vId, {
-        filter: { hasAudio: true, hasVideo: false },
-        quality: 'highestaudio'
-      });
-
-      // Validar recepción de audio sin errores asíncronos de YouTube (como bot check)
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
-        }, 4000);
-
-        stream.once('error', (err) => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            reject(err);
-          }
-        });
-
-        stream.once('readable', () => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            resolve();
-          }
-        });
-      });
-
-      console.log(`[Audio Engine] Flujo YTDL nativo validado con éxito para [${vId}]`);
-      return stream;
-    } catch (yErr) {
-      console.warn(`[Audio Engine] YTDL nativo falló para [${vId}]:`, yErr.message);
-      lastError = yErr;
-      // Rotación automática anti-bot: continúa de inmediato con la siguiente alternativa
     }
 
     // 3. Fallback a satélite directo savenow (evita 100% bloqueos de datacenter en Render en descargas consecutivas)
@@ -1079,7 +1193,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.1.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1303,10 +1417,18 @@ const server = http.createServer(async (req, res) => {
 
     // 0.02 PLAYLIST PERSISTENTE POR CADA USUARIO REGISTRADO
     if (pathname === '/api/playlist') {
+      const playlistHeaders = {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Access-Control-Allow-Origin': '*'
+      };
+
       if (req.method === 'GET') {
         const user = (reqUrl.searchParams.get('user') || '').trim();
         const tracks = getPlaylist(user);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.writeHead(200, playlistHeaders);
         return res.end(JSON.stringify({ success: true, tracks, playlist: tracks }));
       }
 
@@ -1330,10 +1452,10 @@ const server = http.createServer(async (req, res) => {
               throw new Error('Canción o lista requerida');
             }
 
-            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.writeHead(200, playlistHeaders);
             return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Playlist actualizada con éxito' }));
           } catch (e) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.writeHead(400, playlistHeaders);
             return res.end(JSON.stringify({ success: false, error: e.message }));
           }
         });
@@ -1350,10 +1472,10 @@ const server = http.createServer(async (req, res) => {
             const title = (parsed.title || '').trim();
             const artist = (parsed.artist || '').trim();
             const tracks = removeFromPlaylist(user, title, artist);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.writeHead(200, playlistHeaders);
             return res.end(JSON.stringify({ success: true, tracks, playlist: tracks, message: 'Canción eliminada de tu playlist' }));
           } catch (e) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.writeHead(400, playlistHeaders);
             return res.end(JSON.stringify({ success: false, error: e.message }));
           }
         });
@@ -1416,12 +1538,57 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 0.15 STREAM DE AUDIO NATIVO CONTINUO (Background Audio / Pantalla Apagada)
+    // 0.15 STREAM DE AUDIO NATIVO CONTINUO (Background Audio / Pantalla Apagada / HTTP Range 206)
     if (pathname === '/api/stream-live') {
       const vId = (reqUrl.searchParams.get('v') || reqUrl.searchParams.get('videoId') || '').trim();
       if (!vId) {
         res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         return res.end(JSON.stringify({ error: 'Falta videoId' }));
+      }
+
+      const safeVId = vId.replace(/[^a-zA-Z0-9_-]/g, '');
+      const cacheDir = path.join(__dirname, '.audio_cache');
+      if (!fs.existsSync(cacheDir)) {
+        try { fs.mkdirSync(cacheDir, { recursive: true }); } catch (_) {}
+      }
+      const cacheFile = path.join(cacheDir, `${safeVId}.mp3`);
+
+      // 1. Si el archivo ya está en caché y completo, servirlo con soporte completo de HTTP Range (206)
+      // Permite que iOS Safari y Android almacenen en búfer toda la canción y continúen con la pantalla apagada
+      if (fs.existsSync(cacheFile)) {
+        try {
+          const stat = fs.statSync(cacheFile);
+          if (stat.size > 150000) {
+            const total = stat.size;
+            const range = req.headers.range;
+            if (range) {
+              const parts = range.replace(/bytes=/, '').split('-');
+              const start = parseInt(parts[0], 10);
+              const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+              const chunksize = (end - start) + 1;
+              res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${total}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': 'audio/mpeg',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=86400'
+              });
+              fs.createReadStream(cacheFile, { start, end }).pipe(res);
+              return;
+            } else {
+              res.writeHead(200, {
+                'Content-Length': total,
+                'Accept-Ranges': 'bytes',
+                'Content-Type': 'audio/mpeg',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=86400'
+              });
+              fs.createReadStream(cacheFile).pipe(res);
+              return;
+            }
+          }
+        } catch (_) {}
       }
 
       try {
@@ -1447,6 +1614,10 @@ const server = http.createServer(async (req, res) => {
         ffmpeg.stdin.on('error', () => {});
         audioStream.pipe(ffmpeg.stdin);
 
+        const tempCacheFile = `${cacheFile}.tmp_${Date.now()}`;
+        const cacheWriteStream = fs.createWriteStream(tempCacheFile);
+        cacheWriteStream.on('error', () => {});
+
         let headersSent = false;
         ffmpeg.stdout.on('data', (chunk) => {
           if (!headersSent) {
@@ -1459,14 +1630,32 @@ const server = http.createServer(async (req, res) => {
             });
           }
           res.write(chunk);
+          try { cacheWriteStream.write(chunk); } catch (_) {}
         });
 
         req.on('close', () => {
           try { ffmpeg.kill('SIGKILL'); } catch (_) {}
           try { if (audioStream && typeof audioStream.destroy === 'function') audioStream.destroy(); } catch (_) {}
+          try { cacheWriteStream.end(); } catch (_) {}
+          try { if (fs.existsSync(tempCacheFile)) fs.unlinkSync(tempCacheFile); } catch (_) {}
         });
 
         ffmpeg.stdout.on('end', () => {
+          try {
+            cacheWriteStream.end(() => {
+              try {
+                if (fs.existsSync(tempCacheFile)) {
+                  const s = fs.statSync(tempCacheFile);
+                  if (s.size > 150000) {
+                    fs.renameSync(tempCacheFile, cacheFile);
+                  } else {
+                    fs.unlinkSync(tempCacheFile);
+                  }
+                }
+              } catch (_) {}
+            });
+          } catch (_) {}
+
           if (!headersSent) {
             res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
             res.end(JSON.stringify({ error: 'FFmpeg terminó sin datos' }));
@@ -1478,6 +1667,8 @@ const server = http.createServer(async (req, res) => {
         audioStream.on('error', (err) => {
           console.warn('[Stream Live] Error en audioStream:', err.message);
           try { ffmpeg.kill('SIGKILL'); } catch (_) {}
+          try { cacheWriteStream.end(); } catch (_) {}
+          try { if (fs.existsSync(tempCacheFile)) fs.unlinkSync(tempCacheFile); } catch (_) {}
           if (!headersSent) {
             res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
             res.end(JSON.stringify({ error: err.message }));

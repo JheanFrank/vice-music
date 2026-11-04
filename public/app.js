@@ -966,10 +966,8 @@ function setupEventListeners() {
   });
   state.audio.addEventListener('ended', () => {
     if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      setPlayingState(false);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
-      // Avanzar automáticamente a la siguiente canción (playlist, cola o álbum)
-      setTimeout(() => playNextTrack(), 400);
+      // Avanzar inmediatamente a la siguiente canción sin matar la sesión en segundo plano
+      playNextTrack();
     }
   });
   state.audio.addEventListener('play', () => {
@@ -1713,10 +1711,6 @@ async function openAlbumDetail(albumId) {
           <button class="vice-btn-primary btn-download-full-album" style="background: linear-gradient(135deg, #00f0ff, #ff2a85); font-size: 0.95rem; padding: 0.9rem 1.8rem;">
             <span>📦 DESCARGAR ÁLBUM COMPLETO (FLAC .ZIP)</span>
           </button>
-
-          <button class="btn-back btn-download-album-cover" style="margin-bottom: 0;">
-            <span>🖼️ DESCARGAR CARÁTULA EN 1000px HD</span>
-          </button>
         </div>
       </div>
     `;
@@ -1732,12 +1726,6 @@ async function openAlbumDetail(albumId) {
       }
       showToast(`📦 Abriendo descarga del álbum completo en ZIP / FLAC para: ${album.title}`);
       window.open(album.lucidaAlbumZipUrl, '_blank');
-    });
-
-    // Acción: Descargar Carátula HD
-    albumHeroContent.querySelector('.btn-download-album-cover').addEventListener('click', () => {
-      downloadFile(album.coverXl, `Cover_${album.title.replace(/[^a-zA-Z0-9]/g, '_')}_1000px.jpg`);
-      showToast('🖼️ Descargando carátula oficial del álbum en 1000x1000 px...');
     });
 
     const heroArtistLink = albumHeroContent.querySelector('.album-hero-artist');
@@ -2463,10 +2451,10 @@ function setupMediaSessionActions() {
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     }],
     ['previoustrack', () => {
-      seekDelta(-10);
+      playPreviousTrack();
     }],
     ['nexttrack', () => {
-      seekDelta(10);
+      playNextTrack();
     }],
     ['seekbackward', (details) => {
       seekDelta(-(details.seekOffset || 10));
@@ -2673,6 +2661,42 @@ function primeAudioPlayback() {
   }
 }
 
+// PRE-CARGAR LA SIGUIENTE CANCIÓN PARA TRANSICIÓN FLUIDA CON PANTALLA APAGADA
+function prefetchNextTrack() {
+  try {
+    let nextTrack = null;
+    if (state.queue && state.queue.length > 0) {
+      nextTrack = state.queue[0];
+    } else if (state.currentMode === 'playlist' && state.userPlaylist && state.userPlaylist.length > 0) {
+      const curIdx = state.activeCoverflowIndex;
+      if (curIdx + 1 < state.userPlaylist.length) {
+        nextTrack = state.userPlaylist[curIdx + 1];
+      }
+    } else if (state.currentAlbum && Array.isArray(state.currentAlbum.tracks)) {
+      const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+      const curIdx = state.currentAlbum.tracks.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+      if (curIdx !== -1 && curIdx + 1 < state.currentAlbum.tracks.length) {
+        nextTrack = state.currentAlbum.tracks[curIdx + 1];
+      }
+    }
+
+    if (nextTrack && !nextTrack.videoId && !nextTrack._prefetching) {
+      nextTrack._prefetching = true;
+      const durParam = nextTrack.duration || 0;
+      fetch(`/api/fullaudio?q=${encodeURIComponent((nextTrack.artist || '') + ' ' + (nextTrack.title || ''))}&artist=${encodeURIComponent(nextTrack.artist || '')}&title=${encodeURIComponent(nextTrack.title || '')}&duration=${encodeURIComponent(durParam)}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d && d.videoId) {
+            nextTrack.videoId = d.videoId;
+            if (d.resolvedArtist) nextTrack._resolvedArtist = d.resolvedArtist;
+          }
+        })
+        .catch(() => {})
+        .finally(() => { nextTrack._prefetching = false; });
+    }
+  } catch (_) {}
+}
+
 // REPRODUCIR CANCIÓN 100% COMPLETA (RESPUESTA INSTANTÁNEA + METADATOS LIMPIOS HD)
 async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null) {
   const thisRequestId = ++currentPlayRequestId;
@@ -2708,7 +2732,8 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     album: album || (state.currentAlbum && state.currentAlbum.title) || title,
     albumId: (state.currentTrack && state.currentTrack.albumId) || (state.currentAlbum && state.currentAlbum.id) || null,
     duration: parseDurationSec(duration || (state.currentTrack && state.currentTrack.duration) || 0),
-    preview: preview || (state.currentTrack && state.currentTrack.preview) || ''
+    preview: preview || (state.currentTrack && state.currentTrack.preview) || '',
+    videoId: (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : null)
   };
 
   if (!state.history) state.history = [];
@@ -2748,6 +2773,33 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
+  const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
+
+  // EN MÓVILES: Si la canción ya fue pre-resuelta, iniciar de inmediato sin esperar el fetch para mantener la sesión de audio activa
+  if (isMobileDevice && trackObj.videoId) {
+    state.playbackSource = 'full_stream';
+    state.audio.loop = false;
+    state.audio.volume = 1;
+    state.audio.src = `/api/stream-live?v=${trackObj.videoId}`;
+    state.audio.playbackRate = state.currentSpeed;
+    state.audio.play().then(() => {
+      setPlayingState(true);
+      updateMediaSession(trackObj);
+      setTimeout(prefetchNextTrack, 2500);
+    }).catch(() => {});
+  } else if (isMobileDevice && trackObj.preview) {
+    // Si no tenemos videoId aún, iniciar preview síncronamente para que el hardware de audio no se suspenda
+    state.playbackSource = 'preview';
+    state.audio.loop = false;
+    state.audio.volume = 1;
+    state.audio.src = trackObj.preview;
+    state.audio.playbackRate = state.currentSpeed;
+    state.audio.play().then(() => {
+      setPlayingState(true);
+      updateMediaSession(trackObj);
+    }).catch(() => {});
+  }
+
   try {
     const durParam = trackObj.duration || 0;
     const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}&duration=${encodeURIComponent(durParam)}`);
@@ -2773,8 +2825,6 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
       initYtPlayer();
 
-      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
-
       const tryPlay = () => {
         if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
           ytPlayer.loadVideoById(data.videoId);
@@ -2786,6 +2836,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           updateMediaSession(trackObj);
           const tierTag = data.tier === 'audio_oficial' ? ' (Audio Oficial)' : (data.tier === 'letra_lyrics' ? ' (Video con Letra)' : '');
           showToast(`🎧 Reproduciendo: ${title}${tierTag}`);
+          setTimeout(prefetchNextTrack, 2500);
           return true;
         }
         return false;
@@ -2793,20 +2844,26 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
 
       if (isMobileDevice) {
         // EN MÓVILES (CHROME, BRAVE, SAFARI): REPRODUCCIÓN NATIVA CON SEGUNDO PLANO Y PANTALLA APAGADA
-        state.playbackSource = 'full_stream';
-        state.audio.loop = false;
-        state.audio.volume = 1;
-        state.audio.src = `/api/stream-live?v=${data.videoId}`;
-        state.audio.playbackRate = state.currentSpeed;
-        state.audio.play().then(() => {
-          setPlayingState(true);
-          updateMediaSession(trackObj);
-          showToast(`🎧 Reproduciendo: ${title}`);
-        }).catch(err => {
-          console.warn('[Mobile Native Audio] Reintentando vía YouTube:', err);
-          state.playbackSource = 'full';
-          tryPlay();
-        });
+        const liveSrc = `/api/stream-live?v=${data.videoId}`;
+        if (!state.audio.src.includes(data.videoId)) {
+          state.playbackSource = 'full_stream';
+          state.audio.loop = false;
+          state.audio.volume = 1;
+          state.audio.src = liveSrc;
+          state.audio.playbackRate = state.currentSpeed;
+          state.audio.play().then(() => {
+            setPlayingState(true);
+            updateMediaSession(trackObj);
+            showToast(`🎧 Reproduciendo: ${title}`);
+            setTimeout(prefetchNextTrack, 2500);
+          }).catch(err => {
+            console.warn('[Mobile Native Audio] Reintentando vía YouTube:', err);
+            state.playbackSource = 'full';
+            tryPlay();
+          });
+        } else {
+          setTimeout(prefetchNextTrack, 2500);
+        }
         return;
       }
 
@@ -2820,6 +2877,8 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           if (tryPlay() || retries > 12) {
             clearInterval(interval);
           }
+        }, 350);
+      }
         }, 350);
       }
 
@@ -3186,7 +3245,7 @@ function playNextTrack() {
     }
 
     showToast(`⏭️ Siguiente: ${nextItem.title}`);
-    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album, nextItem.duration, nextItem.preview);
+    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album, nextItem.duration, nextItem.preview, nextItem.videoId);
     return;
   }
 
@@ -3204,7 +3263,7 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.currentAlbum.tracks.length) {
       const nextTrack = state.currentAlbum.tracks[curIdx + 1];
       showToast(`⏭️ Siguiente en álbum: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist || state.currentAlbum.artist, nextTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title, nextTrack.duration, nextTrack.preview);
+      playFullSong(nextTrack.artist || state.currentAlbum.artist, nextTrack.title, state.currentAlbum.coverXl, state.currentAlbum.title, nextTrack.duration, nextTrack.preview, nextTrack.videoId);
       return;
     }
   }
@@ -3216,7 +3275,7 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.rankingTracks.length) {
       const nextTrack = state.rankingTracks[curIdx + 1];
       showToast(`⏭️ Siguiente éxito: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album, nextTrack.duration, nextTrack.preview);
+      playFullSong(nextTrack.artist, nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.album, nextTrack.duration, nextTrack.preview, nextTrack.videoId);
       return;
     }
   }
@@ -3228,7 +3287,7 @@ function playNextTrack() {
     if (curIdx !== -1 && curIdx + 1 < state.results.length) {
       const nextTrack = state.results[curIdx + 1];
       showToast(`⏭️ Siguiente canción: ${nextTrack.title}`);
-      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle, nextTrack.duration, nextTrack.preview);
+      playFullSong(nextTrack.artist ? (nextTrack.artist.name || nextTrack.artist) : 'Artista', nextTrack.title, nextTrack.coverXl || nextTrack.cover, nextTrack.albumTitle, nextTrack.duration, nextTrack.preview, nextTrack.videoId);
       return;
     }
   }
@@ -4698,10 +4757,14 @@ function startPlaylistPlayback(startIndex, isShuffle = false) {
     }
 
     state.queue = remainder.map(t => ({
+      id: t.id,
       artist: t.artist,
       title: t.title,
       cover: t.cover,
-      album: t.album
+      album: t.album,
+      duration: t.duration,
+      preview: t.preview,
+      videoId: t.videoId || t.video_id
     }));
 
     state.activeCoverflowIndex = randIdx;
@@ -4722,10 +4785,14 @@ function startPlaylistPlayback(startIndex, isShuffle = false) {
       const idx = (startIndex + step) % N;
       const t = state.userPlaylist[idx];
       newQueue.push({
+        id: t.id,
         artist: t.artist,
         title: t.title,
         cover: t.cover,
-        album: t.album
+        album: t.album,
+        duration: t.duration,
+        preview: t.preview,
+        videoId: t.videoId || t.video_id
       });
     }
 
@@ -4927,51 +4994,34 @@ async function loadUserPlaylist() {
     ownerSub.textContent = `Colección sincronizada de ${username}. Desliza en 3D para reproducir.`;
   }
 
-  // 1. Obtener lista del servidor para el usuario autenticado
-  let currentList = [];
-  try {
-    const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}`);
-    const data = await res.json();
-    const serverTracks = (data && data.success && (data.tracks || data.playlist)) ? (data.tracks || data.playlist) : null;
-    if (Array.isArray(serverTracks) && serverTracks.length > 0) {
-      currentList = serverTracks;
-    }
-  } catch (_) {}
-
-  // 2. Combinar con localStorage del usuario actual
+  // 1. Obtener lista autoritativa del servidor para el usuario autenticado (sin caché stale)
   const savedUserKey = `vice_playlist_${username}`;
-  let localTracks = [];
+  let serverLoaded = false;
   try {
-    const saved = localStorage.getItem(savedUserKey);
-    if (saved) localTracks = JSON.parse(saved);
-  } catch (_) {}
-
-  const trackMap = new Map();
-  const addTrackToMap = (t) => {
-    if (!t || !t.title) return;
-    const key = `${(t.title || '').toLowerCase().trim()}___${(t.artist || '').toLowerCase().trim()}`;
-    if (!trackMap.has(key)) trackMap.set(key, t);
-  };
-
-  currentList.forEach(addTrackToMap);
-  localTracks.forEach(addTrackToMap);
-
-  state.userPlaylist = Array.from(trackMap.values());
-
-  // 3. Guardar en localStorage sincronizado
-  try {
-    localStorage.setItem(savedUserKey, JSON.stringify(state.userPlaylist));
-  } catch (_) {}
-
-  // 4. Si el servidor estaba vacío pero el usuario tenía local, respaldar al servidor
-  if (currentList.length === 0 && state.userPlaylist.length > 0) {
-    state.userPlaylist.forEach(t => {
-      fetch('/api/playlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: username, track: t })
-      }).catch(() => {});
+    const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}&_t=${Date.now()}`, {
+      cache: 'no-store'
     });
+    if (res.ok) {
+      const data = await res.json();
+      const serverTracks = (data && data.success && (data.tracks || data.playlist)) ? (data.tracks || data.playlist) : null;
+      if (Array.isArray(serverTracks)) {
+        state.userPlaylist = serverTracks;
+        serverLoaded = true;
+        try {
+          localStorage.setItem(savedUserKey, JSON.stringify(serverTracks));
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.warn('No se pudo contactar al servidor para playlist (modo offline):', err);
+  }
+
+  // 2. Fallback offline: Solo si el servidor falló por falta de red, recuperar de localStorage
+  if (!serverLoaded) {
+    try {
+      const saved = localStorage.getItem(savedUserKey);
+      if (saved) state.userPlaylist = JSON.parse(saved);
+    } catch (_) {}
   }
 
   updatePlaylistBadge();
@@ -5264,7 +5314,7 @@ function playPlaylistTrack(track) {
   renderPlaylistTracklist();
 
   // En la playlist SIEMPRE reproducir la canción 100% completa oficial
-  playFullSong(track.artist, track.title, track.cover, track.album, track.duration, track.preview);
+  playFullSong(track.artist, track.title, track.cover, track.album, track.duration, track.preview, track.videoId || track.video_id);
 }
 
 async function addToUserPlaylist(track) {

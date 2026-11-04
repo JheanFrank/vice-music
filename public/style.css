@@ -134,15 +134,15 @@ body {
   font-weight: 900;
   letter-spacing: 2px;
   font-style: italic;
-  background: linear-gradient(90deg, #ffffff, var(--vice-pink));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: baseline;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
 }
 
 .logo-title span {
-  background: linear-gradient(90deg, var(--vice-pink), var(--vice-cyan));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--vice-pink);
+  text-shadow: 0 0 14px rgba(255, 42, 133, 0.7);
   margin-left: 4px;
 }
 
@@ -1281,7 +1281,18 @@ body {
   }
 
   .logo-title {
-    font-size: 1.35rem;
+    font-size: 1.35rem !important;
+    color: #ffffff !important;
+    display: inline-flex !important;
+    align-items: baseline !important;
+    letter-spacing: 1.5px !important;
+  }
+
+  .logo-title span {
+    color: var(--vice-pink) !important;
+    -webkit-text-fill-color: var(--vice-pink) !important;
+    background: none !important;
+    margin-left: 3px !important;
   }
 
   .tagline {
@@ -1289,8 +1300,46 @@ body {
     letter-spacing: 0.5px;
   }
 
+  /* Login / Perfil VIP visible y compacto en el header móvil */
   .header-status {
-    display: none;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+  }
+
+  .header-status .status-text,
+  .header-status .badge-gold,
+  .header-status .pulse-pink {
+    display: none !important;
+  }
+
+  .auth-status-wrapper {
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .btn-auth-header {
+    padding: 0.35rem 0.65rem !important;
+    font-size: 0.72rem !important;
+    border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.3rem !important;
+    background: linear-gradient(135deg, rgba(255, 42, 133, 0.25), rgba(0, 240, 255, 0.25)) !important;
+    border: 1px solid var(--vice-pink) !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+  }
+
+  .btn-auth-header .auth-icon {
+    font-size: 0.85rem !important;
+  }
+
+  .auth-user-badge {
+    padding: 0.3rem 0.55rem !important;
+    font-size: 0.72rem !important;
   }
 
   .main-container {
@@ -1475,17 +1524,11 @@ body {
     gap: 0.5rem;
   }
 
-  .album-hero-actions {
-    flex-direction: column;
-    width: 100%;
-    gap: 0.6rem;
-  }
-
-  .album-hero-actions button {
-    width: 100%;
-    justify-content: center;
-    font-size: 0.82rem;
-    padding: 0.75rem 1rem !important;
+  /* Ocultar botones gigantes de descargar álbum/carátula en teléfonos para mantener vista limpia */
+  .album-hero-actions,
+  .btn-download-full-album,
+  .btn-download-album-cover {
+    display: none !important;
   }
 
   .album-track-item {
@@ -1531,18 +1574,19 @@ body {
     left: 0 !important;
     right: 0 !important;
     width: 100vw !important;
-    height: 68px !important;
-    min-height: 68px !important;
-    max-height: 68px !important;
+    height: 64px !important;
+    min-height: 64px !important;
+    max-height: 64px !important;
     padding: 0 !important;
-    background: rgba(16, 7, 30, 0.98) !important;
+    background: rgba(14, 6, 24, 0.98) !important;
     backdrop-filter: blur(25px) !important;
     -webkit-backdrop-filter: blur(25px) !important;
     border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.75) !important;
-    z-index: 9999 !important;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.8) !important;
+    z-index: 99999 !important;
     display: flex !important;
     align-items: center !important;
+    box-sizing: border-box !important;
   }
 
   /* Línea de progreso interactiva y visible fijada al borde superior */
@@ -1551,7 +1595,7 @@ body {
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    height: 4px !important;
+    height: 3.5px !important;
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
@@ -1563,14 +1607,14 @@ body {
     display: none !important;
   }
   .progress-track {
-    height: 4px !important;
+    height: 3.5px !important;
     border-radius: 0 !important;
     background: transparent !important;
     width: 100% !important;
     position: relative !important;
   }
   .progress-fill {
-    height: 4px !important;
+    height: 3.5px !important;
     border-radius: 0 !important;
     background: linear-gradient(90deg, #ff2a85, #00f0ff) !important;
     box-shadow: 0 0 8px rgba(0, 240, 255, 0.8) !important;
@@ -1589,29 +1633,34 @@ body {
     height: 100% !important;
     padding: 0 0.8rem !important;
     box-sizing: border-box !important;
-    gap: 0.6rem !important;
-    margin-top: 2px !important;
+    gap: 0.5rem !important;
+    margin: 0 !important;
   }
 
-  /* Lado Izquierdo: Carátula (48x48) + Título + Artista (Clickeable para abrir el reproductor completo) */
+  /* Lado Izquierdo: Carátula (44x44) + Título + Artista (Clickeable para abrir el reproductor completo) */
   .player-track {
     display: flex !important;
     align-items: center !important;
-    gap: 0.65rem !important;
-    flex: 1 !important;
+    gap: 0.6rem !important;
+    flex: 1 1 auto !important;
     min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
     overflow: hidden !important;
     cursor: pointer !important;
   }
   .track-artwork-wrapper {
-    width: 48px !important;
-    height: 48px !important;
-    min-width: 48px !important;
-    border-radius: 8px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    border-radius: 9px !important;
     flex-shrink: 0 !important;
     overflow: hidden !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6) !important;
+    border: 1.5px solid var(--vice-pink) !important;
+    margin: 0 !important;
   }
   .track-artwork-wrapper img,
   #playerCover {
@@ -1621,17 +1670,18 @@ body {
     display: block !important;
   }
   .track-meta {
-    flex: 1 !important;
+    flex: 1 1 auto !important;
     min-width: 0 !important;
     overflow: hidden !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
+    margin: 0 !important;
   }
   .track-meta h4,
   #playerTitle {
-    font-size: 0.88rem !important;
-    color: #fff !important;
+    font-size: 0.85rem !important;
+    color: #ffffff !important;
     white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
@@ -1641,17 +1691,13 @@ body {
   }
   .track-meta p,
   #playerArtist {
-    font-size: 0.74rem !important;
+    font-size: 0.72rem !important;
+    color: var(--vice-cyan, #00f0ff) !important;
     white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     margin: 0 !important;
     display: block !important;
-  }
-  .player-more-left-btn,
-  .spec-pill,
-  #playerLabel {
-    display: none !important;
   }
 
   /* Lado Derecho: Controles esenciales limpios (Anterior, Play/Pause circular, Siguiente, Cola) */
@@ -1659,29 +1705,26 @@ body {
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
-    gap: 0.35rem !important;
-    flex-shrink: 0 !important;
+    gap: 0.25rem !important;
+    flex: 0 0 auto !important;
     width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   .player-controls .btn-group {
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
-    gap: 0.35rem !important;
+    gap: 0.25rem !important;
     width: auto !important;
-  }
-  .speed-btn,
-  .dj-btn,
-  .btn-mobile-action,
-  .btn-download-mp3,
-  .btn-full-song {
-    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   .control-btn {
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-    padding: 0.3rem !important;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0.25rem !important;
     border-radius: 50% !important;
     display: flex !important;
     align-items: center !important;
@@ -1691,29 +1734,50 @@ body {
     color: #fff !important;
   }
   .control-btn svg {
-    width: 18px !important;
-    height: 18px !important;
+    width: 17px !important;
+    height: 17px !important;
   }
   .control-btn.play-main {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
     background: var(--vice-pink, #ff2a85) !important;
     color: #fff !important;
-    box-shadow: 0 0 16px rgba(255, 42, 133, 0.55) !important;
+    box-shadow: 0 0 16px rgba(255, 42, 133, 0.6) !important;
   }
   .control-btn.play-main svg {
     width: 20px !important;
     height: 20px !important;
   }
+
+  /* Ocultar botones extra en la barra fija móvil para mantener el reproductor limpio, centrado y con portada visible */
+  #btnSpeed,
+  #btnBottomDj,
+  #btnPlayerDlMp3Mobile,
+  #btnPlayFullSongMobile,
+  .vice-player .speed-btn,
+  .vice-player .dj-btn,
+  .vice-player .btn-mobile-action,
+  .vice-player .btn-dl-mp3,
+  .vice-player .btn-download-mp3,
+  .vice-player .btn-full-song,
+  .vice-player .player-more-left-btn,
+  .vice-player .spec-pill,
+  .vice-player #playerLabel {
+    display: none !important;
+  }
+
   .player-actions {
     display: flex !important;
     align-items: center !important;
-    margin-left: 0.2rem !important;
+    flex: 0 0 auto !important;
+    min-width: auto !important;
+    margin-left: 0.15rem !important;
   }
   .player-queue-btn {
-    width: 34px !important;
-    height: 34px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -5528,13 +5592,27 @@ body {
   /* 2. Corrección de degradados en Safari iOS: Texto blanco sólido y nítido (Cero cajas rojas/negras) */
   .hero-title,
   .home-hero-title,
-  .playlist-hero-title,
-  .logo-title {
+  .playlist-hero-title {
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
     background: none !important;
     display: block !important;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;
+  }
+  .logo-title {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background: none !important;
+    display: inline-flex !important;
+    align-items: baseline !important;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;
+  }
+  .logo-title span {
+    color: var(--vice-pink) !important;
+    -webkit-text-fill-color: var(--vice-pink) !important;
+    background: none !important;
+    margin-left: 3px !important;
+    text-shadow: 0 0 12px rgba(255, 42, 133, 0.7) !important;
   }
   .home-hero-banner,
   .playlist-hero-banner {
@@ -5813,49 +5891,55 @@ body {
   .album-card {
     padding: 0.5rem !important;
   }
+  /* 7. Botones de Tarjetas en Móvil: Solo Iconos compactos y elegantes en una sola fila (CERO TEXTO GIGANTE, CERO CHOQUES) */
   .track-card-actions-single {
-    display: grid !important;
-    grid-template-columns: 1fr auto !important;
-    grid-template-rows: auto auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
     gap: 0.35rem !important;
     width: 100% !important;
     box-sizing: border-box !important;
   }
   .track-card-actions-single .btn-card-preview {
-    grid-column: 1 / -1 !important;
-    width: 100% !important;
-    padding: 0.45rem 0.4rem !important;
-    font-size: 0.72rem !important;
+    flex: 1 !important;
+    height: 34px !important;
+    padding: 0.4rem 0.2rem !important;
+    font-size: 0.95rem !important;
     border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
     justify-content: center !important;
     box-sizing: border-box !important;
+    min-width: 0 !important;
   }
   .track-card-actions-single .btn-card-preview span {
-    display: inline !important;
-    font-size: 0.72rem !important;
-    font-weight: 800 !important;
+    display: none !important; /* Oculta texto PREVIEW en móvil */
   }
   .track-card-actions-single .btn-card-full {
-    grid-column: 1 / 2 !important;
-    width: 100% !important;
-    padding: 0.45rem 0.4rem !important;
-    font-size: 0.72rem !important;
+    flex: 1 !important;
+    height: 34px !important;
+    padding: 0.4rem 0.2rem !important;
+    font-size: 0.95rem !important;
     border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
     justify-content: center !important;
     box-sizing: border-box !important;
+    min-width: 0 !important;
   }
   .track-card-actions-single .btn-card-full span {
-    display: inline !important;
-    font-size: 0.72rem !important;
-    font-weight: 800 !important;
+    display: none !important; /* Oculta texto COMPLETA en móvil */
   }
   .track-card-actions-single .btn-single-more {
-    grid-column: 2 / 3 !important;
     width: 34px !important;
-    height: 100% !important;
-    min-height: 30px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    flex-shrink: 0 !important;
     border-radius: 8px !important;
-    padding: 0.25rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
   }
 

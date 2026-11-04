@@ -110,6 +110,7 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const cleanTitle = (title || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
   const isRemixRequest = /remix|rmx/i.test(`${title} ${artist}`);
   const userWantsFemale = /female|mujer|femenin/i.test(`${title} ${artist}`);
+  const userWantsLive = /en vivo|live|concierto|en directo/i.test(`${title} ${artist}`);
 
   // Extraer lista completa de artistas tanto del campo artist como de cualquier (feat. ...) en el título
   let allArtistNames = [];
@@ -251,6 +252,14 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     rawCandidates.push(...multiArtistCandidates);
   }
 
+  // Si la pista solicitada es en vivo, buscar explícitamente la versión en vivo del artista
+  if (userWantsLive) {
+    const liveCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} Live`);
+    rawCandidates.push(...liveCandidates);
+    const liveCandidates2 = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} en vivo`);
+    rawCandidates.push(...liveCandidates2);
+  }
+
   // 1° Búsqueda: YouTube Music Master Topic con artista principal y título
   const topicCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} Topic`);
   rawCandidates.push(...topicCandidates);
@@ -295,13 +304,16 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
     if (BAD_CHANNELS.some(b => ch.includes(normalizeStr(b)))) return -9999;
 
-    // Descartar versiones "En Vivo" / "Live" / "Concierto" si la pista original NO es en vivo (evita audio feo de estadio)
-    const userWantsLive = /en vivo|live|concierto|en directo/i.test(`${cleanTitle} ${cleanArtist}`);
+    // Descartar versiones "En Vivo" / "Live" / "Concierto" si la pista original NO es en vivo
     if (!userWantsLive) {
       if (/en vivo|live at|concierto|en directo|live session|show en vivo|acustico|acústico|los carlos julios/i.test(t) || 
           /los carlos julios/i.test(ch) || 
           /\(live\)|\blive\b|\[live\]/i.test(c.title)) {
-        return -9999; // DISQUALIFIED! Jamás poner concierto en vivo si el usuario no pidió en vivo
+        return -9999; // DISQUALIFIED! Jamás poner concierto en vivo si la pista original de estudio no es en vivo
+      }
+    } else {
+      if (/en vivo|live|concierto|en directo/i.test(t) || /\(live\)|\blive\b|\[live\]/i.test(c.title)) {
+        s += 260; // Si la canción oficial ES en vivo, bonificación para capturar la interpretación oficial
       }
     }
 
@@ -384,15 +396,21 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       s += 50;
     }
     
-    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic) y sellos discográficos
+    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic) y canal del artista
     if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic')) {
-      s += 500; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
+      s += 600; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
     }
+    if (isOfficialArtistChannel) {
+      s += 500; // Canal oficial del artista
+    } else if (!c.isTopic && !c.isVerified) {
+      // PENALIZACIÓN SEVERA a canales de terceros desconocidos (ej: "JORGE CASTILLA", bootlegs, covers)
+      s -= 450;
+    }
+
     if (c.hasAudioBadge || /provided to youtube/i.test(combined)) {
       s += 350;
     }
-    if (c.isVerified) s += 80;
-    if (isOfficialArtistChannel) s += 140;
+    if (c.isVerified) s += 120;
     
     return s;
   }
@@ -1016,7 +1034,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.0.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.0.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

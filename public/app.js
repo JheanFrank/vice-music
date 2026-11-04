@@ -965,6 +965,18 @@ function setupEventListeners() {
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     }
   });
+  state.audio.addEventListener('error', () => {
+    if (state.playbackSource === 'full_stream' && state.currentTrack && state.currentTrack.videoId) {
+      console.warn('[Stream Live Error] Reintentando vía YouTube...');
+      state.playbackSource = 'full';
+      if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+        ytPlayer.loadVideoById(state.currentTrack.videoId);
+        ytPlayer.playVideo();
+        setPlayingState(true);
+        startYtProgress();
+      }
+    }
+  });
 
   // Eventos de Autenticación VIP
   const btnOpenLogin = document.getElementById('btnOpenLogin');
@@ -1650,7 +1662,6 @@ async function openAlbumDetail(albumId) {
           <span>📅 Lanzamiento: ${album.releaseDate}</span>
           <span>💿 ${album.nbTracks} Canciones</span>
           <span>🏷️ ${album.label || 'Oficial'}</span>
-          <span>🖼️ Portada: 1000x1000 HD</span>
         </div>
         <div class="album-hero-actions">
           <!-- BOTÓN PRINCIPAL: DESCARGAR ÁLBUM COMPLETO EN FLAC -->
@@ -2677,6 +2688,8 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
       initYtPlayer();
 
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1);
+
       const tryPlay = () => {
         if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
           ytPlayer.loadVideoById(data.videoId);
@@ -2694,16 +2707,40 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         return false;
       };
 
-      if (!tryPlay()) {
-        ytPendingVideoId = data.videoId;
-        showToast('⏳ Sintonizando reproductor...');
-        let retries = 0;
-        const interval = setInterval(() => {
-          retries++;
-          if (tryPlay() || retries > 12) {
-            clearInterval(interval);
+      // En dispositivos móviles, activar flujo nativo de audio para soportar reproducción continua con pantalla bloqueada / en segundo plano
+      if (isMobileDevice) {
+        state.playbackSource = 'full_stream';
+        state.audio.src = `/api/stream-live?v=${encodeURIComponent(data.videoId)}`;
+        state.audio.playbackRate = state.currentSpeed || 1;
+        state.audio.play().then(() => {
+          setPlayingState(true);
+          updateMediaSession(trackObj);
+          const tierTag = data.tier === 'audio_oficial' ? ' (Audio Oficial)' : (data.tier === 'letra_lyrics' ? ' (Video con Letra)' : '');
+          showToast(`🎧 Reproduciendo (segundo plano activo): ${title}${tierTag}`);
+        }).catch((err) => {
+          console.warn('[Stream Live] Fallback automático a YouTube Player:', err);
+          state.playbackSource = 'full';
+          if (!tryPlay()) {
+            ytPendingVideoId = data.videoId;
+            let retries = 0;
+            const interval = setInterval(() => {
+              retries++;
+              if (tryPlay() || retries > 12) clearInterval(interval);
+            }, 350);
           }
-        }, 350);
+        });
+      } else {
+        if (!tryPlay()) {
+          ytPendingVideoId = data.videoId;
+          showToast('⏳ Sintonizando reproductor...');
+          let retries = 0;
+          const interval = setInterval(() => {
+            retries++;
+            if (tryPlay() || retries > 12) {
+              clearInterval(interval);
+            }
+          }, 350);
+        }
       }
 
       // Watchdog de tolerancia: Si tras 7s no ha iniciado ni está cargando, rota a video alternativo
@@ -3716,10 +3753,14 @@ function setupQueueHandlers() {
   if (backdropQueue) backdropQueue.addEventListener('click', closeQueueModal);
   if (btnClearQueue) {
     btnClearQueue.addEventListener('click', () => {
-      if (state.queue && state.queue.length > 0) {
+      if (!state.queue || state.queue.length === 0) {
+        showToast('ℹ️ La cola de reproducción ya está vacía');
+        return;
+      }
+      if (confirm('¿Estás seguro de que deseas vaciar toda la cola de reproducción?')) {
         state.queue = [];
         renderQueueItems();
-        showTopRightToast('Cola vaciada', 'No hay pistas en espera', 'info');
+        showTopRightToast('Cola vaciada', 'Se eliminaron las canciones en espera', 'info');
       }
     });
   }

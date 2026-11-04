@@ -1001,7 +1001,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.0.5', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.0.6', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1336,6 +1336,79 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: err.message }));
       }
+    }
+
+    // 0.15 STREAM DE AUDIO NATIVO CONTINUO (Background Audio / Pantalla Apagada)
+    if (pathname === '/api/stream-live') {
+      const vId = (reqUrl.searchParams.get('v') || reqUrl.searchParams.get('videoId') || '').trim();
+      if (!vId) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ error: 'Falta videoId' }));
+      }
+
+      try {
+        const audioStream = await getAudioStreamForVideo(vId);
+        if (!audioStream) {
+          res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ error: 'Audio stream no disponible' }));
+        }
+
+        const ffmpeg = spawn(ffmpegPath, [
+          '-i', 'pipe:0',
+          '-vn',
+          '-c:a', 'libmp3lame',
+          '-b:a', '192k',
+          '-f', 'mp3',
+          'pipe:1'
+        ]);
+
+        ffmpeg.stdin.on('error', () => {});
+        audioStream.pipe(ffmpeg.stdin);
+
+        let headersSent = false;
+        ffmpeg.stdout.on('data', (chunk) => {
+          if (!headersSent) {
+            headersSent = true;
+            res.writeHead(200, {
+              'Content-Type': 'audio/mpeg',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Accept-Ranges': 'bytes'
+            });
+          }
+          res.write(chunk);
+        });
+
+        req.on('close', () => {
+          try { ffmpeg.kill('SIGKILL'); } catch (_) {}
+          try { if (audioStream && typeof audioStream.destroy === 'function') audioStream.destroy(); } catch (_) {}
+        });
+
+        ffmpeg.stdout.on('end', () => {
+          if (!headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            res.end(JSON.stringify({ error: 'FFmpeg terminó sin datos' }));
+          } else {
+            res.end();
+          }
+        });
+
+        audioStream.on('error', (err) => {
+          console.warn('[Stream Live] Error en audioStream:', err.message);
+          try { ffmpeg.kill('SIGKILL'); } catch (_) {}
+          if (!headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+      } catch (err) {
+        console.error('[Stream Live] Error:', err.message);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
+      return;
     }
 
     // 1. BUSCADOR INTELIGENTE DE ÁLBUMES (Deezer + iTunes Combinados)

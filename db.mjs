@@ -69,6 +69,40 @@ try {
     db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', 'admin', 'VIP Admin');
   }
 
+  // Restaurar automáticamente playlist desde vice_store.json persistente si SQLite está vacío (ej: nuevo deploy en Render)
+  const countRow = db.prepare('SELECT COUNT(*) as cnt FROM playlists').get();
+  if (countRow && countRow.cnt === 0 && fs.existsSync(JSON_FILE)) {
+    try {
+      const store = loadJsonStore();
+      const insertStmt = db.prepare(`
+        INSERT OR IGNORE INTO playlists (username, title, artist, cover, preview, album, duration, video_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const [u, plist] of Object.entries(store.playlists || {})) {
+        if (Array.isArray(plist)) {
+          for (let i = plist.length - 1; i >= 0; i--) {
+            const t = plist[i];
+            if (t && t.title) {
+              insertStmt.run(
+                u.toLowerCase().trim(),
+                t.title,
+                t.artist || 'Desconocido',
+                t.cover || '',
+                t.preview || t.audioUrl || '',
+                t.album || '',
+                t.duration || 0,
+                t.videoId || t.video_id || ''
+              );
+            }
+          }
+        }
+      }
+      console.log('📦 [Database] Playlists restauradas automáticamente desde vice_store.json');
+    } catch (err) {
+      console.warn('Advertencia al restaurar JSON a SQLite:', err.message);
+    }
+  }
+
   console.log('📦 [Database] Motor SQL Relacional Estándar activado con éxito en data/vice_music.db');
 } catch (e) {
   console.warn('⚠️ [Database] SQLite no disponible, usando almacén JSON persistente:', e.message);
@@ -183,7 +217,13 @@ export function setPlaylist(username, fullPlaylist) {
           );
         }
       }
-      return getPlaylist(cleanUser);
+      const resTracks = getPlaylist(cleanUser);
+      try {
+        const store = loadJsonStore();
+        store.playlists[cleanUser] = resTracks;
+        saveJsonStore(store);
+      } catch (_) {}
+      return resTracks;
     } catch (e) {
       console.warn('Error guardando playlist en SQLite:', e.message);
     }
@@ -225,7 +265,13 @@ export function addToPlaylist(username, track) {
         track.duration || 0,
         track.videoId || ''
       );
-      return getPlaylist(cleanUser);
+      const resTracks = getPlaylist(cleanUser);
+      try {
+        const store = loadJsonStore();
+        store.playlists[cleanUser] = resTracks;
+        saveJsonStore(store);
+      } catch (_) {}
+      return resTracks;
     } catch (e) {
       console.warn('Error al insertar en SQLite playlist:', e.message);
     }
@@ -262,7 +308,13 @@ export function removeFromPlaylist(username, title, artist) {
     try {
       const stmt = db.prepare('DELETE FROM playlists WHERE lower(username) = ? AND trim(lower(title)) = ?');
       stmt.run(cleanUser, cleanTitle);
-      return getPlaylist(cleanUser);
+      const resTracks = getPlaylist(cleanUser);
+      try {
+        const store = loadJsonStore();
+        store.playlists[cleanUser] = resTracks;
+        saveJsonStore(store);
+      } catch (_) {}
+      return resTracks;
     } catch (_) {}
   }
 

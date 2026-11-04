@@ -4992,34 +4992,53 @@ async function loadUserPlaylist() {
     ownerSub.textContent = `Colección sincronizada de ${username}. Desliza en 3D para reproducir.`;
   }
 
-  // 1. Obtener lista autoritativa del servidor para el usuario autenticado (sin caché stale)
+  // 1. Obtener canciones guardadas localmente en este navegador para protegerlas siempre
   const savedUserKey = `vice_playlist_${username}`;
+  let localTracks = [];
+  try {
+    const saved = localStorage.getItem(savedUserKey);
+    if (saved) localTracks = JSON.parse(saved);
+    if (!Array.isArray(localTracks)) localTracks = [];
+  } catch (_) {}
+
+  // 2. Consultar servidor con prevención estricta de caché
   let serverLoaded = false;
+  let serverTracks = [];
   try {
     const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}&_t=${Date.now()}`, {
       cache: 'no-store'
     });
     if (res.ok) {
       const data = await res.json();
-      const serverTracks = (data && data.success && (data.tracks || data.playlist)) ? (data.tracks || data.playlist) : null;
-      if (Array.isArray(serverTracks)) {
-        state.userPlaylist = serverTracks;
+      const list = (data && data.success && (data.tracks || data.playlist)) ? (data.tracks || data.playlist) : null;
+      if (Array.isArray(list)) {
+        serverTracks = list;
         serverLoaded = true;
-        try {
-          localStorage.setItem(savedUserKey, JSON.stringify(serverTracks));
-        } catch (_) {}
       }
     }
   } catch (err) {
     console.warn('No se pudo contactar al servidor para playlist (modo offline):', err);
   }
 
-  // 2. Fallback offline: Solo si el servidor falló por falta de red, recuperar de localStorage
-  if (!serverLoaded) {
+  // 3. REGLA DE ORO DE PERSISTENCIA INQUEBRANTABLE:
+  if (serverLoaded && serverTracks.length > 0) {
+    // Si el servidor tiene canciones, el servidor es la fuente autoritativa (mantiene eliminaciones sincronizadas)
+    state.userPlaylist = serverTracks;
     try {
-      const saved = localStorage.getItem(savedUserKey);
-      if (saved) state.userPlaylist = JSON.parse(saved);
+      localStorage.setItem(savedUserKey, JSON.stringify(serverTracks));
     } catch (_) {}
+  } else if (localTracks.length > 0) {
+    // Si el servidor está vacío (ej: nuevo despliegue o reinicio de Render), pero el usuario tenía canciones en su navegador:
+    // NUNCA BORRAR las canciones del usuario. Resguardar y sincronizar al servidor de inmediato:
+    state.userPlaylist = localTracks;
+    fetch('/api/playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: username, playlist: localTracks })
+    }).catch(() => {});
+  } else {
+    // Ambos vacíos o nuevo usuario
+    state.userPlaylist = serverTracks || [];
   }
 
   updatePlaylistBadge();

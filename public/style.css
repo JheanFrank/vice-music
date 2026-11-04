@@ -1351,23 +1351,25 @@ body {
   .auth-user-badge:not(.hidden) {
     display: inline-flex !important;
     align-items: center !important;
-    gap: 0.35rem !important;
-    padding: 0.25rem 0.5rem !important;
-    font-size: 0.68rem !important;
-    border-radius: 16px !important;
+    gap: 0.2rem !important;
+    padding: 0.16rem 0.35rem !important;
+    font-size: 0.6rem !important;
+    border-radius: 12px !important;
     background: rgba(255, 215, 0, 0.12) !important;
     border: 1px solid rgba(255, 215, 0, 0.38) !important;
     color: #ffd700 !important;
     white-space: nowrap !important;
+    max-width: 135px !important;
+    box-sizing: border-box !important;
   }
 
   .auth-user-badge .vip-crown {
-    font-size: 0.75rem !important;
+    font-size: 0.65rem !important;
   }
 
   .auth-user-badge .vip-name {
-    font-size: 0.68rem !important;
-    max-width: 95px !important;
+    font-size: 0.58rem !important;
+    max-width: 55px !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
@@ -1375,10 +1377,10 @@ body {
   }
 
   .btn-logout {
-    padding: 0.15rem 0.4rem !important;
-    font-size: 0.62rem !important;
+    padding: 0.1rem 0.28rem !important;
+    font-size: 0.52rem !important;
     font-weight: 700 !important;
-    border-radius: 10px !important;
+    border-radius: 6px !important;
     background: rgba(255, 42, 133, 0.25) !important;
     border: 1px solid var(--vice-pink) !important;
     color: #ffffff !important;

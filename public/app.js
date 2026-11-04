@@ -145,7 +145,14 @@ async function batchAddToPlaylist(atStart = true) {
   }
 
   const user = getAuthUser();
-  const username = user ? user.user : 'guest';
+  if (!user) {
+    openLoginModal('Inicia sesión con tu cuenta VIP para guardar canciones en tu Playlist.', () => {
+      batchAddToPlaylist(atStart);
+    });
+    showToast('🔒 Inicia sesión para guardar canciones en tu playlist.');
+    return;
+  }
+  const username = user.user;
 
   const formattedTracks = tracks.map(t => ({
     title: t.title,
@@ -2584,9 +2591,22 @@ function loadTrack(track) {
   }
 }
 
+function primeAudioPlayback() {
+  if (state.audio) {
+    if (!state.audio.src) {
+      state.audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+    }
+    try {
+      const p = state.audio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (_) {}
+  }
+}
+
 // REPRODUCIR CANCIÓN 100% COMPLETA (RESPUESTA INSTANTÁNEA + METADATOS LIMPIOS HD)
 async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null) {
   const thisRequestId = ++currentPlayRequestId;
+  primeAudioPlayback();
 
   // Pausar y descargar completamente audio de muestra si está sonando para que NUNCA se duplique
   if (state.audio) {
@@ -2730,6 +2750,25 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         return false;
       };
 
+      if (isMobileDevice) {
+        // EN MÓVILES (CHROME, BRAVE, SAFARI): REPRODUCCIÓN NATIVA CON SEGUNDO PLANO Y PANTALLA APAGADA
+        state.playbackSource = 'full_stream';
+        state.audio.loop = false;
+        state.audio.volume = 1;
+        state.audio.src = `/api/stream-live?v=${data.videoId}`;
+        state.audio.playbackRate = state.currentSpeed;
+        state.audio.play().then(() => {
+          setPlayingState(true);
+          updateMediaSession(trackObj);
+          showToast(`🎧 Reproduciendo: ${title}`);
+        }).catch(err => {
+          console.warn('[Mobile Native Audio] Reintentando vía YouTube:', err);
+          state.playbackSource = 'full';
+          tryPlay();
+        });
+        return;
+      }
+
       state.playbackSource = 'full';
       if (!tryPlay()) {
         ytPendingVideoId = data.videoId;
@@ -2741,16 +2780,6 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
             clearInterval(interval);
           }
         }, 350);
-      }
-
-      // Mantener viva la sesión de audio del sistema en teléfonos con bucle silencioso nativo
-      if (isMobileDevice) {
-        try {
-          state.audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-          state.audio.loop = true;
-          state.audio.volume = 0.001;
-          state.audio.play().catch(() => {});
-        } catch (_) {}
       }
 
       // Watchdog de tolerancia: Si tras 7s no ha iniciado ni está cargando, rota a video alternativo
@@ -3399,6 +3428,9 @@ function cyclePlaybackSpeed() {
 
 function setPlayingState(playing) {
   state.isPlaying = playing;
+  if (typeof updateDockPlayState === 'function') {
+    updateDockPlayState(playing);
+  }
   if (playing) {
     iconPlay.classList.add('hidden');
     iconPause.classList.remove('hidden');
@@ -4744,13 +4776,10 @@ function setupPlaylistControls() {
       if (!activeTrack) return;
 
       if (state.isPlaying) {
-        if (state.audio) state.audio.pause();
-        if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo();
-        setPlayingState(false);
-        updateDockPlayState(false);
+        togglePlayPause();
       } else {
-        if (!state.currentTrack || !state.queue || state.queue.length === 0) {
-          startPlaylistPlayback(state.activeCoverflowIndex, state.isShuffle);
+        if (!state.currentTrack || state.currentTrack.title !== activeTrack.title) {
+          playPlaylistTrack(activeTrack);
         } else {
           togglePlayPause();
         }
@@ -4763,7 +4792,7 @@ function setupPlaylistControls() {
       if (!state.userPlaylist || state.userPlaylist.length === 0) return;
       const activeTrack = state.userPlaylist[state.activeCoverflowIndex];
       if (activeTrack) {
-        playFullSong(activeTrack.artist, activeTrack.title, activeTrack.cover, activeTrack.album, activeTrack.duration, activeTrack.preview);
+        playPlaylistTrack(activeTrack);
       }
     });
   }
@@ -4836,18 +4865,28 @@ function updatePlaylistBadge() {
 
 async function loadUserPlaylist() {
   const user = getAuthUser();
-  const username = user ? user.user : 'guest';
-
   const ownerTitle = document.getElementById('playlistOwnerTitle');
   const ownerSub = document.getElementById('playlistOwnerSub');
-  if (ownerTitle) {
-    ownerTitle.textContent = user ? `PLAYLIST 3D DE ${user.user.toUpperCase()}` : 'MI PLAYLIST 3D';
-  }
-  if (ownerSub) {
-    ownerSub.textContent = user ? `Colección sincronizada de ${user.user}. Desliza en 3D para reproducir.` : 'Inicia sesión para sincronizar tu colección en tu cuenta.';
+
+  if (!user) {
+    if (ownerTitle) ownerTitle.textContent = 'MI PLAYLIST 3D';
+    if (ownerSub) ownerSub.textContent = 'Inicia sesión con tu cuenta VIP para acceder y guardar tus canciones.';
+    state.userPlaylist = [];
+    updatePlaylistBadge();
+    renderCoverflow();
+    renderPlaylistTracklist();
+    return;
   }
 
-  // 1. Obtener lista del servidor para el usuario actual
+  const username = user.user;
+  if (ownerTitle) {
+    ownerTitle.textContent = `PLAYLIST 3D DE ${username.toUpperCase()}`;
+  }
+  if (ownerSub) {
+    ownerSub.textContent = `Colección sincronizada de ${username}. Desliza en 3D para reproducir.`;
+  }
+
+  // 1. Obtener lista del servidor para el usuario autenticado
   let currentList = [];
   try {
     const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}`);
@@ -4876,28 +4915,15 @@ async function loadUserPlaylist() {
   currentList.forEach(addTrackToMap);
   localTracks.forEach(addTrackToMap);
 
-  // 3. SI EL USUARIO ESTÁ LOGUEADO: Fusionar canciones agregadas mientras era "guest"
-  if (username !== 'guest') {
-    try {
-      const guestSaved = localStorage.getItem('vice_playlist_guest');
-      if (guestSaved) {
-        const guestTracks = JSON.parse(guestSaved);
-        if (Array.isArray(guestTracks) && guestTracks.length > 0) {
-          guestTracks.forEach(addTrackToMap);
-        }
-      }
-    } catch (_) {}
-  }
-
   state.userPlaylist = Array.from(trackMap.values());
 
-  // 4. Guardar en localStorage sincronizado
+  // 3. Guardar en localStorage sincronizado
   try {
     localStorage.setItem(savedUserKey, JSON.stringify(state.userPlaylist));
   } catch (_) {}
 
-  // 5. Si está logueado, sincronizar al backend todas las canciones
-  if (username !== 'guest' && state.userPlaylist.length > 0) {
+  // 4. Si el servidor estaba vacío pero el usuario tenía local, respaldar al servidor
+  if (currentList.length === 0 && state.userPlaylist.length > 0) {
     state.userPlaylist.forEach(t => {
       fetch('/api/playlist', {
         method: 'POST',
@@ -5178,7 +5204,14 @@ async function addToUserPlaylist(track) {
   }
 
   const user = getAuthUser();
-  const username = user ? user.user : 'guest';
+  if (!user) {
+    openLoginModal('Inicia sesión con tu cuenta VIP para guardar canciones en tu Playlist.', () => {
+      addToUserPlaylist(track);
+    });
+    showToast('🔒 Inicia sesión para guardar canciones en tu playlist.');
+    return;
+  }
+  const username = user.user;
 
   const exists = (state.userPlaylist || []).some(t => 
     t.title.toLowerCase().trim() === track.title.toLowerCase().trim() && 

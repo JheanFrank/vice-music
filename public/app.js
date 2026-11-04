@@ -5083,6 +5083,13 @@ function renderPlaylistTracklist() {
         <div class="pl-col-duration">${durationMin}</div>
         <div class="pl-col-actions">
           <button class="pl-act-btn btn-pl-play" title="Reproducir canción completa" data-index="${i}">▶</button>
+          <button class="pl-act-btn btn-pl-more btn-track-more" title="Más opciones (Añadir a la cola, descargar, etc.)" data-index="${i}">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <circle cx="5" cy="12" r="2.2"></circle>
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <circle cx="19" cy="12" r="2.2"></circle>
+            </svg>
+          </button>
           <button class="pl-act-btn btn-pl-dl" title="Descargar MP3 320 kbps oficial" data-index="${i}">⬇</button>
           <button class="pl-act-btn btn-pl-del" title="Eliminar de mi playlist" data-index="${i}">✕</button>
         </div>
@@ -5132,6 +5139,26 @@ function renderPlaylistTracklist() {
       e.stopPropagation();
       const idx = parseInt(btn.getAttribute('data-index'), 10);
       if (!isNaN(idx)) startPlaylistPlayback(idx, false);
+    });
+  });
+
+  container.querySelectorAll('.btn-pl-more').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-index'), 10);
+      const track = state.userPlaylist[idx];
+      if (track) {
+        openTrackContextMenu({
+          title: track.title,
+          artist: track.artist,
+          cover: track.cover,
+          album: track.album,
+          duration: track.duration,
+          preview: track.preview || '',
+          audioUrl: track.preview || '',
+          videoId: track.video_id || track.videoId || ''
+        }, btn);
+      }
     });
   });
 

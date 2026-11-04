@@ -93,7 +93,7 @@ async function fetchYtCandidates(queryTerm, isIsrc = false) {
           const badges = v.ownerBadges?.map(b => b.metadataBadgeRenderer?.style) || [];
           const hasAudioBadge = v.ownerBadges?.some(b => b.metadataBadgeRenderer?.icon?.iconType === 'AUDIO_BADGE') || false;
           const isVerified = badges.some(b => b && (b.includes('VERIFIED') || b.includes('ARTIST'))) || hasAudioBadge;
-          const isTopic = channel.includes('Topic') || channel.endsWith(' - Topic') || hasAudioBadge;
+          const isTopic = channel.endsWith(' - Topic') || channel.includes('Topic');
           const durStr = v.lengthText?.simpleText || v.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText || '';
           const durSec = parseDurationSec(durStr);
           candidates.push({ id: v.videoId, title, channel, isVerified, isTopic, hasAudioBadge, fromIsrc: isIsrc, durStr, durSec });
@@ -414,33 +414,35 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       s += 300; // Gran bonificación si dura alrededor de 5 minutos (duración estándar de Ojalá 5:05)
     }
     
-    // 6. Jerarquía Estricta: 1° Audio Oficial / Topic > 2° Letra/Lyrics > 3° Video Oficial
-    if (/cancion oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t)) {
-      s += 450; // Bonificación prioritaria para pistas de puro audio de estudio sin efectos de video
-    } else if (/lyric|letra|lyrics/i.test(t)) {
-      s += 200;
-    } else if (/video oficial|official video|music video/i.test(t)) {
-      s += 60;
+    // Descarte absoluto de covers, homenajes o imitadores
+    if (/cover|homenaje|karaoke|imitador|pista instrumental|acapella/i.test(t)) {
+      return -9999;
+    }
+
+    // 6. Jerarquía Estricta: 1° Audio Oficial / Topic > 2° Letra/Lyrics > 3° Video Oficial con diálogos/skits
+    const isPureAudio = /cancion oficial|official audio|audio oficial|\(audio\)|\[audio\]|visualizer/i.test(t);
+    const isLyric = /lyric|letra|lyrics/i.test(t);
+    const isMusicVideo = /video oficial|official video|music video|\(oficial\)/i.test(t) && !/audio/i.test(t);
+
+    if (isPureAudio) {
+      s += 650; // Bonificación prioritaria para pistas de puro audio de estudio comercial
+    } else if (isLyric) {
+      s += 500; // Letras y lyric videos contienen el master de estudio limpio sin skits
+    } else if (isMusicVideo) {
+      s -= 250; // Penalización severa a video oficial con skits de diálogo, disparos y compresión
     }
     
-    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic) y canal del artista
+    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic)
     if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic')) {
-      s += 700; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
-    }
-    if (isOfficialArtistChannel) {
-      s += 500; // Canal oficial del artista
-    } else if (!c.isTopic) {
-      // PENALIZACIÓN SEVERA a canales de terceros desconocidos (ej: bootlegs, covers, "Jorge Castilla")
-      s -= 450;
-      if (/cover|homenaje|karaoke|imitador|pista|acapella/i.test(t)) {
-        return -9999;
-      }
+      s += 850; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
+    } else if (isOfficialArtistChannel) {
+      s += 200; // Canal oficial del artista
     }
 
     if (c.hasAudioBadge || /provided to youtube/i.test(combined)) {
-      s += 350;
+      s += 200;
     }
-    if (c.isVerified) s += 120;
+    if (c.isVerified) s += 80;
     
     return s;
   }
@@ -1070,7 +1072,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.4', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.1.5', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

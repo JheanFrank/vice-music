@@ -566,13 +566,18 @@ function startYtProgress() {
   stopYtProgress();
   ytProgressInterval = setInterval(() => {
     if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
-    const cur = ytPlayer.getCurrentTime() || 0;
-    const dur = ytPlayer.getDuration() || 0;
+    const rawCur = ytPlayer.getCurrentTime();
+    let rawDur = ytPlayer.getDuration();
+    if (!Number.isFinite(rawDur) || rawDur <= 0) {
+      rawDur = (state.currentTrack && state.currentTrack.duration) || 0;
+    }
+    const cur = (Number.isFinite(rawCur) && rawCur > 0) ? rawCur : 0;
+    const dur = (Number.isFinite(rawDur) && rawDur > 0) ? rawDur : 0;
 
     currentTimeLabel.innerText = formatTime(cur);
     totalTimeLabel.innerText = dur > 0 ? formatTime(dur) : '00:00';
     if (dur > 0) {
-      const pct = (cur / dur) * 100;
+      const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
       progressFill.style.width = `${pct}%`;
       progressThumb.style.left = `${pct}%`;
       updateMediaSessionPosition(cur, dur);
@@ -2463,13 +2468,16 @@ function updateMediaSessionPosition(position, duration) {
 // ========================================================
 // REPRODUCTOR UNIFICADO (PREVIEW 30S + CANCIÓN COMPLETA)
 // ========================================================
+let currentPlayRequestId = 0;
 
 function loadTrack(track) {
   if (!track) return;
 
-  // Detener YouTube si estaba sonando
-  if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
-    ytPlayer.pauseVideo();
+  currentPlayRequestId++;
+
+  // Detener YouTube si estaba sonando para evitar duplicidad de audio
+  if (ytPlayer && typeof ytPlayer.stopVideo === 'function') {
+    try { ytPlayer.stopVideo(); } catch (_) {}
     stopYtProgress();
   }
 
@@ -2565,6 +2573,8 @@ function loadTrack(track) {
   updateAppleMusicTrackInfo(track);
 
   if (track.audioUrl) {
+    state.audio.loop = false;
+    state.audio.volume = 1;
     state.audio.src = track.audioUrl;
     state.audio.playbackRate = state.currentSpeed;
     state.audio.play().then(() => {
@@ -2576,9 +2586,17 @@ function loadTrack(track) {
 
 // REPRODUCIR CANCIÓN 100% COMPLETA (RESPUESTA INSTANTÁNEA + METADATOS LIMPIOS HD)
 async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null) {
-  // Pausar audio de muestra si está sonando
+  const thisRequestId = ++currentPlayRequestId;
+
+  // Pausar y descargar completamente audio de muestra si está sonando para que NUNCA se duplique
   if (state.audio) {
-    state.audio.pause();
+    try {
+      state.audio.pause();
+      state.audio.currentTime = 0;
+      state.audio.loop = false;
+      state.audio.removeAttribute('src');
+      state.audio.load();
+    } catch (_) {}
   }
 
   let fullArtist = getFullArtistCredits(artist, title);
@@ -2667,6 +2685,11 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     const durParam = trackObj.duration || 0;
     const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist || '')}&title=${encodeURIComponent(title || '')}&duration=${encodeURIComponent(durParam)}`);
     const data = await res.json();
+
+    if (thisRequestId !== currentPlayRequestId) {
+      console.log('[playFullSong] Solicitud antigua cancelada por una acción posterior');
+      return;
+    }
 
     if (data.resolvedArtist && (data.resolvedArtist.includes('&') || data.resolvedArtist.includes('x') || data.resolvedArtist.includes('X') || data.resolvedArtist.includes('feat') || data.resolvedArtist.includes(','))) {
       state.currentTrack.artist = data.resolvedArtist;
@@ -3014,8 +3037,18 @@ async function downloadMp3_320(artist, title, audioUrl = null, videoId = null, e
   enqueueDownload(track);
 }
 
+let togglePlayThrottle = 0;
+
 function togglePlayPause() {
+  const now = Date.now();
+  if (now - togglePlayThrottle < 300) return;
+  togglePlayThrottle = now;
+
   if (state.playbackSource === 'full') {
+    // Asegurar que state.audio esté silenciado y detenido
+    if (state.audio) {
+      try { state.audio.pause(); } catch (_) {}
+    }
     if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
     const ytState = ytPlayer.getPlayerState();
     if (ytState === 1) { // está reproduciendo
@@ -3029,13 +3062,20 @@ function togglePlayPause() {
       if (state.currentTrack) updateMediaSession(state.currentTrack);
     }
   } else {
+    // Asegurar que ytPlayer esté detenido
+    if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+      try { ytPlayer.pauseVideo(); } catch (_) {}
+    }
     if (!state.audio.src) return;
     if (state.audio.paused) {
-      state.audio.play();
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-      if (state.currentTrack) updateMediaSession(state.currentTrack);
+      state.audio.play().then(() => {
+        setPlayingState(true);
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+        if (state.currentTrack) updateMediaSession(state.currentTrack);
+      }).catch(() => setPlayingState(false));
     } else {
       state.audio.pause();
+      setPlayingState(false);
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     }
   }
@@ -3391,14 +3431,17 @@ function setPlayingState(playing) {
 }
 
 function updateProgress() {
-  const current = state.audio.currentTime || 0;
-  const total = state.audio.duration || 0;
+  const current = (Number.isFinite(state.audio.currentTime) && state.audio.currentTime > 0) ? state.audio.currentTime : 0;
+  let total = (Number.isFinite(state.audio.duration) && state.audio.duration > 0) ? state.audio.duration : 0;
+  if (!total && state.currentTrack && state.currentTrack.duration) {
+    total = state.currentTrack.duration;
+  }
 
   currentTimeLabel.innerText = formatTime(current);
-  totalTimeLabel.innerText = formatTime(total);
+  totalTimeLabel.innerText = total > 0 ? formatTime(total) : '00:00';
 
   if (total > 0) {
-    const percent = (current / total) * 100;
+    const percent = Math.min(100, Math.max(0, (current / total) * 100));
     progressFill.style.width = `${percent}%`;
     progressThumb.style.left = `${percent}%`;
     updateMediaSessionPosition(current, total);
@@ -3408,7 +3451,7 @@ function updateProgress() {
 }
 
 function formatTime(seconds) {
-  if (isNaN(seconds) || seconds < 0) return '00:00';
+  if (!Number.isFinite(seconds) || isNaN(seconds) || seconds <= 0) return '00:00';
   const min = Math.floor(seconds / 60);
   const sec = Math.floor(seconds % 60);
   return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
@@ -3620,7 +3663,7 @@ function updateQueueBadge() {
     playerBadge.classList.toggle('hidden', count === 0);
   }
   if (menuBadge) menuBadge.textContent = count;
-  if (modalBadge) modalBadge.textContent = `${count} ${count === 1 ? 'canción' : 'canciones'}`;
+  if (modalBadge) modalBadge.textContent = count;
 }
 
 function openQueueModal() {
@@ -4282,16 +4325,22 @@ async function fetchMotionArtwork(artist, album, title) {
 }
 
 function updateAppleMusicProgress(current, total) {
-  if (amTimeCurrent) amTimeCurrent.innerText = formatTime(current);
-  if (amTimeTotal) amTimeTotal.innerText = total > 0 ? formatTime(total) : '00:00';
-
-  if (total > 0 && amProgressFill && amProgressThumb) {
-    const percent = Math.min(100, Math.max(0, (current / total) * 100));
-    amProgressFill.style.width = `${percent}%`;
-    amProgressThumb.style.left = `${percent}%`;
+  const safeCurrent = (Number.isFinite(current) && current > 0) ? current : 0;
+  let safeTotal = (Number.isFinite(total) && total > 0) ? total : 0;
+  if (!safeTotal && state.currentTrack && state.currentTrack.duration) {
+    safeTotal = state.currentTrack.duration;
   }
 
-  updateLyricsSync(current);
+  if (amTimeCurrent) amTimeCurrent.innerText = formatTime(safeCurrent);
+  if (amTimeTotal) amTimeTotal.innerText = safeTotal > 0 ? formatTime(safeTotal) : '00:00';
+
+  if (safeTotal > 0 && amProgressFill) {
+    const percent = Math.min(100, Math.max(0, (safeCurrent / safeTotal) * 100));
+    amProgressFill.style.width = `${percent}%`;
+    if (amProgressThumb) amProgressThumb.style.left = `${percent}%`;
+  }
+
+  updateLyricsSync(safeCurrent);
 }
 
 function parseLrc(lrcText) {
@@ -4798,32 +4847,64 @@ async function loadUserPlaylist() {
     ownerSub.textContent = user ? `Colección sincronizada de ${user.user}. Desliza en 3D para reproducir.` : 'Inicia sesión para sincronizar tu colección en tu cuenta.';
   }
 
+  // 1. Obtener lista del servidor para el usuario actual
+  let currentList = [];
   try {
     const res = await fetch(`/api/playlist?user=${encodeURIComponent(username)}`);
     const data = await res.json();
     const serverTracks = (data && data.success && (data.tracks || data.playlist)) ? (data.tracks || data.playlist) : null;
     if (Array.isArray(serverTracks) && serverTracks.length > 0) {
-      state.userPlaylist = serverTracks;
-      try {
-        localStorage.setItem(`vice_playlist_${username}`, JSON.stringify(state.userPlaylist));
-      } catch (_) {}
-    } else {
-      const saved = localStorage.getItem(`vice_playlist_${username}`);
-      const localTracks = saved ? JSON.parse(saved) : [];
-      state.userPlaylist = localTracks;
-      if (localTracks.length > 0 && username !== 'guest') {
-        localTracks.forEach(t => {
-          fetch('/api/playlist', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: username, track: t })
-          }).catch(() => {});
-        });
-      }
+      currentList = serverTracks;
     }
-  } catch (err) {
-    const saved = localStorage.getItem(`vice_playlist_${username}`);
-    state.userPlaylist = saved ? JSON.parse(saved) : [];
+  } catch (_) {}
+
+  // 2. Combinar con localStorage del usuario actual
+  const savedUserKey = `vice_playlist_${username}`;
+  let localTracks = [];
+  try {
+    const saved = localStorage.getItem(savedUserKey);
+    if (saved) localTracks = JSON.parse(saved);
+  } catch (_) {}
+
+  const trackMap = new Map();
+  const addTrackToMap = (t) => {
+    if (!t || !t.title) return;
+    const key = `${(t.title || '').toLowerCase().trim()}___${(t.artist || '').toLowerCase().trim()}`;
+    if (!trackMap.has(key)) trackMap.set(key, t);
+  };
+
+  currentList.forEach(addTrackToMap);
+  localTracks.forEach(addTrackToMap);
+
+  // 3. SI EL USUARIO ESTÁ LOGUEADO: Fusionar canciones agregadas mientras era "guest"
+  if (username !== 'guest') {
+    try {
+      const guestSaved = localStorage.getItem('vice_playlist_guest');
+      if (guestSaved) {
+        const guestTracks = JSON.parse(guestSaved);
+        if (Array.isArray(guestTracks) && guestTracks.length > 0) {
+          guestTracks.forEach(addTrackToMap);
+        }
+      }
+    } catch (_) {}
+  }
+
+  state.userPlaylist = Array.from(trackMap.values());
+
+  // 4. Guardar en localStorage sincronizado
+  try {
+    localStorage.setItem(savedUserKey, JSON.stringify(state.userPlaylist));
+  } catch (_) {}
+
+  // 5. Si está logueado, sincronizar al backend todas las canciones
+  if (username !== 'guest' && state.userPlaylist.length > 0) {
+    state.userPlaylist.forEach(t => {
+      fetch('/api/playlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: username, track: t })
+      }).catch(() => {});
+    });
   }
 
   updatePlaylistBadge();

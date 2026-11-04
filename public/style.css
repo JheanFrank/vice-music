@@ -1318,7 +1318,15 @@ body {
     align-items: center !important;
   }
 
-  .btn-auth-header {
+  /* Ocultar estrictamente el botón o badge que tenga la clase hidden */
+  .btn-auth-header.hidden,
+  .auth-user-badge.hidden,
+  #authStatusWrapper .hidden {
+    display: none !important;
+  }
+
+  /* Botón Iniciar Sesión (Visible sólo cuando NO está logueado) */
+  .btn-auth-header:not(.hidden) {
     padding: 0.26rem 0.55rem !important;
     font-size: 0.68rem !important;
     font-weight: 700 !important;
@@ -1339,9 +1347,43 @@ body {
     font-size: 0.75rem !important;
   }
 
-  .auth-user-badge {
-    padding: 0.3rem 0.55rem !important;
-    font-size: 0.72rem !important;
+  /* Badge VIP (Reemplaza al botón de inicio de sesión cuando YA está logueado) */
+  .auth-user-badge:not(.hidden) {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.68rem !important;
+    border-radius: 16px !important;
+    background: rgba(255, 215, 0, 0.12) !important;
+    border: 1px solid rgba(255, 215, 0, 0.38) !important;
+    color: #ffd700 !important;
+    white-space: nowrap !important;
+  }
+
+  .auth-user-badge .vip-crown {
+    font-size: 0.75rem !important;
+  }
+
+  .auth-user-badge .vip-name {
+    font-size: 0.68rem !important;
+    max-width: 95px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: #ffffff !important;
+  }
+
+  .btn-logout {
+    padding: 0.15rem 0.4rem !important;
+    font-size: 0.62rem !important;
+    font-weight: 700 !important;
+    border-radius: 10px !important;
+    background: rgba(255, 42, 133, 0.25) !important;
+    border: 1px solid var(--vice-pink) !important;
+    color: #ffffff !important;
+    cursor: pointer !important;
+    margin-left: 2px !important;
   }
 
   .main-container {
@@ -1785,6 +1827,33 @@ body {
     align-items: center !important;
     justify-content: center !important;
     color: var(--text-dim) !important;
+  }
+
+  /* Modal Cola de Reproducción en Móvil: Espaciado amplio y limpio entre contador, basura y cerrar */
+  .queue-modal-header {
+    padding: 12px 14px !important;
+    gap: 8px !important;
+  }
+  .queue-title-wrap {
+    gap: 6px !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  .queue-modal-title {
+    font-size: 0.85rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .queue-badge-count {
+    padding: 2px 7px !important;
+    font-size: 0.7rem !important;
+    flex-shrink: 0 !important;
+  }
+  .queue-header-actions {
+    gap: 12px !important;
+    margin-left: 14px !important;
+    flex-shrink: 0 !important;
   }
 }
 

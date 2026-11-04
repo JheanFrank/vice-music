@@ -646,7 +646,7 @@ async function getTopColombia() {
     try {
       const artChart = await fetchDeezer('/chart/73/artists');
       if (artChart && Array.isArray(artChart.data) && artChart.data.length > 0) {
-        artists = artChart.data.slice(0, 10).map((a, idx) => ({
+        const candidateArtists = artChart.data.slice(0, 10).map((a, idx) => ({
           rank: idx + 1,
           id: a.id,
           name: a.name,
@@ -655,6 +655,12 @@ async function getTopColombia() {
           nbFans: a.nb_fan || null,
           type: 'artist'
         }));
+
+        // Detectar si Deezer geolocalizó la IP del servidor en EE.UU. devolviendo Drake, Linkin Park, Taylor Swift, etc.
+        const isGlobalLeak = candidateArtists.some(a => /drake|linkin park|taylor swift|noah kahan|olivia rodrigo|kendrick lamar/i.test(a.name));
+        if (!isGlobalLeak) {
+          artists = candidateArtists;
+        }
       } else {
         // Fallback 1: Extraer los artistas únicos más populares de la playlist oficial Top Colombia
         if (plData && plData.tracks && Array.isArray(plData.tracks.data)) {

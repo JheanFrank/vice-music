@@ -848,8 +848,11 @@ function setupEventListeners() {
     albumDetailView.classList.add('hidden');
     if (state.currentMode === 'home') {
       if (homeSection) homeSection.classList.remove('hidden');
+    } else if (state.currentMode === 'playlist') {
+      const playlistSection = document.getElementById('playlistSection');
+      if (playlistSection) playlistSection.classList.remove('hidden');
     } else {
-      catalogSection.classList.remove('hidden');
+      if (catalogSection) catalogSection.classList.remove('hidden');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
@@ -1185,14 +1188,37 @@ function setupEventListeners() {
     });
   }
   if (amMenuBtnAlbum) {
-    amMenuBtnAlbum.addEventListener('click', () => {
+    amMenuBtnAlbum.addEventListener('click', async () => {
       closeMoreMenu();
+      closeAppleMusicModal();
       const t = state.contextTrack || state.currentTrack;
-      if (state.currentAlbum) {
-        closeAppleMusicModal();
-        openAlbumDetail(state.currentAlbum.id);
-      } else if (t) {
-        showToast(`📀 Reproduciendo desde: ${t.album || 'Álbum Oficial'}`);
+      if (!t) return;
+
+      const targetAlbumId = t.albumId || (state.currentAlbum ? state.currentAlbum.id : null);
+      if (targetAlbumId) {
+        openAlbumDetail(targetAlbumId);
+        return;
+      }
+
+      // Si no tiene albumId directo pero tenemos el nombre del álbum y artista, buscarlo dinámicamente
+      if (t.album && t.album !== 'Álbum Desconocido' && t.album !== 'Álbum Oficial') {
+        showToast(`🔍 Abriendo álbum "${t.album}"...`);
+        try {
+          const q = `${t.artist} ${t.album}`;
+          const searchRes = await fetchDeezerJsonp(`/search/album?q=${encodeURIComponent(q)}&limit=1`);
+          if (searchRes && searchRes.data && searchRes.data.length > 0) {
+            openAlbumDetail(`deezer_${searchRes.data[0].id}`);
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // Si no hay álbum separado o falló, ir al perfil del artista para ver su discografía completa
+      if (t.artist) {
+        showToast(`📀 Abriendo discografía de ${t.artist}...`);
+        openArtistProfile(t.artist);
+      } else {
+        showToast(`📀 No se encontró el álbum de esta canción`);
       }
     });
   }
@@ -1596,11 +1622,13 @@ function renderAlbums(albums) {
 
 // Abrir Vista Detallada del Álbum con TODAS sus canciones y DESCARGA COMPLETA
 async function openAlbumDetail(albumId) {
-  state.previousMode = 'album_detail';
+  state.previousMode = state.currentMode || 'album_detail';
   const artistDetailView = document.getElementById('artistDetailView');
   if (artistDetailView) artistDetailView.classList.add('hidden');
   if (homeSection) homeSection.classList.add('hidden');
-  catalogSection.classList.add('hidden');
+  if (catalogSection) catalogSection.classList.add('hidden');
+  const playlistSection = document.getElementById('playlistSection');
+  if (playlistSection) playlistSection.classList.add('hidden');
   albumDetailView.classList.remove('hidden');
   window.scrollTo({ top: 120, behavior: 'smooth' });
 
@@ -1614,11 +1642,11 @@ async function openAlbumDetail(albumId) {
 
   try {
     let album = null;
+    const cleanId = String(albumId).startsWith('deezer_') ? String(albumId).replace('deezer_', '') : albumId;
 
-    // Si es de Deezer, obtener directo por JSONP (más rápido y sin bloqueos)
-    if (albumId.startsWith('deezer_')) {
-      const deezerId = albumId.replace('deezer_', '');
-      const dzData = await fetchDeezerJsonp(`/album/${deezerId}`);
+    // Si es de Deezer o numérico, obtener directo por JSONP (más rápido y sin bloqueos)
+    if (String(albumId).startsWith('deezer_') || /^\d+$/.test(String(albumId))) {
+      const dzData = await fetchDeezerJsonp(`/album/${cleanId}`);
       if (dzData && !dzData.error) {
         let albumArtistName = dzData.artist ? dzData.artist.name : 'Artista';
         if (dzData.contributors && Array.isArray(dzData.contributors) && dzData.contributors.length > 0) {
@@ -1800,6 +1828,7 @@ async function openAlbumDetail(albumId) {
           title: track.title,
           artist: track.artist || album.artist,
           album: album.title,
+          albumId: album.id,
           cover: album.coverXl,
           preview: track.preview,
           audioUrl: track.preview || track.audioUrl,
@@ -2637,6 +2666,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     artist: fullArtist,
     cover: cover || (state.currentTrack && state.currentTrack.cover) || (state.currentAlbum && state.currentAlbum.coverXl),
     album: album || (state.currentAlbum && state.currentAlbum.title) || title,
+    albumId: (state.currentTrack && state.currentTrack.albumId) || (state.currentAlbum && state.currentAlbum.id) || null,
     duration: duration || (state.currentTrack && state.currentTrack.duration) || 0,
     preview: preview || (state.currentTrack && state.currentTrack.preview) || ''
   };
@@ -5153,6 +5183,7 @@ function renderPlaylistTracklist() {
           artist: track.artist,
           cover: track.cover,
           album: track.album,
+          albumId: track.album_id || track.albumId || null,
           duration: track.duration,
           preview: track.preview || '',
           audioUrl: track.preview || '',

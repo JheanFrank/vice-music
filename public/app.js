@@ -1994,15 +1994,33 @@ function renderTracks(tracks) {
 
 // ========================================================
 // SISTEMA DE PERFIL DE ARTISTA (SPOTIFY / APPLE MUSIC STYLE)
+function normalizeStr(str) {
+  return (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function getFullArtistCredits(artist, title) {
   let fullArtist = (artist || '').trim();
   if (!title) return fullArtist;
 
   const featMatch = title.match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
   if (featMatch && featMatch[1]) {
-    const featArtist = featMatch[1].trim();
-    if (!fullArtist.toLowerCase().includes(featArtist.toLowerCase())) {
-      fullArtist = `${fullArtist} ft. ${featArtist}`;
+    const existingTokens = fullArtist
+      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => normalizeStr(t))
+      .filter(Boolean);
+
+    const featTokens = featMatch[1]
+      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    const newArtists = featTokens.filter(fa => !existingTokens.includes(normalizeStr(fa)));
+    if (newArtists.length > 0) {
+      fullArtist = `${fullArtist} ft. ${newArtists.join(', ')}`;
     }
   }
   return fullArtist;
@@ -2010,21 +2028,27 @@ function getFullArtistCredits(artist, title) {
 
 function formatArtistPills(artistString) {
   if (!artistString) return '';
-  const separatorRegex = /(\s*(?:&|&amp;|,)\s*|\s+(?:[xX]|ft\.?|feat\.?|con)\s+)/i;
-  const tokens = artistString.split(separatorRegex);
-  let html = '';
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (/^\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*$/i.test(t)) {
-      html += `<span class="artist-separator">${escapeHtml(t.trim())}</span> `;
-    } else {
-      const name = t.trim();
-      if (name) {
-        html += `<span class="artist-clickable-pill" data-artist="${escapeHtml(name)}" title="Ver perfil de ${escapeHtml(name)}">${escapeHtml(name)}</span> `;
-      }
+  const rawParts = artistString.split(/\s*(?:&|&amp;|,|[xX]|\bft\.?|\bfeat\.?|\bcon)\s+/i);
+  const seen = new Set();
+  const validPills = [];
+
+  for (let i = 0; i < rawParts.length; i++) {
+    const name = rawParts[i].replace(/^[\(\[\s]+|[\)\]\s]+$/g, '').trim();
+    if (!name || /^(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)$/i.test(name)) continue;
+    const norm = normalizeStr(name);
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      validPills.push(name);
     }
   }
-  return html || escapeHtml(artistString);
+
+  if (validPills.length === 0) return escapeHtml(artistString);
+
+  return validPills.map((name, idx) => {
+    const pill = `<span class="artist-clickable-pill" data-artist="${escapeHtml(name)}" title="Ver perfil de ${escapeHtml(name)}">${escapeHtml(name)}</span>`;
+    if (idx === 0) return pill;
+    return `<span class="artist-separator">x</span> ${pill}`;
+  }).join(' ');
 }
 
 // Global delegate para clicks en pastillas de artistas individuales
@@ -2642,7 +2666,11 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   const thisRequestId = ++currentPlayRequestId;
   primeAudioPlayback();
 
-  // Pausar audio anterior sin destruir el canal de autorización en móviles
+  // Pausar audio anterior y detener timers inmediatamente para evitar saltos en la barra de progreso
+  stopYtProgress();
+  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    try { ytPlayer.pauseVideo(); } catch (_) {}
+  }
   if (state.audio) {
     try {
       state.audio.pause();
@@ -2699,40 +2727,14 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     }
   }
   currentTimeLabel.innerText = '00:00';
-  totalTimeLabel.innerText = 'Cargando...';
+  const knownDur = trackObj.duration || 0;
+  totalTimeLabel.innerText = knownDur > 0 ? formatTime(knownDur) : '00:00';
   progressFill.style.width = '0%';
   progressThumb.style.left = '0%';
 
   updateMediaSession(trackObj);
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
-
-  // Si la pista solo tiene 1 artista, consultar Deezer track para extraer todos los colaboradores oficiales (ej: Bad Bunny en "No Te Hagas")
-  const activeDzId = (state.currentTrack && state.currentTrack.id && state.currentTrack.id.startsWith('deezer_'))
-    ? state.currentTrack.id.replace('deezer_', '')
-    : ((state.currentTrack && state.currentTrack.deezerId) || null);
-
-  if (activeDzId && !fullArtist.includes('&') && !fullArtist.includes('x') && !fullArtist.includes('X') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
-    fetchDeezerJsonp(`/track/${activeDzId}`).then(dzTrk => {
-      if (dzTrk && dzTrk.contributors && Array.isArray(dzTrk.contributors) && dzTrk.contributors.length > 1) {
-        const collabNames = dzTrk.contributors.map(c => c.name).filter(Boolean);
-        if (collabNames.length > 1) {
-          const multiArtist = collabNames.join(' x ');
-          state.currentTrack.artist = multiArtist;
-          playerArtist.innerHTML = formatArtistPills(multiArtist);
-          if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(multiArtist);
-          updateMediaSession(state.currentTrack);
-          document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
-            const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
-            if (titleEl && titleEl.innerText.trim().toLowerCase() === title.trim().toLowerCase()) {
-              const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
-              if (artEl) artEl.innerHTML = formatArtistPills(multiArtist);
-            }
-          });
-        }
-      }
-    }).catch(() => {});
-  }
 
   try {
     const durParam = trackObj.duration || 0;
@@ -2745,18 +2747,13 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     }
 
     if (data.resolvedArtist && (data.resolvedArtist.includes('&') || data.resolvedArtist.includes('x') || data.resolvedArtist.includes('X') || data.resolvedArtist.includes('feat') || data.resolvedArtist.includes(','))) {
-      state.currentTrack.artist = data.resolvedArtist;
-      playerArtist.innerHTML = formatArtistPills(data.resolvedArtist);
-      if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(data.resolvedArtist);
-      updateMediaSession(state.currentTrack);
-
-      document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
-        const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
-        if (titleEl && titleEl.innerText.trim().toLowerCase() === title.trim().toLowerCase()) {
-          const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
-          if (artEl) artEl.innerHTML = formatArtistPills(data.resolvedArtist);
-        }
-      });
+      const cleanResolved = data.resolvedArtist.trim();
+      if (normalizeStr(cleanResolved) !== normalizeStr(state.currentTrack.artist)) {
+        state.currentTrack.artist = cleanResolved;
+        playerArtist.innerHTML = formatArtistPills(cleanResolved);
+        if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(cleanResolved);
+        updateMediaSession(state.currentTrack);
+      }
     }
 
     if (data.videoId) {
@@ -2774,7 +2771,6 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
             ytPlayer.setPlaybackRate(state.currentSpeed);
           }
           setPlayingState(true);
-          startYtProgress();
           updateMediaSession(trackObj);
           const tierTag = data.tier === 'audio_oficial' ? ' (Audio Oficial)' : (data.tier === 'letra_lyrics' ? ' (Video con Letra)' : '');
           showToast(`🎧 Reproduciendo: ${title}${tierTag}`);

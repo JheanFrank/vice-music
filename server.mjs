@@ -22,9 +22,7 @@ const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
 
 const INVIDIOUS_INSTANCES = [
-  'https://yt.chocolatemoo53.com',
-  'https://invidious.nerdvpn.de',
-  'https://invidious.jing.rocks'
+  'https://yt.chocolatemoo53.com'
 ];
 
 function normalizeStr(str) {
@@ -43,9 +41,19 @@ function getFullArtistCredits(artist, title) {
 
   const featMatch = title.match(/[\(\[]\s*(?:feat\.?|ft\.?|con)\s+([^\)\]]+)[\)\]]/i);
   if (featMatch && featMatch[1]) {
-    const featArtist = featMatch[1].trim();
-    if (!fullArtist.toLowerCase().includes(featArtist.toLowerCase())) {
-      fullArtist = `${fullArtist} ft. ${featArtist}`;
+    const existingTokens = fullArtist
+      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => normalizeStr(t))
+      .filter(Boolean);
+
+    const featTokens = featMatch[1]
+      .split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    const newArtists = featTokens.filter(fa => !existingTokens.includes(normalizeStr(fa)));
+    if (newArtists.length > 0) {
+      fullArtist = `${fullArtist} ft. ${newArtists.join(', ')}`;
     }
   }
   return fullArtist;
@@ -244,54 +252,43 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
   });
 
-  let rawCandidates = [];
-  if (isrc) {
-    const isrcCandidates = await fetchYtCandidates(isrc, true);
-    rawCandidates.push(...isrcCandidates);
-  }
+  const searchQueries = [];
+  if (isrc) searchQueries.push({ q: isrc, isIsrc: true });
 
   // Búsquedas dirigidas con colaboradores para garantizar versiones reales con invitados
   if (extractedFromFeat.length > 0) {
-    const featCandidates = await fetchYtCandidates(`${cleanTitle} ${extractedFromFeat.slice(0, 3).join(' ')} audio`);
-    rawCandidates.push(...featCandidates);
+    searchQueries.push({ q: `${cleanTitle} ${extractedFromFeat.slice(0, 3).join(' ')} audio`, isIsrc: false });
   } else if (allArtistNames.length > 1) {
-    const multiArtistCandidates = await fetchYtCandidates(`${cleanTitle} ${allArtistNames.slice(0, 3).join(' ')} audio`);
-    rawCandidates.push(...multiArtistCandidates);
+    searchQueries.push({ q: `${cleanTitle} ${allArtistNames.slice(0, 3).join(' ')} audio`, isIsrc: false });
   }
 
   // Si la pista solicitada es en vivo, buscar explícitamente la versión en vivo del artista
   if (userWantsLive) {
-    const liveCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} Live`);
-    rawCandidates.push(...liveCandidates);
-    const liveCandidates2 = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} en vivo`);
-    rawCandidates.push(...liveCandidates2);
+    searchQueries.push({ q: `${primaryArtist} ${cleanTitle} Live`, isIsrc: false });
+    searchQueries.push({ q: `${primaryArtist} ${cleanTitle} en vivo`, isIsrc: false });
   }
 
   // 1° Búsqueda: YouTube Music Master Topic con artista principal y título
-  const topicCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} Topic`);
-  rawCandidates.push(...topicCandidates);
+  searchQueries.push({ q: `${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} Topic`, isIsrc: false });
 
   // 2° Búsqueda: Audio Oficial
-  const audioOficialCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} audio oficial`);
-  rawCandidates.push(...audioOficialCandidates);
+  searchQueries.push({ q: `${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} audio oficial`, isIsrc: false });
 
   // 2.5° Búsqueda: Audio Oficial con Colaboradores (ej: Bryant Myers De La Ghetto Darell Almighty Ojala audio oficial)
   const cleanCollabs = allArtistNames.slice(1).filter(a => !ARTIST_STOP_WORDS.has(normalizeStr(a))).join(' ');
   if (cleanCollabs) {
-    const fullCollabAudio = await fetchYtCandidates(`${primaryArtist} ${cleanCollabs} ${cleanTitle} audio oficial`);
-    rawCandidates.push(...fullCollabAudio);
+    searchQueries.push({ q: `${primaryArtist} ${cleanCollabs} ${cleanTitle} audio oficial`, isIsrc: false });
   }
 
-  // 3° Búsqueda: Letra / Lyrics si hay pocos candidatos
-  if (rawCandidates.length < 8) {
-    const lyricCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} lyric video letra`);
-    rawCandidates.push(...lyricCandidates);
-  }
+  // 3° Búsqueda: Letra / Lyrics
+  searchQueries.push({ q: `${cleanArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} lyric video letra`, isIsrc: false });
+
   // 4° Búsqueda estándar
-  if (rawCandidates.length < 6) {
-    const stdCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''}`);
-    rawCandidates.push(...stdCandidates);
-  }
+  searchQueries.push({ q: `${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''}`, isIsrc: false });
+
+  // Ejecutar TODAS las búsquedas de candidatos en PARALELO (reduce el tiempo de espera de 5-6s a ~800ms)
+  const queryResults = await Promise.all(searchQueries.map(sq => fetchYtCandidates(sq.q, sq.isIsrc)));
+  const rawCandidates = queryResults.flat();
 
   // Deduplicar por videoId
   const seen = new Set();
@@ -469,7 +466,7 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
       try {
         const vRes = await fetch(`${inst}/api/v1/videos/${vId}?local=true`, {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(2500)
         });
         if (!vRes.ok) continue;
         const vData = await vRes.json();
@@ -827,7 +824,7 @@ async function getTopColombia() {
       try {
         const itunesRes = await fetch('https://itunes.apple.com/co/rss/topsongs/limit=10/json', {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(2500)
         });
         const itunesData = await itunesRes.json();
         const entries = itunesData.feed?.entry || [];
@@ -864,7 +861,7 @@ async function getTopColombia() {
       try {
         const itunesAlbRes = await fetch('https://itunes.apple.com/co/rss/topalbums/limit=6/json', {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(2500)
         });
         const itunesAlbData = await itunesAlbRes.json();
         const albEntries = itunesAlbData.feed?.entry || [];
@@ -1072,7 +1069,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.6', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.1.7', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

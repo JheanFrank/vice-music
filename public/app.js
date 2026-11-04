@@ -115,7 +115,7 @@ function batchAddToQueue(atStart = true) {
     preview: t.preview || t.audioUrl || '',
     audioUrl: t.audioUrl || t.preview || '',
     album: t.album || 'Vice Music Single',
-    duration: t.duration || 180,
+    duration: t.duration || 0,
     videoId: t.videoId || t.video_id || ''
   }));
 
@@ -160,7 +160,7 @@ async function batchAddToPlaylist(atStart = true) {
     cover: t.cover || t.coverXl || 'https://via.placeholder.com/300/1a0933/ff2a85?text=VI',
     preview: t.preview || t.audioUrl || '',
     album: t.album || 'Vice Music Single',
-    duration: t.duration || 180,
+    duration: t.duration || 0,
     video_id: t.videoId || t.video_id || ''
   }));
 
@@ -5060,7 +5060,7 @@ function renderPlaylistTracklist() {
   let html = '';
   list.forEach((t, i) => {
     const isActive = i === state.activeCoverflowIndex;
-    const durationMin = formatTime(t.duration || 180);
+    const durationMin = (t.duration && t.duration > 0 && t.duration !== 180) ? formatTime(t.duration) : '--:--';
     const trackKey = getTrackKey(t);
     const isSelected = state.selectedTracks.has(trackKey);
     html += `
@@ -5260,7 +5260,7 @@ async function addToUserPlaylist(track) {
     cover: track.cover || (state.currentAlbum && state.currentAlbum.coverXl) || 'https://via.placeholder.com/300/1a0933/ff2a85?text=VI',
     preview: track.audioUrl || track.preview || '',
     album: track.album || (state.currentAlbum && state.currentAlbum.title) || 'Vice Music Single',
-    duration: track.duration || 180,
+    duration: track.duration || 0,
     video_id: track.videoId || ''
   };
 

@@ -35,6 +35,8 @@ function normalizeStr(str) {
     .trim();
 }
 
+const ARTIST_STOP_WORDS = new Set(['de', 'la', 'el', 'los', 'las', 'del', 'san', 'y', 'e', 'en', 'con', 'por', 'the', 'and', 'of', 'ft', 'feat']);
+
 function getFullArtistCredits(artist, title) {
   let fullArtist = (artist || '').trim();
   if (!title) return fullArtist;
@@ -273,6 +275,13 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const audioOficialCandidates = await fetchYtCandidates(`${primaryArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} audio oficial`);
   rawCandidates.push(...audioOficialCandidates);
 
+  // 2.5° Búsqueda: Audio Oficial con Colaboradores (ej: Bryant Myers De La Ghetto Darell Almighty Ojala audio oficial)
+  const cleanCollabs = allArtistNames.slice(1).filter(a => !ARTIST_STOP_WORDS.has(normalizeStr(a))).join(' ');
+  if (cleanCollabs) {
+    const fullCollabAudio = await fetchYtCandidates(`${primaryArtist} ${cleanCollabs} ${cleanTitle} audio oficial`);
+    rawCandidates.push(...fullCollabAudio);
+  }
+
   // 3° Búsqueda: Letra / Lyrics si hay pocos candidatos
   if (rawCandidates.length < 8) {
     const lyricCandidates = await fetchYtCandidates(`${cleanArtist} ${cleanTitle} ${isRemixRequest ? 'Remix' : ''} lyric video letra`);
@@ -343,12 +352,22 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
 
     // 3. REQUISITO OBLIGATORIO DE ARTISTAS (INQUEBRANTABLE)
-    // El video DEBE mencionar a al menos UNO de los artistas legítimos (en título o canal)
+    // El video DEBE incluir al artista principal (con límite de palabra, descartando preposiciones como "de", "la")
+    const primaryTokens = normalizeStr(primaryArtist)
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+    if (primaryTokens.length > 0) {
+      const primaryMatched = primaryTokens.some(w => new RegExp('\\b' + w + '\\b', 'i').test(combined));
+      if (!primaryMatched) {
+        return -9999; // DISQUALIFIED! Falta el artista principal (ej: Ryan Castro en lugar de Bryant Myers)
+      }
+    }
+
     if (allArtistNames.length > 0) {
       let matchedArtistsCount = 0;
       for (const aName of allArtistNames) {
-        const aWords = normalizeStr(aName).split(/\s+/).filter(w => w.length >= 2);
-        if (aWords.length > 0 && aWords.some(w => combined.includes(w))) {
+        const aWords = normalizeStr(aName).split(/\s+/).filter(w => w.length >= 3 && !ARTIST_STOP_WORDS.has(w));
+        if (aWords.length > 0 && aWords.some(w => new RegExp('\\b' + w + '\\b', 'i').test(combined))) {
           matchedArtistsCount++;
         }
       }
@@ -380,7 +399,8 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
     
     // 5. Comparación Exacta de Duración con el Preview Oficial de Deezer/iTunes
-    if (durationParam > 30 && c.durSec > 0) {
+    // Nota: durationParam === 180 era el valor por defecto antiguo, no descalificar si es 180
+    if (durationParam > 30 && durationParam !== 180 && c.durSec > 0) {
       const diff = Math.abs(c.durSec - durationParam);
       if (diff > 35) {
         return -9999; // DISQUALIFIED! Más de 35s de diferencia con el preview oficial no es la misma versión
@@ -390,6 +410,8 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       else if (diff <= 14) s += 120;
       else if (diff <= 22) s += 40;
       else s -= 250;
+    } else if (c.durSec >= 290 && c.durSec <= 325 && (durationParam === 0 || durationParam === 180)) {
+      s += 300; // Gran bonificación si dura alrededor de 5 minutos (duración estándar de Ojalá 5:05)
     }
     
     // 6. Jerarquía Estricta: 1° Audio Oficial / Topic > 2° Letra/Lyrics > 3° Video Oficial
@@ -1048,7 +1070,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.1.3', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.1.4', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER

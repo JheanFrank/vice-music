@@ -2879,8 +2879,6 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           }
         }, 350);
       }
-        }, 350);
-      }
 
       // Watchdog de tolerancia: Si tras 7s no ha iniciado ni está cargando, rota a video alternativo
       if (window.ytWatchdogTimer) clearTimeout(window.ytWatchdogTimer);

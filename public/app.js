@@ -2749,7 +2749,7 @@ function prefetchNextTrack() {
 }
 
 // REPRODUCIR CANCIÓN 100% COMPLETA (RESPUESTA INSTANTÁNEA + METADATOS LIMPIOS HD)
-async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null) {
+async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null, videoId = null) {
   const thisRequestId = ++currentPlayRequestId;
   primeAudioPlayback();
 
@@ -2775,6 +2775,19 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     }
   }
 
+  // Si no se pasó videoId directamente, buscar si la pista ya lo tiene en la playlist guardada
+  let resolvedVid = videoId;
+  if (!resolvedVid && state.userPlaylist && Array.isArray(state.userPlaylist)) {
+    const normTitle = (title || '').trim().toLowerCase();
+    const plMatch = state.userPlaylist.find(t => t.title && t.title.trim().toLowerCase() === normTitle);
+    if (plMatch && (plMatch.videoId || plMatch.video_id)) {
+      resolvedVid = plMatch.videoId || plMatch.video_id;
+    }
+  }
+  if (!resolvedVid && state.currentTrack && state.currentTrack.title === title && state.currentTrack.videoId) {
+    resolvedVid = state.currentTrack.videoId;
+  }
+
   state.playbackSource = 'full';
   const trackObj = {
     title,
@@ -2784,7 +2797,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     albumId: (state.currentTrack && state.currentTrack.albumId) || (state.currentAlbum && state.currentAlbum.id) || null,
     duration: parseDurationSec(duration || (state.currentTrack && state.currentTrack.duration) || 0),
     preview: preview || (state.currentTrack && state.currentTrack.preview) || '',
-    videoId: (state.currentTrack && state.currentTrack.title === title ? state.currentTrack.videoId : null)
+    videoId: resolvedVid || null
   };
 
   if (!state.history) state.history = [];
@@ -3239,14 +3252,40 @@ function playNextTrack() {
     }
 
     showToast(`⏭️ Siguiente: ${nextItem.title}`);
-    playFullSong(nextItem.artist, nextItem.title, nextItem.cover, nextItem.album, nextItem.duration, nextItem.preview, nextItem.videoId);
+    playPlaylistTrack(nextItem);
     return;
   }
 
-  // 1.5 Si se estaba en modo playlist y la cola se vació (completó todas las canciones de la lista)
-  if (state.currentMode === 'playlist') {
-    stopCurrentPlayback();
-    showTopRightToast('Fin de la Playlist', 'Has completado la lista de canciones', 'info');
+  // 1.5 Si se está en Playlist Personal 3D: avanzar continuamente a la siguiente canción de la lista
+  const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+  const isFromPlaylist = state.currentMode === 'playlist' || (state.userPlaylist && state.userPlaylist.length > 0 && state.userPlaylist.some(t => t.title && t.title.trim().toLowerCase() === curTitle));
+  if ((isFromPlaylist || state.isShuffle) && state.userPlaylist && state.userPlaylist.length > 0) {
+    const N = state.userPlaylist.length;
+    let nextIdx;
+    if (state.isShuffle) {
+      if (!Array.isArray(state.playedShuffleIds)) state.playedShuffleIds = [];
+      const unplayed = state.userPlaylist.filter(t => !state.playedShuffleIds.includes(t.id || t.title));
+      if (unplayed.length > 0) {
+        const randTrack = unplayed[Math.floor(Math.random() * unplayed.length)];
+        nextIdx = state.userPlaylist.findIndex(t => (t.id && randTrack.id && t.id === randTrack.id) || (t.title === randTrack.title));
+      } else {
+        state.playedShuffleIds = [];
+        nextIdx = Math.floor(Math.random() * N);
+      }
+    } else {
+      let curIdx = state.userPlaylist.findIndex(t => 
+        (t.id && state.currentTrack && t.id === state.currentTrack.id) ||
+        (t.title && state.currentTrack && t.title.trim().toLowerCase() === curTitle)
+      );
+      if (curIdx === -1) curIdx = state.activeCoverflowIndex || 0;
+      nextIdx = (curIdx + 1) % N; // Ciclo continuo sin fin: pasa a la siguiente y al terminar vuelve a la primera
+    }
+    state.activeCoverflowIndex = nextIdx;
+    renderCoverflow();
+    renderPlaylistTracklist();
+    const nextTrack = state.userPlaylist[nextIdx];
+    showToast(`⏭️ Siguiente: ${nextTrack.title}`);
+    playPlaylistTrack(nextTrack);
     return;
   }
 

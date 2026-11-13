@@ -525,22 +525,21 @@ function fetchDeezerJsonp(endpoint) {
 // ========================================================
 let ytPlayer = null;
 let ytReady = false;
+let ytInitializing = false;
 let ytProgressInterval = null;
 let ytPendingVideoId = null;
 
 function initYtPlayer() {
-  if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') return;
+  if (ytPlayer || ytInitializing) return;
   const slot = document.getElementById('ytPlayerSlot');
   if (!slot) return;
-  if (!window.YT || typeof window.YT.Player !== 'function') {
-    setTimeout(initYtPlayer, 250);
-    return;
-  }
+  if (!window.YT || typeof window.YT.Player !== 'function') return;
 
+  ytInitializing = true;
   try {
     ytPlayer = new YT.Player('ytPlayerSlot', {
-      height: '100%',
-      width: '100%',
+      height: '200',
+      width: '300',
       playerVars: {
         autoplay: 1,
         controls: 0,
@@ -554,17 +553,19 @@ function initYtPlayer() {
       events: {
         onReady: (event) => {
           ytReady = true;
-          console.log('[YouTube Player] Listo y pre-cargado');
+          ytInitializing = false;
+          console.log('[YouTube Player] Motor de Audio Oficial Activo');
           if (ytPendingVideoId) {
+            const pending = ytPendingVideoId;
+            ytPendingVideoId = null;
             try {
-              event.target.loadVideoById(ytPendingVideoId);
+              event.target.loadVideoById(pending);
               event.target.playVideo();
               setPlayingState(true);
               startYtProgress();
             } catch (err) {
-              console.warn('[YouTube onReady] Error iniciando video pendiente:', err);
+              console.warn('[YouTube onReady] Error iniciando pista:', err);
             }
-            ytPendingVideoId = null;
           }
         },
         onStateChange: onYtStateChange,
@@ -574,7 +575,6 @@ function initYtPlayer() {
           if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
             const nextVideoId = state.currentTrack.alternativeVideoIds.shift();
             console.log('[YouTube Fallback] Probando stream alternativo:', nextVideoId);
-            showToast('🔄 Cambiando a stream oficial alternativo...');
             state.currentTrack.videoId = nextVideoId;
             try {
               if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
@@ -586,10 +586,9 @@ function initYtPlayer() {
               console.warn('Error cambiando a stream alternativo:', fbErr);
             }
           }
-          // Si falla YouTube iframe, mantener la reproducción continua con el audio nativo
+          // Si falla YouTube, mantener reproducción con audio nativo
           if (state.currentTrack && state.audio) {
             const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl || `/api/proxy-preview?artist=${encodeURIComponent(state.currentTrack.artist)}&title=${encodeURIComponent(state.currentTrack.title)}`;
-            console.log('[Native Audio Fallback] Manteniendo reproducción con audio nativo');
             state.playbackSource = 'preview';
             state.audio.src = fallbackUrl;
             state.audio.play().catch(() => {});
@@ -598,16 +597,17 @@ function initYtPlayer() {
       }
     });
   } catch (err) {
+    ytInitializing = false;
     console.warn('[initYtPlayer error]', err);
   }
 }
 
 function ensureYtPlayerReady() {
-  if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') return;
+  if (ytPlayer || ytInitializing) return;
   if (window.YT && typeof window.YT.Player === 'function') {
     initYtPlayer();
   } else {
-    setTimeout(ensureYtPlayerReady, 150);
+    setTimeout(ensureYtPlayerReady, 200);
   }
 }
 
@@ -989,17 +989,6 @@ function setupEventListeners() {
   if (tabPlaylist) tabPlaylist.addEventListener('click', () => switchViewMode('playlist'));
   tabAlbums.addEventListener('click', () => switchViewMode('albums'));
   tabTracks.addEventListener('click', () => switchViewMode('tracks'));
-
-  const btnToggleYt = document.getElementById('btnToggleYtMini');
-  const floatingPlayer = document.getElementById('ytFloatingPlayer');
-  if (btnToggleYt && floatingPlayer) {
-    btnToggleYt.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isMin = floatingPlayer.classList.toggle('minimized');
-      btnToggleYt.textContent = isMin ? '+' : '−';
-      btnToggleYt.title = isMin ? 'Expandir reproductor' : 'Minimizar reproductor';
-    });
-  }
 
   setupPlaylistControls();
   setupDownloadConfirmHandlers();
@@ -3080,15 +3069,9 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  // 1. REPRODUCCIÓN INMEDIATA DE LA CANCIÓN COMPLETA OFICIAL (Sin previews, 100% pista completa)
+  // 1. REPRODUCCIÓN INMEDIATA DE LA CANCIÓN COMPLETA OFICIAL (100% Pista Completa HD)
   if (trackObj.videoId) {
     state.playbackSource = 'full';
-    
-    // Asegurar que el mini-reproductor oficial esté activo y visible en pantalla
-    const floatingPlayer = document.getElementById('ytFloatingPlayer');
-    if (floatingPlayer) {
-      floatingPlayer.style.display = 'block';
-    }
 
     initYtPlayer();
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {

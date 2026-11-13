@@ -3069,7 +3069,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  // 1. REPRODUCCIÓN INSTANTÁNEA (<100ms) SI YA TIENE VIDEOID (ej: Ojalá)
+  // 1. REPRODUCCIÓN INSTANTÁNEA (<50ms) SI YA TIENE VIDEOID (ej: Ojalá, No Te Hagas)
   if (trackObj.videoId) {
     state.playbackSource = 'full';
     initYtPlayer();
@@ -3089,8 +3089,10 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         console.warn('[YT Instant Load]', ytErr);
       }
     } else {
-      // Si el reproductor aún se está inicializando, encolar para arranque automático
+      // Si el reproductor aún se está inicializando, encolar para arranque automático y salir de inmediato
       ytPendingVideoId = trackObj.videoId;
+      setPlayingState(true);
+      return;
     }
   }
 
@@ -5575,12 +5577,28 @@ async function loadUserPlaylist() {
 
   // 1. Obtener canciones guardadas localmente en este navegador para protegerlas siempre
   const savedUserKey = `vice_playlist_${username}`;
+  const deletedUserKey = `vice_deleted_${username}`;
   let localTracks = [];
+  let deletedKeys = [];
   try {
     const saved = localStorage.getItem(savedUserKey);
     if (saved) localTracks = JSON.parse(saved);
     if (!Array.isArray(localTracks)) localTracks = [];
   } catch (_) {}
+  try {
+    const delRaw = localStorage.getItem(deletedUserKey);
+    if (delRaw) deletedKeys = JSON.parse(delRaw);
+    if (!Array.isArray(deletedKeys)) deletedKeys = [];
+  } catch (_) {}
+
+  const delSet = new Set(deletedKeys.map(k => String(k).toLowerCase().trim()));
+
+  function getSongKey(t) {
+    if (!t) return '';
+    const title = (t.title || '').toLowerCase().trim();
+    const artist = (t.artist || '').toLowerCase().trim();
+    return `${title}:::${artist}`;
+  }
 
   // 2. Consultar servidor con prevención estricta de caché
   let serverLoaded = false;
@@ -5601,25 +5619,47 @@ async function loadUserPlaylist() {
     console.warn('No se pudo contactar al servidor para playlist (modo offline):', err);
   }
 
-  // 3. REGLA DE ORO DE PERSISTENCIA INQUEBRANTABLE:
-  if (serverLoaded && serverTracks.length > 0) {
-    // Si el servidor tiene canciones, el servidor es la fuente autoritativa (mantiene eliminaciones sincronizadas)
-    state.userPlaylist = serverTracks;
-    try {
-      localStorage.setItem(savedUserKey, JSON.stringify(serverTracks));
-    } catch (_) {}
-  } else if (localTracks.length > 0) {
-    // Si el servidor está vacío (ej: nuevo despliegue o reinicio de Render), pero el usuario tenía canciones en su navegador:
-    // NUNCA BORRAR las canciones del usuario. Resguardar y sincronizar al servidor de inmediato:
-    state.userPlaylist = localTracks;
+  // 3. FUSIÓN INTELIGENTE BIDIRECCIONAL (SMART MERGE):
+  // NUNCA borrar canciones agregadas por el usuario, protegiendo las canciones locales y las del servidor.
+  const mergedMap = new Map();
+
+  // A) Mantener todas las pistas locales válidas que no hayan sido eliminadas por el usuario
+  for (const t of localTracks) {
+    const k = getSongKey(t);
+    if (!k || delSet.has(k)) continue;
+    mergedMap.set(k, { ...t });
+  }
+
+  // B) Incorporar pistas del servidor (sin resucitar canciones explícitamente eliminadas)
+  for (const t of serverTracks) {
+    const k = getSongKey(t);
+    if (!k || delSet.has(k)) continue;
+    if (mergedMap.has(k)) {
+      const existing = mergedMap.get(k);
+      mergedMap.set(k, {
+        ...existing,
+        ...t,
+        videoId: existing.videoId || t.videoId || t.video_id || existing.video_id,
+        duration: (existing.duration && existing.duration > 0) ? existing.duration : (t.duration || 0)
+      });
+    } else {
+      mergedMap.set(k, { ...t });
+    }
+  }
+
+  const finalPlaylist = Array.from(mergedMap.values());
+  state.userPlaylist = finalPlaylist;
+  try {
+    localStorage.setItem(savedUserKey, JSON.stringify(finalPlaylist));
+  } catch (_) {}
+
+  // Si hay más canciones combinadas que en el servidor o el servidor no las tenía, sincronizar al backend
+  if (serverLoaded && finalPlaylist.length > serverTracks.length) {
     fetch('/api/playlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: username, playlist: localTracks })
+      body: JSON.stringify({ user: username, playlist: finalPlaylist })
     }).catch(() => {});
-  } else {
-    // Ambos vacíos o nuevo usuario
-    state.userPlaylist = serverTracks || [];
   }
 
   updatePlaylistBadge();
@@ -5951,6 +5991,17 @@ async function addToUserPlaylist(track) {
     video_id: track.videoId || ''
   };
 
+  // Si la canción estaba en la lista de eliminadas, removerla para que persista
+  const songKey = `${(track.title || '').toLowerCase().trim()}:::${(track.artist || '').toLowerCase().trim()}`;
+  try {
+    const deletedUserKey = `vice_deleted_${username}`;
+    let deletedKeys = JSON.parse(localStorage.getItem(deletedUserKey) || '[]');
+    if (Array.isArray(deletedKeys) && deletedKeys.includes(songKey)) {
+      deletedKeys = deletedKeys.filter(k => k !== songKey);
+      localStorage.setItem(deletedUserKey, JSON.stringify(deletedKeys));
+    }
+  } catch (_) {}
+
   try {
     const res = await fetch('/api/playlist', {
       method: 'POST',
@@ -6000,6 +6051,17 @@ async function removeFromUserPlaylist(trackOrId) {
   if (state.activeCoverflowIndex >= state.userPlaylist.length) {
     state.activeCoverflowIndex = Math.max(0, state.userPlaylist.length - 1);
   }
+
+  // Registrar en lista de canciones eliminadas para que NUNCA vuelvan a resucitar en sincronizaciones
+  const delKey = `${(removedTrack.title || '').toLowerCase().trim()}:::${(removedTrack.artist || '').toLowerCase().trim()}`;
+  try {
+    const deletedUserKey = `vice_deleted_${username}`;
+    let deletedKeys = JSON.parse(localStorage.getItem(deletedUserKey) || '[]');
+    if (!Array.isArray(deletedKeys)) deletedKeys = [];
+    if (!deletedKeys.includes(delKey)) deletedKeys.push(delKey);
+    if (deletedKeys.length > 300) deletedKeys.shift();
+    localStorage.setItem(deletedUserKey, JSON.stringify(deletedKeys));
+  } catch (_) {}
 
   try {
     const res = await fetch('/api/playlist', {

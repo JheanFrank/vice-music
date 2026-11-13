@@ -575,8 +575,8 @@
     </div>
   </footer>
 
-  <!-- Motor de Audio Completo Oculto (1x1px en viewport con opacidad 0.01 para evitar bloqueos de autoplay en Chromium/Brave/Safari) -->
-  <div id="hiddenYtWrapper" style="position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0.01; pointer-events: none; z-index: -1;">
+  <!-- Motor de Audio Completo Oculto (Dimensiones estándar con opacidad mínima para evitar restricciones de autoplay en Android/Chromium/iOS) -->
+  <div id="hiddenYtWrapper" style="position: fixed; bottom: 0; right: 0; width: 260px; height: 200px; opacity: 0.002; pointer-events: none; z-index: -999; overflow: hidden;">
     <div id="ytPlayerSlot"></div>
   </div>
 
@@ -970,6 +970,6 @@
   <audio id="audioElementB" preload="auto" playsinline webkit-playsinline></audio>
   
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=832"></script>
+  <script src="app.js?v=833"></script>
 </body>
 </html>

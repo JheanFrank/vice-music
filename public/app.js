@@ -2990,54 +2990,41 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && window.innerWidth <= 1024);
-
-  // 1. REPRODUCCIÓN INSTANTÁNEA (0ms latency, cero delay, cero reinicios de barra ni letras)
-  // Si la pista ya tiene videoId pre-resuelto (ej: Playlist 3D o en caché)
-  if (!isMobile && trackObj.videoId) {
+  // 1. REPRODUCCIÓN INSTANTÁNEA (<200ms) DIRECTA DESDE CDN (Sin intermediarios ni retardos)
+  if (trackObj.videoId) {
     state.playbackSource = 'full';
     initYtPlayer();
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-      ytPlayer.loadVideoById(trackObj.videoId);
-      ytPlayer.playVideo();
-      if (typeof ytPlayer.setPlaybackRate === 'function') {
-        ytPlayer.setPlaybackRate(state.currentSpeed);
+      try {
+        ytPlayer.loadVideoById(trackObj.videoId);
+        ytPlayer.playVideo();
+        if (typeof ytPlayer.setPlaybackRate === 'function') {
+          ytPlayer.setPlaybackRate(state.currentSpeed);
+        }
+        setPlayingState(true);
+        startYtProgress();
+        updateMediaSession(trackObj);
+        setTimeout(prefetchNextTrack, 2500);
+        return;
+      } catch (ytErr) {
+        console.warn('[YT Instant Load]', ytErr);
       }
-      setPlayingState(true);
-      startYtProgress();
-      updateMediaSession(trackObj);
-      setTimeout(prefetchNextTrack, 2500);
-      return;
     }
   }
 
-  if (trackObj.videoId) {
-    state.playbackSource = 'full_stream';
+  // Si la pista tiene audio directo (Deezer preview o stream directo) reproducir sin espera
+  if (trackObj.preview || trackObj.audioUrl) {
+    state.playbackSource = 'preview';
     state.audio.loop = false;
     state.audio.volume = 1;
-    const targetSrc = `/api/stream-live?v=${trackObj.videoId}`;
-    state.audio.src = targetSrc;
+    state.audio.src = trackObj.preview || trackObj.audioUrl;
     state.audio.playbackRate = state.currentSpeed;
     state.audio.play().then(() => {
       setPlayingState(true);
       updateMediaSession(trackObj);
       setTimeout(prefetchNextTrack, 2500);
-    }).catch(err => {
-      console.warn('[Native Audio Play error]', err);
-      if (trackObj.preview) {
-        state.playbackSource = 'preview';
-        state.audio.src = trackObj.preview;
-        state.audio.play().catch(() => {});
-      } else {
-        initYtPlayer();
-        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-          ytPlayer.loadVideoById(trackObj.videoId);
-          ytPlayer.playVideo();
-          setPlayingState(true);
-        }
-      }
-    });
-    return; // IMPRESCINDIBLE: Salir aquí. No hacer fetch ni reiniciar la barra de reproducción
+    }).catch(() => {});
+    return;
   }
 
   try {
@@ -3064,10 +3051,10 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       state.currentTrack.videoId = data.videoId;
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
 
-      if (!isMobile) {
-        state.playbackSource = 'full';
-        initYtPlayer();
-        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+      state.playbackSource = 'full';
+      initYtPlayer();
+      if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+        try {
           ytPlayer.loadVideoById(data.videoId);
           ytPlayer.playVideo();
           setPlayingState(true);
@@ -3076,39 +3063,22 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           showToast(`🎧 Reproduciendo: ${title}`);
           setTimeout(prefetchNextTrack, 2500);
           return;
+        } catch (ytErr) {
+          console.warn('[YT load error]', ytErr);
         }
       }
 
-      // Reproducción nativa en móvil (o si ytPlayer no está listo)
-      const liveSrc = `/api/stream-live?v=${data.videoId}`;
-      state.playbackSource = 'full_stream';
-      state.audio.loop = false;
-      state.audio.volume = 1;
-      state.audio.src = liveSrc;
-      state.audio.playbackRate = state.currentSpeed;
-      state.audio.play().then(() => {
-        setPlayingState(true);
-        updateMediaSession(trackObj);
-        showToast(`🎧 Reproduciendo: ${title}`);
-        setTimeout(prefetchNextTrack, 2500);
-      }).catch(err => {
-        console.warn('[Native Audio fallback to YouTube]', err);
-        const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview);
-        if (fallbackUrl) {
-          state.playbackSource = 'preview';
-          state.audio.src = fallbackUrl;
-          state.audio.play().catch(() => {});
-        } else {
-          state.playbackSource = 'full';
-          initYtPlayer();
-          if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-            ytPlayer.loadVideoById(data.videoId);
-            ytPlayer.playVideo();
-            setPlayingState(true);
-          }
-        }
-      });
-      return;
+      const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || trackObj.audioUrl;
+      if (fallbackUrl) {
+        state.playbackSource = 'preview';
+        state.audio.src = fallbackUrl;
+        state.audio.playbackRate = state.currentSpeed;
+        state.audio.play().then(() => {
+          setPlayingState(true);
+          updateMediaSession(trackObj);
+        }).catch(() => {});
+        return;
+      }
     } else {
       const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || (state.currentTrack && state.currentTrack.audioUrl);
       if (fallbackUrl) {
@@ -3834,6 +3804,9 @@ function getUpcomingTrack() {
 
 async function resolveTrackStreamUrl(track) {
   if (!track) return null;
+  if (track.preview || track.audioUrl) {
+    return track.preview || track.audioUrl;
+  }
   if (track.videoId) {
     return `/api/stream-live?v=${track.videoId}`;
   }

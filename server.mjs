@@ -1217,7 +1217,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.3', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.4', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT
@@ -1714,6 +1714,30 @@ const server = http.createServer(async (req, res) => {
         albums: topData.albums || [],
         updatedAt: new Date().toISOString()
       }));
+    }
+
+    // 0.08 PROXY DE PREVIEW INSTANTÁNEO (<50ms HTTP 302 hacia CDN oficial de Deezer)
+    if (pathname === '/api/proxy-preview') {
+      const artist = (reqUrl.searchParams.get('artist') || '').trim();
+      const title = (reqUrl.searchParams.get('title') || '').trim();
+      const q = (reqUrl.searchParams.get('q') || `${artist} ${title}`).trim();
+      try {
+        const dzRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=1`, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(3500)
+        });
+        const dzData = await dzRes.json();
+        if (dzData.data && dzData.data[0] && dzData.data[0].preview) {
+          res.writeHead(302, {
+            'Location': dzData.data[0].preview,
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=3600'
+          });
+          return res.end();
+        }
+      } catch (_) {}
+      res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Preview no disponible' }));
     }
 
     // 0.1 STREAM DIRECTO MP3 PARA REPRODUCTOR NATIVO (100% Cero YouTube)

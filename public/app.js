@@ -549,8 +549,7 @@ function initYtPlayer() {
         modestbranding: 1,
         rel: 0,
         playsinline: 1,
-        enablejsapi: 1,
-        origin: window.location.origin
+        enablejsapi: 1
       },
       events: {
         onReady: (event) => {
@@ -587,27 +586,14 @@ function initYtPlayer() {
               console.warn('Error cambiando a stream alternativo:', fbErr);
             }
           }
-          // Si falla YouTube iframe (ej: código 101/150 por restricciones de incrustación), reproducir el audio completo nativo vía servidor
-          if (state.currentTrack && state.currentTrack.videoId && state.audio) {
-            console.log('[Native Audio Fallback] Transfiriendo a flujo de audio nativo del servidor:', state.currentTrack.videoId);
-            showToast('🎧 Reproduciendo en alta fidelidad...');
-            state.playbackSource = 'full_stream';
-            state.audio.src = `/api/stream-live?v=${state.currentTrack.videoId}`;
-            state.audio.playbackRate = state.currentSpeed;
-            state.audio.play().then(() => {
-              setPlayingState(true);
-              updateMediaSession(state.currentTrack);
-            }).catch(() => {
-              const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl;
-              if (fallbackUrl) {
-                state.playbackSource = 'preview';
-                state.audio.src = fallbackUrl;
-                state.audio.play().catch(() => {});
-              }
-            });
-            return;
+          // Si falla YouTube iframe, mantener la reproducción continua con el audio nativo
+          if (state.currentTrack && state.audio) {
+            const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl || `/api/proxy-preview?artist=${encodeURIComponent(state.currentTrack.artist)}&title=${encodeURIComponent(state.currentTrack.title)}`;
+            console.log('[Native Audio Fallback] Manteniendo reproducción con audio nativo');
+            state.playbackSource = 'preview';
+            state.audio.src = fallbackUrl;
+            state.audio.play().catch(() => {});
           }
-          showToast('⚠️ Reproducción de stream en progreso...');
         }
       }
     });
@@ -616,15 +602,29 @@ function initYtPlayer() {
   }
 }
 
-window.onYouTubeIframeAPIReady = initYtPlayer;
-if (window.YT && window.YT.Player) {
-  initYtPlayer();
+function ensureYtPlayerReady() {
+  if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') return;
+  if (window.YT && typeof window.YT.Player === 'function') {
+    initYtPlayer();
+  } else {
+    setTimeout(ensureYtPlayerReady, 150);
+  }
 }
+
+window.onYouTubeIframeAPIReady = initYtPlayer;
+ensureYtPlayerReady();
 
 function onYtStateChange(event) {
   if (state.playbackSource !== 'full' && state.playbackSource !== 'full_yt') return;
 
   if (event.data === 1) { // PLAYING
+    // YouTube ya está sonando en alta calidad: silenciar suavemente el audio nativo
+    if (state.audio && !state.audio.paused) {
+      try {
+        state.audio.pause();
+        state.audio.currentTime = 0;
+      } catch (_) {}
+    }
     setPlayingState(true);
     startYtProgress();
     if (state.currentTrack) updateMediaSession(state.currentTrack);
@@ -3069,7 +3069,22 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  // 1. REPRODUCCIÓN INSTANTÁNEA (<50ms) SI YA TIENE VIDEOID (ej: Ojalá, No Te Hagas)
+  // 1. ARRANQUE ACÚSTICO INSTANTÁNEO (<20ms): NUNCA silencio, la música suena de inmediato en los altavoces
+  const instantAudioUrl = trackObj.preview || trackObj.audioUrl || `/api/proxy-preview?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}`;
+  if (state.audio && instantAudioUrl) {
+    try {
+      state.audio.loop = false;
+      state.audio.volume = 1;
+      state.audio.src = instantAudioUrl;
+      state.audio.playbackRate = state.currentSpeed;
+      state.audio.play().then(() => {
+        setPlayingState(true);
+        updateMediaSession(trackObj);
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // 2. CONEXIÓN DE ALTA DEFINICIÓN SI YA TIENE VIDEOID (ej: Ojalá, No Te Hagas)
   if (trackObj.videoId) {
     state.playbackSource = 'full';
     initYtPlayer();
@@ -3080,18 +3095,14 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         if (typeof ytPlayer.setPlaybackRate === 'function') {
           ytPlayer.setPlaybackRate(state.currentSpeed);
         }
-        setPlayingState(true);
-        startYtProgress();
-        updateMediaSession(trackObj);
         setTimeout(prefetchNextTrack, 2500);
         return;
       } catch (ytErr) {
         console.warn('[YT Instant Load]', ytErr);
       }
     } else {
-      // Si el reproductor aún se está inicializando, encolar para arranque automático y salir de inmediato
+      // Si el reproductor aún se está inicializando, encolar para arranque y dejar sonar el audio nativo
       ytPendingVideoId = trackObj.videoId;
-      setPlayingState(true);
       return;
     }
   }
@@ -3835,7 +3846,8 @@ function setupAudioElementListeners(audioEl) {
 
   audioEl.addEventListener('timeupdate', () => {
     if (audioEl !== state.activeAudio) return; // Solo el audio activo actualiza barra y progreso
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+    // Si state.audio está activo y YouTube aún no está sonando, actualizar barra y progreso
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream' || (state.audio && !state.audio.paused && (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function' || ytPlayer.getPlayerState() !== 1))) {
       updateProgress();
       checkAndTriggerCrossfade();
     }
@@ -3843,28 +3855,29 @@ function setupAudioElementListeners(audioEl) {
 
   audioEl.addEventListener('ended', () => {
     if (audioEl !== state.activeAudio) return;
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      if (state.isCrossfading) {
-        completeCrossfade();
-      } else {
-        playNextTrack();
-      }
+    // Si YouTube ya está reproduciendo activamente, no interrumpir por fin de preview
+    if (ytPlayer && typeof ytPlayer.getPlayerState === 'function' && ytPlayer.getPlayerState() === 1) {
+      return;
+    }
+    if (state.isCrossfading) {
+      completeCrossfade();
+    } else {
+      playNextTrack();
     }
   });
 
   audioEl.addEventListener('play', () => {
     if (audioEl !== state.activeAudio) return;
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      setPlayingState(true);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-      if (state.currentTrack) updateMediaSession(state.currentTrack);
-    }
+    setPlayingState(true);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    if (state.currentTrack) updateMediaSession(state.currentTrack);
   });
 
   audioEl.addEventListener('pause', () => {
     if (audioEl !== state.activeAudio) return;
     if (!state.isCrossfading) {
-      if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      // Solo poner en pausa si YouTube no está activo sonando
+      if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function' || ytPlayer.getPlayerState() !== 1) {
         setPlayingState(false);
         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
       }

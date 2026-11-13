@@ -990,6 +990,17 @@ function setupEventListeners() {
   tabAlbums.addEventListener('click', () => switchViewMode('albums'));
   tabTracks.addEventListener('click', () => switchViewMode('tracks'));
 
+  const btnToggleYt = document.getElementById('btnToggleYtMini');
+  const floatingPlayer = document.getElementById('ytFloatingPlayer');
+  if (btnToggleYt && floatingPlayer) {
+    btnToggleYt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isMin = floatingPlayer.classList.toggle('minimized');
+      btnToggleYt.textContent = isMin ? '+' : '−';
+      btnToggleYt.title = isMin ? 'Expandir reproductor' : 'Minimizar reproductor';
+    });
+  }
+
   setupPlaylistControls();
   setupDownloadConfirmHandlers();
   setupQueueHandlers();
@@ -3069,24 +3080,16 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  // 1. ARRANQUE ACÚSTICO INSTANTÁNEO (<20ms): NUNCA silencio, la música suena de inmediato en los altavoces
-  const instantAudioUrl = trackObj.preview || trackObj.audioUrl || `/api/proxy-preview?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}`;
-  if (state.audio && instantAudioUrl) {
-    try {
-      state.audio.loop = false;
-      state.audio.volume = 1;
-      state.audio.src = instantAudioUrl;
-      state.audio.playbackRate = state.currentSpeed;
-      state.audio.play().then(() => {
-        setPlayingState(true);
-        updateMediaSession(trackObj);
-      }).catch(() => {});
-    } catch (_) {}
-  }
-
-  // 2. CONEXIÓN DE ALTA DEFINICIÓN SI YA TIENE VIDEOID (ej: Ojalá, No Te Hagas)
+  // 1. REPRODUCCIÓN INMEDIATA DE LA CANCIÓN COMPLETA OFICIAL (Sin previews, 100% pista completa)
   if (trackObj.videoId) {
     state.playbackSource = 'full';
+    
+    // Asegurar que el mini-reproductor oficial esté activo y visible en pantalla
+    const floatingPlayer = document.getElementById('ytFloatingPlayer');
+    if (floatingPlayer) {
+      floatingPlayer.style.display = 'block';
+    }
+
     initYtPlayer();
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
       try {
@@ -3095,14 +3098,17 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         if (typeof ytPlayer.setPlaybackRate === 'function') {
           ytPlayer.setPlaybackRate(state.currentSpeed);
         }
+        setPlayingState(true);
+        startYtProgress();
+        updateMediaSession(trackObj);
         setTimeout(prefetchNextTrack, 2500);
         return;
       } catch (ytErr) {
         console.warn('[YT Instant Load]', ytErr);
       }
     } else {
-      // Si el reproductor aún se está inicializando, encolar para arranque y dejar sonar el audio nativo
       ytPendingVideoId = trackObj.videoId;
+      setPlayingState(true);
       return;
     }
   }

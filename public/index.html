@@ -62,7 +62,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,900;1,900&family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=830">
+  <link rel="stylesheet" href="style.css?v=835">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
@@ -575,8 +575,12 @@
     </div>
   </footer>
 
-  <!-- Motor de Audio Completo Oculto (Dimensiones estándar con opacidad mínima para evitar restricciones de autoplay en Android/Chromium/iOS) -->
-  <div id="hiddenYtWrapper" style="position: fixed; bottom: 0; right: 0; width: 260px; height: 200px; opacity: 0.002; pointer-events: none; z-index: -999; overflow: hidden;">
+  <!-- Reproductor Oficial de Canción Completa HD (Mini-Player Flotante en Primer Plano) -->
+  <div id="ytFloatingPlayer" class="yt-floating-player">
+    <div class="yt-player-header">
+      <span class="yt-player-badge">🎧 STREAM HD OFICIAL</span>
+      <button id="btnToggleYtMini" class="btn-yt-toggle" title="Minimizar / Expandir">−</button>
+    </div>
     <div id="ytPlayerSlot"></div>
   </div>
 
@@ -970,6 +974,6 @@
   <audio id="audioElementB" preload="auto" playsinline webkit-playsinline></audio>
   
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=834"></script>
+  <script src="app.js?v=835"></script>
 </body>
 </html>

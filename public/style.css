@@ -6552,3 +6552,71 @@ body {
   filter: brightness(1.1);
   box-shadow: 0 14px 32px rgba(0, 240, 255, 0.4);
 }
+
+/* Reproductor de Video Flotante HD para Canciones Completas */
+.yt-floating-player {
+  position: fixed;
+  bottom: 84px;
+  right: 18px;
+  width: 280px;
+  height: 160px;
+  background: #0d021c;
+  border: 1px solid rgba(255, 42, 133, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85), 0 0 15px rgba(255, 42, 133, 0.25);
+  z-index: 9999;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+}
+
+.yt-floating-player.minimized {
+  transform: translateY(124px) scale(0.65);
+  opacity: 0.25;
+}
+
+.yt-player-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  z-index: 10;
+}
+
+.yt-player-badge {
+  font-family: var(--font-display, sans-serif);
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #ff2a85;
+  letter-spacing: 0.5px;
+}
+
+.btn-yt-toggle {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+#ytPlayerSlot {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 768px) {
+  .yt-floating-player {
+    width: 200px;
+    height: 120px;
+    bottom: 76px;
+    right: 10px;
+  }
+}

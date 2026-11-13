@@ -5597,9 +5597,7 @@ async function loadUserPlaylist() {
 
   function getSongKey(t) {
     if (!t) return '';
-    const title = (t.title || '').toLowerCase().trim();
-    const artist = (t.artist || '').toLowerCase().trim();
-    return `${title}:::${artist}`;
+    return (t.title || '').toLowerCase().replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
   }
 
   // 2. Consultar servidor con prevención estricta de caché
@@ -5622,7 +5620,7 @@ async function loadUserPlaylist() {
   }
 
   // 3. FUSIÓN INTELIGENTE BIDIRECCIONAL (SMART MERGE):
-  // NUNCA borrar canciones agregadas por el usuario, protegiendo las canciones locales y las del servidor.
+  // NUNCA borrar canciones agregadas por el usuario, actualizando IDs oficiales y duraciones.
   const mergedMap = new Map();
 
   // A) Mantener todas las pistas locales válidas que no hayan sido eliminadas por el usuario
@@ -5632,7 +5630,7 @@ async function loadUserPlaylist() {
     mergedMap.set(k, { ...t });
   }
 
-  // B) Incorporar pistas del servidor (sin resucitar canciones explícitamente eliminadas)
+  // B) Incorporar pistas del servidor actualizando videoId oficial y duración
   for (const t of serverTracks) {
     const k = getSongKey(t);
     if (!k || delSet.has(k)) continue;
@@ -5641,8 +5639,9 @@ async function loadUserPlaylist() {
       mergedMap.set(k, {
         ...existing,
         ...t,
-        videoId: existing.videoId || t.videoId || t.video_id || existing.video_id,
-        duration: (existing.duration && existing.duration > 0) ? existing.duration : (t.duration || 0)
+        videoId: t.videoId || t.video_id || existing.videoId || existing.video_id,
+        video_id: t.videoId || t.video_id || existing.videoId || existing.video_id,
+        duration: (t.duration && t.duration > 0) ? t.duration : (existing.duration || 0)
       });
     } else {
       mergedMap.set(k, { ...t });

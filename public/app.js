@@ -660,6 +660,7 @@ function startYtProgress() {
     }
 
     updateAppleMusicProgress(cur, dur);
+    checkAndTriggerCrossfade();
 
     if (state.currentTrack && 'mediaSession' in navigator) {
       if (!navigator.mediaSession.metadata || navigator.mediaSession.metadata.title !== state.currentTrack.title) {
@@ -2989,16 +2990,33 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && window.innerWidth <= 1024);
+
   // 1. REPRODUCCIÓN INSTANTÁNEA (0ms latency, cero delay, cero reinicios de barra ni letras)
   // Si la pista ya tiene videoId pre-resuelto (ej: Playlist 3D o en caché)
+  if (!isMobile && trackObj.videoId) {
+    state.playbackSource = 'full';
+    initYtPlayer();
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+      ytPlayer.loadVideoById(trackObj.videoId);
+      ytPlayer.playVideo();
+      if (typeof ytPlayer.setPlaybackRate === 'function') {
+        ytPlayer.setPlaybackRate(state.currentSpeed);
+      }
+      setPlayingState(true);
+      startYtProgress();
+      updateMediaSession(trackObj);
+      setTimeout(prefetchNextTrack, 2500);
+      return;
+    }
+  }
+
   if (trackObj.videoId) {
     state.playbackSource = 'full_stream';
     state.audio.loop = false;
     state.audio.volume = 1;
     const targetSrc = `/api/stream-live?v=${trackObj.videoId}`;
-    if (!state.audio.src.includes(trackObj.videoId)) {
-      state.audio.src = targetSrc;
-    }
+    state.audio.src = targetSrc;
     state.audio.playbackRate = state.currentSpeed;
     state.audio.play().then(() => {
       setPlayingState(true);
@@ -3006,6 +3024,18 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       setTimeout(prefetchNextTrack, 2500);
     }).catch(err => {
       console.warn('[Native Audio Play error]', err);
+      if (trackObj.preview) {
+        state.playbackSource = 'preview';
+        state.audio.src = trackObj.preview;
+        state.audio.play().catch(() => {});
+      } else {
+        initYtPlayer();
+        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+          ytPlayer.loadVideoById(trackObj.videoId);
+          ytPlayer.playVideo();
+          setPlayingState(true);
+        }
+      }
     });
     return; // IMPRESCINDIBLE: Salir aquí. No hacer fetch ni reiniciar la barra de reproducción
   }
@@ -3034,14 +3064,27 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       state.currentTrack.videoId = data.videoId;
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
 
-      // Reproducción nativa continua de audio master en alta calidad (0 rebotes de tiempo, 0 parpadeos)
+      if (!isMobile) {
+        state.playbackSource = 'full';
+        initYtPlayer();
+        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+          ytPlayer.loadVideoById(data.videoId);
+          ytPlayer.playVideo();
+          setPlayingState(true);
+          startYtProgress();
+          updateMediaSession(trackObj);
+          showToast(`🎧 Reproduciendo: ${title}`);
+          setTimeout(prefetchNextTrack, 2500);
+          return;
+        }
+      }
+
+      // Reproducción nativa en móvil (o si ytPlayer no está listo)
       const liveSrc = `/api/stream-live?v=${data.videoId}`;
       state.playbackSource = 'full_stream';
       state.audio.loop = false;
       state.audio.volume = 1;
-      if (!state.audio.src.includes(data.videoId)) {
-        state.audio.src = liveSrc;
-      }
+      state.audio.src = liveSrc;
       state.audio.playbackRate = state.currentSpeed;
       state.audio.play().then(() => {
         setPlayingState(true);
@@ -3050,12 +3093,19 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
         setTimeout(prefetchNextTrack, 2500);
       }).catch(err => {
         console.warn('[Native Audio fallback to YouTube]', err);
-        state.playbackSource = 'full';
-        initYtPlayer();
-        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-          ytPlayer.loadVideoById(data.videoId);
-          ytPlayer.playVideo();
-          setPlayingState(true);
+        const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview);
+        if (fallbackUrl) {
+          state.playbackSource = 'preview';
+          state.audio.src = fallbackUrl;
+          state.audio.play().catch(() => {});
+        } else {
+          state.playbackSource = 'full';
+          initYtPlayer();
+          if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+            ytPlayer.loadVideoById(data.videoId);
+            ytPlayer.playVideo();
+            setPlayingState(true);
+          }
         }
       });
       return;
@@ -3801,9 +3851,19 @@ async function resolveTrackStreamUrl(track) {
 }
 
 function checkAndTriggerCrossfade() {
-  if (!state.crossfadeEnabled || !state.activeAudio || !state.fadeAudio) return;
-  const dur = state.activeAudio.duration;
-  const cur = state.activeAudio.currentTime;
+  if (!state.crossfadeEnabled) return;
+
+  let dur = 0;
+  let cur = 0;
+
+  if ((state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.getDuration === 'function') {
+    dur = ytPlayer.getDuration() || 0;
+    cur = ytPlayer.getCurrentTime() || 0;
+  } else if (state.activeAudio && state.activeAudio.duration) {
+    dur = state.activeAudio.duration;
+    cur = state.activeAudio.currentTime;
+  }
+
   if (!dur || dur <= 16) return; // Temas muy cortos se reproducen directo
   const remaining = dur - cur;
 
@@ -3845,6 +3905,8 @@ function start10sCrossfade() {
     duration: 10
   });
 
+  const isYt = (state.playbackSource === 'full' || state.playbackSource === 'full_yt') && ytPlayer && typeof ytPlayer.setVolume === 'function';
+
   state.fadeAudio.volume = 0;
   state.fadeAudio.play().then(() => {
     let step = 0;
@@ -3854,12 +3916,19 @@ function start10sCrossfade() {
     crossfadeInterval = setInterval(() => {
       step++;
       const progress = step / totalSteps; // 0.00 -> 1.00
-      if (state.activeAudio) {
+
+      // Bajar volumen de la actual (sea YouTube o Audio HTML5)
+      if (isYt) {
+        try { ytPlayer.setVolume(Math.round(Math.max(0, 100 * (1 - progress)))); } catch (_) {}
+      } else if (state.activeAudio) {
         state.activeAudio.volume = Math.max(0, 1 - progress);
       }
+
+      // Subir volumen de la nueva
       if (state.fadeAudio) {
         state.fadeAudio.volume = Math.min(1, progress);
       }
+
       if (step >= totalSteps) {
         clearInterval(crossfadeInterval);
         crossfadeInterval = null;
@@ -3877,19 +3946,30 @@ function completeCrossfade() {
     clearInterval(crossfadeInterval);
     crossfadeInterval = null;
   }
-  if (!state.fadeAudio || !state.activeAudio) return;
 
-  try {
-    state.activeAudio.pause();
-    state.activeAudio.currentTime = 0;
-    state.activeAudio.volume = 1;
-  } catch (_) {}
+  // Detener la que terminó
+  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    try {
+      ytPlayer.pauseVideo();
+      ytPlayer.setVolume(100);
+    } catch (_) {}
+    stopYtProgress();
+  }
+
+  if (state.activeAudio) {
+    try {
+      state.activeAudio.pause();
+      state.activeAudio.currentTime = 0;
+      state.activeAudio.volume = 1;
+    } catch (_) {}
+  }
 
   // Swap de instancias A y B para que la que subió de volumen ahora sea la principal
   const temp = state.activeAudio;
   state.activeAudio = state.fadeAudio;
   state.fadeAudio = temp;
   state.activeAudio.volume = 1;
+  state.playbackSource = 'full_stream';
 
   const newTrack = state.nextQueuedTrack;
 
@@ -3899,7 +3979,9 @@ function completeCrossfade() {
 
   if (newTrack) {
     state.currentTrack = newTrack;
-    updatePlayerInfo(newTrack);
+    if (playerTitle) playerTitle.innerText = newTrack.title || 'Canción';
+    if (playerArtist) playerArtist.innerHTML = formatArtistPills(newTrack.artist || 'Artista');
+    if (newTrack.cover && playerCover) playerCover.src = newTrack.cover;
     updateMediaSession(newTrack);
     updateAppleMusicTrackInfo(newTrack);
 

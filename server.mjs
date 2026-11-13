@@ -1780,94 +1780,43 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const audioStream = await getAudioStreamForVideo(vId);
-        if (!audioStream) {
-          res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          return res.end(JSON.stringify({ error: 'Audio stream no disponible' }));
-        }
-
-        const ffmpeg = spawn(ffmpegPath, [
-          '-i', 'pipe:0',
-          '-vn',
-          '-c:a', 'libmp3lame',
-          '-b:a', '256k',
-          '-ar', '44100',
-          '-ac', '2',
-          '-af', 'volume=1.35',
-          '-preset', 'ultrafast',
-          '-bufsize', '64k',
-          '-flush_packets', '1',
-          '-f', 'mp3',
-          'pipe:1'
-        ]);
-
-        ffmpeg.stdin.on('error', () => {});
-        audioStream.pipe(ffmpeg.stdin);
-
-        const tempCacheFile = `${cacheFile}.tmp_${Date.now()}`;
-        const cacheWriteStream = fs.createWriteStream(tempCacheFile);
-        cacheWriteStream.on('error', () => {});
+        const stream = ytdlInstance.download(vId, {
+          filter: (f) => f.itag === 140 || (f.hasAudio && !f.hasVideo),
+          quality: 'highestaudio'
+        });
 
         let headersSent = false;
-        ffmpeg.stdout.on('data', (chunk) => {
+        stream.on('data', (chunk) => {
           if (!headersSent) {
             headersSent = true;
             res.writeHead(200, {
-              'Content-Type': 'audio/mpeg',
+              'Content-Type': 'audio/mp4',
               'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Accept-Ranges': 'bytes'
+              'Cache-Control': 'public, max-age=86400',
+              'Accept-Ranges': 'none'
             });
           }
           res.write(chunk);
-          try { cacheWriteStream.write(chunk); } catch (_) {}
         });
 
-        req.on('close', () => {
-          try {
-            if (fs.existsSync(tempCacheFile) && fs.statSync(tempCacheFile).size > 200000 && !fs.existsSync(cacheFile)) {
-              fs.renameSync(tempCacheFile, cacheFile);
-            }
-          } catch (_) {}
-          try { ffmpeg.kill('SIGKILL'); } catch (_) {}
-          try { if (audioStream && typeof audioStream.destroy === 'function') audioStream.destroy(); } catch (_) {}
-          try { cacheWriteStream.end(); } catch (_) {}
+        stream.on('end', () => {
+          res.end();
         });
 
-        ffmpeg.stdout.on('end', () => {
-          try {
-            cacheWriteStream.end(() => {
-              try {
-                if (fs.existsSync(tempCacheFile)) {
-                  const s = fs.statSync(tempCacheFile);
-                  if (s.size > 150000 && !fs.existsSync(cacheFile)) {
-                    fs.renameSync(tempCacheFile, cacheFile);
-                  } else {
-                    fs.unlinkSync(tempCacheFile);
-                  }
-                }
-              } catch (_) {}
-            });
-          } catch (_) {}
-
+        stream.on('error', (err) => {
+          console.warn('[Stream-Live Error]:', err.message);
           if (!headersSent) {
             res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-            res.end(JSON.stringify({ error: 'FFmpeg terminó sin datos' }));
+            res.end(JSON.stringify({ error: err.message }));
           } else {
             res.end();
           }
         });
 
-        audioStream.on('error', (err) => {
-          console.warn('[Stream Live] Error en audioStream:', err.message);
-          try { ffmpeg.kill('SIGKILL'); } catch (_) {}
-          try { cacheWriteStream.end(); } catch (_) {}
-          try { if (fs.existsSync(tempCacheFile)) fs.unlinkSync(tempCacheFile); } catch (_) {}
-          if (!headersSent) {
-            res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-            res.end(JSON.stringify({ error: err.message }));
-          }
+        req.on('close', () => {
+          try { stream.destroy(); } catch (_) {}
         });
+        return;
       } catch (err) {
         console.error('[Stream Live] Error:', err.message);
         if (!res.headersSent) {
@@ -2595,63 +2544,9 @@ function stripOldId3(mp3Buffer) {
   }
 });
 
-// Pre-caché automático en disco de las canciones de la playlist para arranque en <5ms
-async function preloadPlaylistAudioCache() {
-  try {
-    const cacheDir = path.join(__dirname, '.audio_cache');
-    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-
-    const storeFile = path.resolve('data/vice_store.json');
-    if (!fs.existsSync(storeFile)) return;
-    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
-    const adminTracks = store.playlists?.admin || [];
-    console.log(`⚡ [Pre-Cache Engine] Verificando caché de audio Master para ${adminTracks.length} canciones...`);
-
-    for (const t of adminTracks) {
-      const vid = t.videoId || t.video_id;
-      if (!vid || vid.length !== 11) continue;
-      const targetPath = path.join(cacheDir, `${vid}.mp3`);
-      if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 150000) {
-        continue; // Ya almacenado en disco
-      }
-
-      console.log(`📥 [Pre-Cache] Almacenando en disco Master: "${t.title}" [${vid}]...`);
-      try {
-        const stream = await getAudioStreamForVideo(vid);
-        if (!stream) continue;
-        const tempPath = `${targetPath}.pre_${Date.now()}`;
-        const ff = spawn(ffmpegPath, [
-          '-i', 'pipe:0',
-          '-vn',
-          '-c:a', 'libmp3lame',
-          '-b:a', '256k',
-          '-ar', '44100',
-          '-ac', '2',
-          '-af', 'volume=1.35',
-          '-preset', 'ultrafast',
-          '-f', 'mp3',
-          tempPath
-        ]);
-        ff.stdin.on('error', () => {});
-        stream.pipe(ff.stdin);
-        await new Promise(r => ff.on('close', r));
-        if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 150000) {
-          fs.renameSync(tempPath, targetPath);
-          console.log(`✅ [Pre-Cache] Master listo en disco: "${t.title}" (<5ms)`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ [Pre-Cache] No se pudo pre-cachear [${vid}]:`, err.message);
-      }
-    }
-  } catch (e) {
-    console.warn('[Pre-Cache Engine] Advertencia:', e.message);
-  }
-}
-
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
   console.log(`🌴 VICE MUSIC // MOTOR DUAL: DEEZER + ITUNES + AUDIO STREAM`);
   console.log(`🌐 Puerto: ${PORT}`);
   console.log(`======================================================\n`);
-  setTimeout(preloadPlaylistAudioCache, 2000);
 });

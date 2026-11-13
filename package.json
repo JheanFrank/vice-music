@@ -1,6 +1,6 @@
 {
   "name": "vice-music",
-  "version": "8.3.0",
+  "version": "8.3.1",
   "description": "VICE MUSIC // GTA VI Leonida Lossless Hub",
   "main": "server.mjs",
   "type": "module",

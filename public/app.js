@@ -7,9 +7,17 @@ const state = {
   currentTrack: null,
   currentAlbum: null,
   isPlaying: false,
-  playbackSource: 'preview', // 'preview' | 'full'
+  playbackSource: 'preview', // 'preview' | 'full' | 'full_stream'
   currentSpeed: 1, // 1 | 1.25 | 1.5 | 2
-  audio: document.getElementById('audioElement'),
+  audioA: null,
+  audioB: null,
+  activeAudio: null,
+  fadeAudio: null,
+  crossfadeEnabled: true,
+  crossfadeSec: 10,
+  isCrossfading: false,
+  isPreloadingNext: false,
+  nextQueuedTrack: null,
   results: [],
   rankingTracks: [],
   queue: [],
@@ -22,6 +30,34 @@ const state = {
   authMode: 'login', // 'login' | 'register'
   selectedTracks: new Map() // key -> track object
 };
+
+const rawAudioA = document.getElementById('audioElementA') || document.getElementById('audioElement');
+const rawAudioB = document.getElementById('audioElementB');
+state.audioA = rawAudioA;
+state.audioB = rawAudioB;
+state.activeAudio = rawAudioA;
+state.fadeAudio = rawAudioB;
+
+Object.defineProperty(state, 'audio', {
+  get() { return state.activeAudio || state.audioA; },
+  set(el) { state.activeAudio = el; },
+  configurable: true
+});
+
+// Helper de Analítica PostHog
+function trackAnalyticsEvent(eventName, properties = {}) {
+  try {
+    if (window.posthog && typeof window.posthog.capture === 'function') {
+      const authUser = typeof getAuthUser === 'function' ? getAuthUser() : null;
+      window.posthog.capture(eventName, {
+        ...properties,
+        timestamp: new Date().toISOString(),
+        username: authUser ? authUser.user : 'guest',
+        app_version: '8.3.0'
+      });
+    }
+  } catch (_) {}
+}
 
 // ========================================================
 // SISTEMA DE MULTI-SELECCIÓN DE CANCIONES Y COLA SECUENCIAL (v7.9)
@@ -230,6 +266,29 @@ function enqueueDownload(track) {
     return;
   }
 
+  const authUser = getAuthUser();
+  const username = authUser ? authUser.user : null;
+  if (username) {
+    fetch(`/api/subscription-status?user=${encodeURIComponent(username)}`)
+      .then(r => r.json())
+      .then(sub => {
+        if (!sub || !sub.active) {
+          openVipModal();
+          showToast('👑 Membresía VIP inactiva ($10.000 COP/mes). Renuévala para descargar.');
+          return;
+        }
+        proceedEnqueueDownload(track);
+      })
+      .catch(() => {
+        proceedEnqueueDownload(track);
+      });
+    return;
+  }
+
+  proceedEnqueueDownload(track);
+}
+
+function proceedEnqueueDownload(track) {
   const key = getTrackKey(track);
   const alreadyInQueue = downloadQueue.some(t => getTrackKey(t) === key);
   if (alreadyInQueue || (activeDownloadTrack && getTrackKey(activeDownloadTrack) === key)) {
@@ -238,6 +297,7 @@ function enqueueDownload(track) {
   }
 
   downloadQueue.push(track);
+  trackAnalyticsEvent('download_enqueued', { title: track.title, artist: track.artist });
 
   if (isProcessingDownloadQueue) {
     showToast(`⏳ "${track.title}" agregada a la lista de espera (Posición #${downloadQueue.length}).`);
@@ -402,14 +462,18 @@ const amMenuArtist = document.getElementById('amMenuArtist');
 const amMenuBtnQueue = document.getElementById('amMenuBtnQueue');
 const amMenuBtnDownload = document.getElementById('amMenuBtnDownload');
 const amMenuBtnDownloadFlac = document.getElementById('amMenuBtnDownloadFlac');
-const amMenuBtnDj = document.getElementById('amMenuBtnDj');
-const amMenuDjTag = document.getElementById('amMenuDjTag');
+const amMenuBtnCrossfade = document.getElementById('amMenuBtnCrossfade') || document.getElementById('amMenuBtnDj');
+const amMenuBtnDj = amMenuBtnCrossfade;
+const amMenuCrossfadeTag = document.getElementById('amMenuCrossfadeTag') || document.getElementById('amMenuDjTag');
+const amMenuDjTag = amMenuCrossfadeTag;
 const amMenuBtnArtist = document.getElementById('amMenuBtnArtist');
 const amMenuBtnAlbum = document.getElementById('amMenuBtnAlbum');
 const amMenuBtnFull = document.getElementById('amMenuBtnFull');
 const amMenuBtnShare = document.getElementById('amMenuBtnShare');
-const amDjBadge = document.getElementById('amDjBadge');
-const btnBottomDj = document.getElementById('btnBottomDj');
+const amCrossfadeBadge = document.getElementById('amCrossfadeBadge') || document.getElementById('amDjBadge');
+const amDjBadge = amCrossfadeBadge;
+const btnBottomCrossfade = document.getElementById('btnBottomCrossfade') || document.getElementById('btnBottomDj');
+const btnBottomDj = btnBottomCrossfade;
 const btnPlayerMoreLeft = document.getElementById('btnPlayerMoreLeft');
 
 const appleMusicState = {
@@ -649,6 +713,103 @@ function updateAuthUI() {
   } else {
     if (btnOpenLogin) btnOpenLogin.classList.remove('hidden');
     if (authUserInfo) authUserInfo.classList.add('hidden');
+  }
+  refreshVipHeaderUI();
+}
+
+// ========================================================
+// SISTEMA DE MEMBRESÍA VIP STRIPE & GESTIÓN DE FACTURACIÓN
+// ========================================================
+function openVipModal() {
+  const modal = document.getElementById('vipSubscriptionModal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    const auth = getAuthUser();
+    trackAnalyticsEvent('vip_modal_opened', { user: auth ? auth.user : 'guest' });
+  }
+}
+
+function closeVipModal() {
+  const modal = document.getElementById('vipSubscriptionModal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+async function refreshVipHeaderUI() {
+  const user = getAuthUser();
+  const vipBtn = document.getElementById('btnOpenVip');
+  if (!vipBtn) return;
+
+  if (!user || !user.user) {
+    vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">VIP PASS</span>';
+    vipBtn.classList.remove('vip-active');
+    vipBtn.title = 'Membresía VIP Vice Music - $10.000 COP/mes';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/subscription-status?user=${encodeURIComponent(user.user)}`);
+    const data = await res.json();
+    if (data && data.active) {
+      vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">VIP ACTIVO</span>';
+      vipBtn.classList.add('vip-active');
+      vipBtn.title = `Membresía VIP Activa hasta: ${data.expiresAt ? data.expiresAt.substring(0, 10) : 'Ilimitada'}`;
+    } else {
+      vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">RENOVAR VIP</span>';
+      vipBtn.classList.remove('vip-active');
+      vipBtn.title = 'Membresía VIP Vencida - Haz clic para renovar por $10.000 COP/mes';
+    }
+  } catch (_) {}
+}
+
+async function handleStripeSubscribe() {
+  const user = getAuthUser();
+  if (!user || !user.user) {
+    closeVipModal();
+    openLoginModal('Inicia sesión o regístrate para activar tu Membresía VIP ($10.000 COP/mes).', () => {
+      openVipModal();
+    });
+    return;
+  }
+
+  const btn = document.getElementById('btnStripeSubscribe');
+  const originalHtml = btn ? btn.innerHTML : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="login-spinner" style="margin: 0 auto;"></div><span>Conectando con Stripe Checkout...</span>';
+  }
+
+  trackAnalyticsEvent('stripe_checkout_initiated', { username: user.user });
+
+  try {
+    const res = await fetch('/api/stripe/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: user.user,
+        email: `${user.user}@vicemusic.vip`
+      })
+    });
+    const data = await res.json();
+    if (data.checkoutUrl) {
+      window.location.href = data.checkoutUrl;
+      return;
+    } else if (data.demoActivation) {
+      closeVipModal();
+      showToast('👑 ' + data.message);
+      showTopRightToast('Membresía VIP Activada', 'Pase mensual activo ($10.000 COP). Descargas habilitadas.', 'success');
+      refreshVipHeaderUI();
+    } else {
+      showToast('Error conectando con Stripe: ' + (data.error || 'Intenta de nuevo'));
+    }
+  } catch (err) {
+    showToast('Error de conexión con Stripe: ' + err.message);
+  } finally {
+    if (btn && originalHtml) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
   }
 }
 
@@ -937,9 +1098,9 @@ function setupEventListeners() {
     playNextTrack();
   });
 
-  if (btnBottomDj) {
-    btnBottomDj.addEventListener('click', () => {
-      toggleSmartDj();
+  if (btnBottomCrossfade) {
+    btnBottomCrossfade.addEventListener('click', () => {
+      toggleCrossfade();
     });
   }
 
@@ -954,47 +1115,25 @@ function setupEventListeners() {
         updateMediaSessionPosition(pos * dur, dur);
       }
     } else if (state.audio.duration) {
+      // Cancelar crossfade en progreso si el usuario salta manualmente en la barra
+      if (state.isCrossfading && crossfadeInterval) {
+        clearInterval(crossfadeInterval);
+        crossfadeInterval = null;
+        state.isCrossfading = false;
+        if (state.fadeAudio) {
+          state.fadeAudio.pause();
+          state.fadeAudio.currentTime = 0;
+        }
+        if (state.activeAudio) state.activeAudio.volume = 1;
+      }
       state.audio.currentTime = pos * state.audio.duration;
       updateMediaSessionPosition(state.audio.currentTime, state.audio.duration);
     }
   });
 
-  state.audio.addEventListener('timeupdate', () => {
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      updateProgress();
-    }
-  });
-  state.audio.addEventListener('ended', () => {
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      // Avanzar inmediatamente a la siguiente canción sin matar la sesión en segundo plano
-      playNextTrack();
-    }
-  });
-  state.audio.addEventListener('play', () => {
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      setPlayingState(true);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-      if (state.currentTrack) updateMediaSession(state.currentTrack);
-    }
-  });
-  state.audio.addEventListener('pause', () => {
-    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
-      setPlayingState(false);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-    }
-  });
-  state.audio.addEventListener('error', () => {
-    if (state.playbackSource === 'full_stream' && state.currentTrack && state.currentTrack.videoId) {
-      console.warn('[Stream Live Error] Reintentando vía YouTube...');
-      state.playbackSource = 'full';
-      if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-        ytPlayer.loadVideoById(state.currentTrack.videoId);
-        ytPlayer.playVideo();
-        setPlayingState(true);
-        startYtProgress();
-      }
-    }
-  });
+  // Dual Audio Engine: Vincular eventos a ambos elementos A y B para crossfade ininterrumpido
+  setupAudioElementListeners(state.audioA);
+  setupAudioElementListeners(state.audioB);
 
   // Eventos de Autenticación VIP
   const btnOpenLogin = document.getElementById('btnOpenLogin');
@@ -1041,6 +1180,19 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Eventos VIP Pass & Stripe Checkout ($10.000 COP)
+  const btnOpenVip = document.getElementById('btnOpenVip');
+  if (btnOpenVip) btnOpenVip.addEventListener('click', openVipModal);
+
+  const btnCloseVipModal = document.getElementById('btnCloseVipModal');
+  if (btnCloseVipModal) btnCloseVipModal.addEventListener('click', closeVipModal);
+
+  const vipModalBackdrop = document.getElementById('vipModalBackdrop');
+  if (vipModalBackdrop) vipModalBackdrop.addEventListener('click', closeVipModal);
+
+  const btnStripeSubscribe = document.getElementById('btnStripeSubscribe');
+  if (btnStripeSubscribe) btnStripeSubscribe.addEventListener('click', handleStripeSubscribe);
 
   // ========================================================
   // EVENTOS REPRODUCTOR APPLE MUSIC (FULLSCREEN / MODAL)
@@ -3508,30 +3660,268 @@ function closeMoreMenu() {
   if (amMoreMenu) amMoreMenu.classList.add('hidden');
 }
 
-function toggleSmartDj() {
-  state.smartDjEnabled = !state.smartDjEnabled;
-  updateSmartDjUI();
-  if (state.smartDjEnabled) {
-    showToast('🎛️ Smart DJ Activado: Sincronización continua de canciones sin cortes.');
-    showTopRightToast('Smart DJ Activado', 'Mezclas continuas y transiciones automáticas', 'dj');
+// ========================================================
+// MOTOR DUAL AUDIO & CROSSFADE DE 10 SEGUNDOS (v8.3.0)
+// ========================================================
+let crossfadeInterval = null;
+
+function toggleCrossfade() {
+  state.crossfadeEnabled = !state.crossfadeEnabled;
+  state.smartDjEnabled = state.crossfadeEnabled;
+  updateCrossfadeUI();
+  if (state.crossfadeEnabled) {
+    showToast('🎚️ Crossfade 10s Activado: Transición continua e ininterrumpida entre canciones.');
+    showTopRightToast('Crossfade 10s', 'Mezcla ultra-suave sin cortes (ideal para pantalla apagada)', 'dj');
   } else {
-    showToast('⏹️ Smart DJ Desactivado: Reproducción manual.');
-    showTopRightToast('Smart DJ Desactivado', 'Reproducción manual estándar', 'info');
+    showToast('⏹️ Crossfade Desactivado: Reproducción estándar.');
+    showTopRightToast('Crossfade Desactivado', 'Corte directo al terminar cada pista', 'info');
+  }
+  trackAnalyticsEvent('crossfade_toggled', { enabled: state.crossfadeEnabled });
+}
+
+function toggleSmartDj() {
+  toggleCrossfade();
+}
+
+function updateCrossfadeUI() {
+  const badge = document.getElementById('amCrossfadeBadge') || amDjBadge;
+  const btnBottom = document.getElementById('btnBottomCrossfade') || btnBottomDj;
+  const tag = document.getElementById('amMenuCrossfadeTag') || amMenuDjTag;
+
+  if (badge) {
+    badge.style.display = state.crossfadeEnabled ? 'inline-flex' : 'none';
+  }
+  if (btnBottom) {
+    if (state.crossfadeEnabled) btnBottom.classList.add('active');
+    else btnBottom.classList.remove('active');
+  }
+  if (tag) {
+    tag.innerText = state.crossfadeEnabled ? 'ON' : 'OFF';
+    tag.style.background = state.crossfadeEnabled ? 'linear-gradient(135deg, #00f0ff, #00a8ff)' : 'rgba(255,255,255,0.2)';
+    tag.style.color = state.crossfadeEnabled ? '#000' : '#fff';
   }
 }
 
 function updateSmartDjUI() {
-  if (amDjBadge) {
-    amDjBadge.style.display = state.smartDjEnabled ? 'inline-flex' : 'none';
+  updateCrossfadeUI();
+}
+
+// Configurar los listeners en cada elemento de audio del Dual Engine
+function setupAudioElementListeners(audioEl) {
+  if (!audioEl) return;
+
+  audioEl.addEventListener('timeupdate', () => {
+    if (audioEl !== state.activeAudio) return; // Solo el audio activo actualiza barra y progreso
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      updateProgress();
+      checkAndTriggerCrossfade();
+    }
+  });
+
+  audioEl.addEventListener('ended', () => {
+    if (audioEl !== state.activeAudio) return;
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      if (state.isCrossfading) {
+        completeCrossfade();
+      } else {
+        playNextTrack();
+      }
+    }
+  });
+
+  audioEl.addEventListener('play', () => {
+    if (audioEl !== state.activeAudio) return;
+    if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+      setPlayingState(true);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      if (state.currentTrack) updateMediaSession(state.currentTrack);
+    }
+  });
+
+  audioEl.addEventListener('pause', () => {
+    if (audioEl !== state.activeAudio) return;
+    if (!state.isCrossfading) {
+      if (state.playbackSource === 'preview' || state.playbackSource === 'full_stream') {
+        setPlayingState(false);
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+      }
+    }
+  });
+
+  audioEl.addEventListener('error', () => {
+    if (audioEl !== state.activeAudio) return;
+    if (state.playbackSource === 'full_stream' && state.currentTrack && state.currentTrack.videoId) {
+      console.warn('[Stream Live Error] Reintentando vía YouTube...');
+      state.playbackSource = 'full';
+      if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+        ytPlayer.loadVideoById(state.currentTrack.videoId);
+        ytPlayer.playVideo();
+        setPlayingState(true);
+        startYtProgress();
+      }
+    }
+  });
+}
+
+function getUpcomingTrack() {
+  if (state.queue && state.queue.length > 0) {
+    return state.queue[0];
   }
-  if (btnBottomDj) {
-    if (state.smartDjEnabled) btnBottomDj.classList.add('active');
-    else btnBottomDj.classList.remove('active');
+  if (state.currentMode === 'playlist' && state.userPlaylist && state.userPlaylist.length > 0) {
+    const curIdx = state.activeCoverflowIndex;
+    const nextIdx = (curIdx + 1) % state.userPlaylist.length;
+    return state.userPlaylist[nextIdx];
   }
-  if (amMenuDjTag) {
-    amMenuDjTag.innerText = state.smartDjEnabled ? 'ON' : 'OFF';
-    amMenuDjTag.style.background = state.smartDjEnabled ? 'linear-gradient(135deg, #00f0ff, #00a8ff)' : 'rgba(255,255,255,0.2)';
-    amMenuDjTag.style.color = state.smartDjEnabled ? '#000' : '#fff';
+  if (state.currentAlbum && Array.isArray(state.currentAlbum.tracks)) {
+    const curTitle = state.currentTrack ? state.currentTrack.title.trim().toLowerCase() : '';
+    const curIdx = state.currentAlbum.tracks.findIndex(t => t.title && t.title.trim().toLowerCase() === curTitle);
+    if (curIdx !== -1 && curIdx + 1 < state.currentAlbum.tracks.length) {
+      return state.currentAlbum.tracks[curIdx + 1];
+    }
+  }
+  return null;
+}
+
+async function resolveTrackStreamUrl(track) {
+  if (!track) return null;
+  if (track.videoId) {
+    return `/api/stream-live?v=${track.videoId}`;
+  }
+  try {
+    const durParam = track.duration || 0;
+    const res = await fetch(`/api/fullaudio?q=${encodeURIComponent((track.artist || '') + ' ' + (track.title || ''))}&artist=${encodeURIComponent(track.artist || '')}&title=${encodeURIComponent(track.title || '')}&duration=${encodeURIComponent(durParam)}`);
+    const data = await res.json();
+    if (data && data.videoId) {
+      track.videoId = data.videoId;
+      if (data.resolvedArtist) track._resolvedArtist = data.resolvedArtist;
+      return `/api/stream-live?v=${data.videoId}`;
+    }
+  } catch (_) {}
+  return track.preview || track.audioUrl || null;
+}
+
+function checkAndTriggerCrossfade() {
+  if (!state.crossfadeEnabled || !state.activeAudio || !state.fadeAudio) return;
+  const dur = state.activeAudio.duration;
+  const cur = state.activeAudio.currentTime;
+  if (!dur || dur <= 16) return; // Temas muy cortos se reproducen directo
+  const remaining = dur - cur;
+
+  // 1. Pre-carga en el segundo reproductor a los 15 segundos restantes
+  if (remaining <= 15 && !state.isPreloadingNext && !state.nextQueuedTrack) {
+    const upcoming = getUpcomingTrack();
+    if (upcoming) {
+      state.isPreloadingNext = true;
+      resolveTrackStreamUrl(upcoming).then(src => {
+        if (src && state.fadeAudio) {
+          state.fadeAudio.src = src;
+          state.fadeAudio.volume = 0;
+          state.fadeAudio.playbackRate = state.currentSpeed;
+          state.fadeAudio.load();
+          state.nextQueuedTrack = upcoming;
+          console.log('[Dual Audio Engine] Pista preparada para crossfade 10s:', upcoming.title);
+        }
+      }).catch(() => {
+        state.isPreloadingNext = false;
+      });
+    }
+  }
+
+  // 2. Disparar Crossfade de 10 segundos continuos a los 10 segundos restantes
+  if (remaining <= 10 && remaining > 0.6 && !state.isCrossfading && state.nextQueuedTrack && state.fadeAudio && state.fadeAudio.src) {
+    start10sCrossfade();
+  }
+}
+
+function start10sCrossfade() {
+  if (state.isCrossfading) return;
+  state.isCrossfading = true;
+  const nextTrack = state.nextQueuedTrack;
+  console.log('[Dual Audio Engine] Iniciando Crossfade de 10s continuo hacia:', nextTrack ? nextTrack.title : 'Siguiente tema');
+
+  trackAnalyticsEvent('crossfade_started', {
+    from: state.currentTrack ? state.currentTrack.title : '',
+    to: nextTrack ? nextTrack.title : '',
+    duration: 10
+  });
+
+  state.fadeAudio.volume = 0;
+  state.fadeAudio.play().then(() => {
+    let step = 0;
+    const totalSteps = 100; // 100 pasos * 100ms = 10.000 ms (10s)
+    if (crossfadeInterval) clearInterval(crossfadeInterval);
+
+    crossfadeInterval = setInterval(() => {
+      step++;
+      const progress = step / totalSteps; // 0.00 -> 1.00
+      if (state.activeAudio) {
+        state.activeAudio.volume = Math.max(0, 1 - progress);
+      }
+      if (state.fadeAudio) {
+        state.fadeAudio.volume = Math.min(1, progress);
+      }
+      if (step >= totalSteps) {
+        clearInterval(crossfadeInterval);
+        crossfadeInterval = null;
+        completeCrossfade();
+      }
+    }, 100);
+  }).catch(err => {
+    console.warn('[Dual Audio Crossfade play error]', err);
+    state.isCrossfading = false;
+  });
+}
+
+function completeCrossfade() {
+  if (crossfadeInterval) {
+    clearInterval(crossfadeInterval);
+    crossfadeInterval = null;
+  }
+  if (!state.fadeAudio || !state.activeAudio) return;
+
+  try {
+    state.activeAudio.pause();
+    state.activeAudio.currentTime = 0;
+    state.activeAudio.volume = 1;
+  } catch (_) {}
+
+  // Swap de instancias A y B para que la que subió de volumen ahora sea la principal
+  const temp = state.activeAudio;
+  state.activeAudio = state.fadeAudio;
+  state.fadeAudio = temp;
+  state.activeAudio.volume = 1;
+
+  const newTrack = state.nextQueuedTrack;
+
+  state.isCrossfading = false;
+  state.isPreloadingNext = false;
+  state.nextQueuedTrack = null;
+
+  if (newTrack) {
+    state.currentTrack = newTrack;
+    updatePlayerInfo(newTrack);
+    updateMediaSession(newTrack);
+    updateAppleMusicTrackInfo(newTrack);
+
+    // Actualizar cola
+    if (state.queue && state.queue.length > 0 && state.queue[0] === newTrack) {
+      state.queue.shift();
+      updateQueueBadge();
+      renderQueueItems();
+    }
+    // Sincronizar Coverflow si estamos en playlist
+    if (state.currentMode === 'playlist' && state.userPlaylist) {
+      const idx = state.userPlaylist.findIndex(t => t.title === newTrack.title && t.artist === newTrack.artist);
+      if (idx !== -1) {
+        state.activeCoverflowIndex = idx;
+        if (typeof updateCoverflowClasses === 'function') updateCoverflowClasses();
+      }
+    }
+    trackAnalyticsEvent('song_played', {
+      title: newTrack.title,
+      artist: newTrack.artist,
+      source: 'crossfade_10s'
+    });
   }
 }
 

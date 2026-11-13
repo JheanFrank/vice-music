@@ -46,6 +46,11 @@ try {
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT DEFAULT 'VIP Member',
+      is_vip INTEGER DEFAULT 0,
+      subscription_status TEXT DEFAULT 'inactive',
+      subscription_expires_at TEXT,
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS playlists (
@@ -63,10 +68,30 @@ try {
     );
   `);
 
-  // Crear usuario admin por defecto si no existe
+  // Migración automática de columnas para usuarios existentes
+  try {
+    const userCols = db.prepare("PRAGMA table_info(users)").all();
+    const colNames = userCols.map(c => c.name);
+    if (!colNames.includes('is_vip')) db.exec("ALTER TABLE users ADD COLUMN is_vip INTEGER DEFAULT 0");
+    if (!colNames.includes('subscription_status')) db.exec("ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive'");
+    if (!colNames.includes('subscription_expires_at')) db.exec("ALTER TABLE users ADD COLUMN subscription_expires_at TEXT");
+    if (!colNames.includes('stripe_customer_id')) db.exec("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT");
+    if (!colNames.includes('stripe_subscription_id')) db.exec("ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT");
+  } catch (_) {}
+
+  // Crear o actualizar usuario admin por defecto con acceso VIP permanente
   const checkAdmin = db.prepare('SELECT id FROM users WHERE username = ?');
   if (!checkAdmin.get('admin')) {
-    db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', 'admin', 'VIP Admin');
+    db.prepare(`
+      INSERT INTO users (username, password, role, is_vip, subscription_status, subscription_expires_at) 
+      VALUES (?, ?, ?, 1, 'active', '2099-12-31T23:59:59.000Z')
+    `).run('admin', 'admin', 'VIP Admin');
+  } else {
+    db.prepare(`
+      UPDATE users 
+      SET is_vip = 1, subscription_status = 'active', subscription_expires_at = '2099-12-31T23:59:59.000Z', role = 'VIP Admin'
+      WHERE username = 'admin'
+    `).run();
   }
 
   // Restaurar automáticamente playlist desde vice_store.json persistente si SQLite está vacío (ej: nuevo deploy en Render)
@@ -115,12 +140,61 @@ export function getUser(username) {
   const cleanUser = username.trim().toLowerCase();
   if (db && !useJsonStore) {
     try {
-      const stmt = db.prepare('SELECT id, username, password, role, created_at FROM users WHERE lower(username) = ?');
-      return stmt.get(cleanUser);
+      const stmt = db.prepare('SELECT id, username, password, role, is_vip, subscription_status, subscription_expires_at, stripe_customer_id, stripe_subscription_id, created_at FROM users WHERE lower(username) = ?');
+      const u = stmt.get(cleanUser);
+      if (u) return u;
     } catch (_) {}
   }
   const store = loadJsonStore();
-  return store.users[cleanUser] || null;
+  const u = store.users[cleanUser] || null;
+  if (u && cleanUser === 'admin') {
+    u.is_vip = 1;
+    u.subscription_status = 'active';
+    u.subscription_expires_at = '2099-12-31T23:59:59.000Z';
+  }
+  return u;
+}
+
+export function isUserVipActive(username) {
+  if (!username) return false;
+  const cleanUser = username.trim().toLowerCase();
+  if (cleanUser === 'admin') return true;
+  const user = getUser(cleanUser);
+  if (!user) return false;
+  if (user.role === 'VIP Admin' || user.username === 'admin') return true;
+  if (user.subscription_status === 'active' || user.is_vip === 1) {
+    if (!user.subscription_expires_at) return true;
+    return new Date(user.subscription_expires_at).getTime() > Date.now();
+  }
+  return false;
+}
+
+export function setUserVip(username, status = 'active', expiresAt = null, customerId = '', subId = '') {
+  if (!username) return null;
+  const cleanUser = username.trim().toLowerCase();
+  const exp = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const isVipNum = (status === 'active') ? 1 : 0;
+
+  if (db && !useJsonStore) {
+    try {
+      db.prepare(`
+        UPDATE users 
+        SET is_vip = ?, subscription_status = ?, subscription_expires_at = ?, stripe_customer_id = ?, stripe_subscription_id = ?
+        WHERE lower(username) = ?
+      `).run(isVipNum, status, exp, customerId || '', subId || '', cleanUser);
+    } catch (_) {}
+  }
+
+  const store = loadJsonStore();
+  if (store.users[cleanUser]) {
+    store.users[cleanUser].is_vip = isVipNum;
+    store.users[cleanUser].subscription_status = status;
+    store.users[cleanUser].subscription_expires_at = exp;
+    if (customerId) store.users[cleanUser].stripe_customer_id = customerId;
+    if (subId) store.users[cleanUser].stripe_subscription_id = subId;
+    saveJsonStore(store);
+  }
+  return { username: cleanUser, isVip: isVipNum === 1, subscription_status: status, subscription_expires_at: exp };
 }
 
 export function createUser(username, password, role = 'VIP Member') {
@@ -129,9 +203,9 @@ export function createUser(username, password, role = 'VIP Member') {
 
   if (db && !useJsonStore) {
     try {
-      const stmt = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)');
+      const stmt = db.prepare('INSERT INTO users (username, password, role, is_vip, subscription_status) VALUES (?, ?, ?, 0, \'inactive\')');
       stmt.run(cleanUser, password, role);
-      return { username: cleanUser, role };
+      return { username: cleanUser, role, is_vip: 0, subscription_status: 'inactive' };
     } catch (e) {
       if (e.message?.includes('UNIQUE')) {
         throw new Error('El nombre de usuario ya está registrado');
@@ -148,10 +222,13 @@ export function createUser(username, password, role = 'VIP Member') {
     username: cleanUser,
     password,
     role,
+    is_vip: 0,
+    subscription_status: 'inactive',
+    subscription_expires_at: null,
     created_at: new Date().toISOString()
   };
   saveJsonStore(store);
-  return { username: cleanUser, role };
+  return { username: cleanUser, role, is_vip: 0, subscription_status: 'inactive' };
 }
 
 export function getPlaylist(username) {

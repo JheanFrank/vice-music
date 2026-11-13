@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import ffmpegPath from 'ffmpeg-static';
 import { Ytdl, Client, createPoTokenProvider } from '@distube/ytdl-core';
-import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist, addMultipleToPlaylist, setPlaylist } from './db.mjs';
+import { getUser, createUser, getPlaylist, addToPlaylist, removeFromPlaylist, addMultipleToPlaylist, setPlaylist, isUserVipActive, setUserVip } from './db.mjs';
 
 try {
   if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
@@ -619,31 +619,30 @@ async function getAudioStreamForVideo(videoId, altIds = []) {
         quality: 'highestaudio'
       });
 
-      // Validar recepción de audio sin errores asíncronos de YouTube
+      // Validar recepción de audio inmediata sin retardos artificiales
       await new Promise((resolve, reject) => {
         let settled = false;
-        const timer = setTimeout(() => {
+        const onData = () => {
           if (!settled) {
             settled = true;
+            stream.removeListener('error', onError);
             resolve();
           }
-        }, 4000);
-
-        stream.once('error', (err) => {
+        };
+        const onError = (err) => {
           if (!settled) {
             settled = true;
-            clearTimeout(timer);
+            stream.removeListener('data', onData);
+            stream.removeListener('readable', onData);
             reject(err);
           }
-        });
-
-        stream.once('readable', () => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            resolve();
-          }
-        });
+        };
+        stream.once('data', onData);
+        stream.once('readable', onData);
+        stream.once('error', onError);
+        setTimeout(() => {
+          if (!settled) { settled = true; resolve(); }
+        }, 1200);
       });
 
       console.log(`[Audio Engine] Flujo YTDL nativo validado con éxito para [${vId}]`);
@@ -1218,7 +1217,170 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.2.1', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.0', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+    }
+
+    // 0.001 SEO: ROBOTS.TXT
+    if (pathname === '/robots.txt') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(`User-agent: *\nAllow: /\nSitemap: https://vice-music.onrender.com/sitemap.xml\n`);
+    }
+
+    // 0.002 SEO: SITEMAP.XML
+    if (pathname === '/sitemap.xml') {
+      res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+      return res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://vice-music.onrender.com/</loc>
+    <lastmod>2026-11-13</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`);
+    }
+
+    // 0.003 PWA MANIFEST
+    if (pathname === '/manifest.json') {
+      res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        name: "VICE MUSIC // VI",
+        short_name: "ViceMusic",
+        description: "Escuchar y Descargar Música en Alta Calidad con Crossfade y Coverflow 3D",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#0a0412",
+        theme_color: "#ff2a85",
+        icons: [
+          {
+            src: "https://cdn-images.dzcdn.net/images/cover/11f74a8d83139d8fd211c0254f3c113c/500x500-000000-80-0-0.jpg",
+            sizes: "500x500",
+            type: "image/jpeg"
+          }
+        ]
+      }, null, 2));
+    }
+
+    // 0.004 ESTADO DE SUSCRIPCIÓN VIP Y FACTURACIÓN
+    if (pathname === '/api/subscription-status') {
+      const user = (reqUrl.searchParams.get('user') || '').trim();
+      const isVip = isUserVipActive(user);
+      const userObj = getUser(user);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({
+        success: true,
+        isVip,
+        username: user,
+        role: userObj?.role || (user === 'admin' ? 'VIP Admin' : 'Member'),
+        subscription_status: userObj?.subscription_status || (isVip ? 'active' : 'inactive'),
+        subscription_expires_at: userObj?.subscription_expires_at || null,
+        priceCop: 10000
+      }));
+    }
+
+    // 0.005 STRIPE: CREAR SESIÓN DE CHECKOUT PARA COBRO MENSUAL ($10.000 COP)
+    if (pathname === '/api/stripe/create-checkout-session' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const username = (parsed.username || '').trim();
+          if (!username) throw new Error('Debes iniciar sesión para suscribirte');
+
+          const stripeKey = process.env.STRIPE_SECRET_KEY;
+          if (!stripeKey || stripeKey.includes('placeholder')) {
+            // Activación demo inmediata si no se ha configurado la API Key privada en Render
+            const activated = setUserVip(username, 'active');
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({
+              success: true,
+              demo: true,
+              message: '⚡ Acceso VIP Demo activado por 30 días para pruebas. Para pagos reales con tarjeta/PSE, agrega STRIPE_SECRET_KEY en las variables de Render.',
+              expiresAt: activated.subscription_expires_at
+            }));
+          }
+
+          // Checkout Session oficial de Stripe
+          const params = new URLSearchParams();
+          params.append('payment_method_types[0]', 'card');
+          params.append('mode', 'payment'); // Pago mensual recurrente o pase de 30 días
+          params.append('line_items[0][price_data][currency]', 'cop');
+          params.append('line_items[0][price_data][unit_amount]', '1000000'); // $10,000 COP
+          params.append('line_items[0][price_data][product_data][name]', 'VICE VIP PASS - Renovación Mensual');
+          params.append('line_items[0][price_data][product_data][description]', 'Descargas ilimitadas MP3 320 kbps y álbumes FLAC .ZIP + Audio Master');
+          params.append('client_reference_id', username);
+          params.append('metadata[username]', username);
+          params.append('success_url', `https://vice-music.onrender.com/?vip_success=true&user=${encodeURIComponent(username)}`);
+          params.append('cancel_url', 'https://vice-music.onrender.com/?vip_cancel=true');
+
+          const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${stripeKey}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: params.toString()
+          });
+
+          const session = await stripeRes.json();
+          if (!stripeRes.ok) {
+            throw new Error(session.error?.message || 'Error al conectar con Stripe');
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: true, url: session.url, sessionId: session.id }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+      return;
+    }
+
+    // 0.006 STRIPE: WEBHOOK PARA RENOVACIÓN MENSUAL AUTOMÁTICA
+    if (pathname === '/api/stripe/webhook' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const event = JSON.parse(body || '{}');
+          console.log('🔔 [Stripe Webhook] Evento recibido:', event.type);
+          if (event.type === 'checkout.session.completed' || event.type === 'invoice.payment_succeeded') {
+            const session = event.data?.object;
+            const username = session?.client_reference_id || session?.metadata?.username;
+            if (username) {
+              setUserVip(username, 'active', null, session.customer, session.subscription);
+              console.log(`✅ [Stripe] Membresía VIP renovada con éxito por 30 días para ${username}`);
+            }
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ received: true }));
+        } catch (_) {
+          res.writeHead(400);
+          res.end();
+        }
+      });
+      return;
+    }
+
+    // 0.007 ACTIVACIÓN VIP DE PRUEBA / MANUAL
+    if (pathname === '/api/stripe/activate-test-vip' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { username } = JSON.parse(body || '{}');
+          if (!username) throw new Error('Usuario requerido');
+          const resVip = setUserVip(username, 'active');
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: true, message: `Membresía VIP activada para ${username}`, expiresAt: resVip.subscription_expires_at }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
     }
 
     // 0.01 TEST YTDL & DEBUG RENDER
@@ -1632,6 +1794,8 @@ const server = http.createServer(async (req, res) => {
           '-ar', '44100',
           '-ac', '2',
           '-af', 'volume=1.35',
+          '-preset', 'ultrafast',
+          '-bufsize', '64k',
           '-flush_packets', '1',
           '-f', 'mp3',
           'pipe:1'
@@ -1660,10 +1824,14 @@ const server = http.createServer(async (req, res) => {
         });
 
         req.on('close', () => {
+          try {
+            if (fs.existsSync(tempCacheFile) && fs.statSync(tempCacheFile).size > 200000 && !fs.existsSync(cacheFile)) {
+              fs.renameSync(tempCacheFile, cacheFile);
+            }
+          } catch (_) {}
           try { ffmpeg.kill('SIGKILL'); } catch (_) {}
           try { if (audioStream && typeof audioStream.destroy === 'function') audioStream.destroy(); } catch (_) {}
           try { cacheWriteStream.end(); } catch (_) {}
-          try { if (fs.existsSync(tempCacheFile)) fs.unlinkSync(tempCacheFile); } catch (_) {}
         });
 
         ffmpeg.stdout.on('end', () => {
@@ -1672,7 +1840,7 @@ const server = http.createServer(async (req, res) => {
               try {
                 if (fs.existsSync(tempCacheFile)) {
                   const s = fs.statSync(tempCacheFile);
-                  if (s.size > 150000) {
+                  if (s.size > 150000 && !fs.existsSync(cacheFile)) {
                     fs.renameSync(tempCacheFile, cacheFile);
                   } else {
                     fs.unlinkSync(tempCacheFile);
@@ -1938,6 +2106,15 @@ const server = http.createServer(async (req, res) => {
 
     // 5. INICIAR CONVERSIÓN MP3 COMPLETA (Vía motor limpio p.savenow.to)
     if (pathname === '/api/start-mp3-conversion') {
+      const authUser = (reqUrl.searchParams.get('user') || reqUrl.searchParams.get('username') || '').trim();
+      if (!isUserVipActive(authUser)) {
+        res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({
+          error: 'Membresía VIP requerida para descargar música oficial en 320 kbps y FLAC. Renueva tu factura o suscripción mensual por $10.000 COP.',
+          requireVip: true
+        }));
+      }
+
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
 
@@ -2155,6 +2332,15 @@ function stripOldId3(mp3Buffer) {
 
     // 6. MOTOR NATIVO DEFINITIVO: DESCARGA MP3 320 KBPS CON METADATOS Y CARÁTULA HD 1000PX
     if (pathname === '/api/download-mp3') {
+      const authUser = (reqUrl.searchParams.get('user') || reqUrl.searchParams.get('username') || '').trim();
+      if (!isUserVipActive(authUser)) {
+        res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({
+          error: 'Membresía VIP requerida para descargar canciones en 320 kbps y FLAC. Renueva tu factura o suscripción mensual por $10.000 COP.',
+          requireVip: true
+        }));
+      }
+
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const videoIdParam = (reqUrl.searchParams.get('videoId') || '').trim();
       const filename = (reqUrl.searchParams.get('filename') || 'cancion').trim();
@@ -2409,9 +2595,63 @@ function stripOldId3(mp3Buffer) {
   }
 });
 
+// Pre-caché automático en disco de las canciones de la playlist para arranque en <5ms
+async function preloadPlaylistAudioCache() {
+  try {
+    const cacheDir = path.join(__dirname, '.audio_cache');
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+
+    const storeFile = path.resolve('data/vice_store.json');
+    if (!fs.existsSync(storeFile)) return;
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
+    const adminTracks = store.playlists?.admin || [];
+    console.log(`⚡ [Pre-Cache Engine] Verificando caché de audio Master para ${adminTracks.length} canciones...`);
+
+    for (const t of adminTracks) {
+      const vid = t.videoId || t.video_id;
+      if (!vid || vid.length !== 11) continue;
+      const targetPath = path.join(cacheDir, `${vid}.mp3`);
+      if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 150000) {
+        continue; // Ya almacenado en disco
+      }
+
+      console.log(`📥 [Pre-Cache] Almacenando en disco Master: "${t.title}" [${vid}]...`);
+      try {
+        const stream = await getAudioStreamForVideo(vid);
+        if (!stream) continue;
+        const tempPath = `${targetPath}.pre_${Date.now()}`;
+        const ff = spawn(ffmpegPath, [
+          '-i', 'pipe:0',
+          '-vn',
+          '-c:a', 'libmp3lame',
+          '-b:a', '256k',
+          '-ar', '44100',
+          '-ac', '2',
+          '-af', 'volume=1.35',
+          '-preset', 'ultrafast',
+          '-f', 'mp3',
+          tempPath
+        ]);
+        ff.stdin.on('error', () => {});
+        stream.pipe(ff.stdin);
+        await new Promise(r => ff.on('close', r));
+        if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 150000) {
+          fs.renameSync(tempPath, targetPath);
+          console.log(`✅ [Pre-Cache] Master listo en disco: "${t.title}" (<5ms)`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ [Pre-Cache] No se pudo pre-cachear [${vid}]:`, err.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[Pre-Cache Engine] Advertencia:', e.message);
+  }
+}
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
   console.log(`🌴 VICE MUSIC // MOTOR DUAL: DEEZER + ITUNES + AUDIO STREAM`);
   console.log(`🌐 Puerto: ${PORT}`);
   console.log(`======================================================\n`);
+  setTimeout(preloadPlaylistAudioCache, 2000);
 });

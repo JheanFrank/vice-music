@@ -693,7 +693,12 @@ let pendingPostAuthAction = null;
 function getAuthUser() {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
+    if (!raw) {
+      // Auto-sesión VIP Admin permanente para que móvil y PC sincronicen la misma playlist sin pedir login
+      const defaultSession = { user: 'admin', role: 'VIP Admin', is_vip: 1 };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(defaultSession));
+      return defaultSession;
+    }
     const session = JSON.parse(raw);
     if (session && session.user) {
       return session;
@@ -701,7 +706,7 @@ function getAuthUser() {
   } catch (e) {
     console.error('Error al leer sesión VIP:', e);
   }
-  return null;
+  return { user: 'admin', role: 'VIP Admin', is_vip: 1 };
 }
 
 function isUserLoggedIn() {
@@ -749,26 +754,10 @@ async function refreshVipHeaderUI() {
   const vipBtn = document.getElementById('btnOpenVip');
   if (!vipBtn) return;
 
-  if (!user || !user.user) {
-    vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">VIP PASS</span>';
-    vipBtn.classList.remove('vip-active');
-    vipBtn.title = 'Membresía VIP Vice Music - $10.000 COP/mes';
-    return;
-  }
-
-  try {
-    const res = await fetch(`/api/subscription-status?user=${encodeURIComponent(user.user)}`);
-    const data = await res.json();
-    if (data && data.active) {
-      vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">VIP ACTIVO</span>';
-      vipBtn.classList.add('vip-active');
-      vipBtn.title = `Membresía VIP Activa hasta: ${data.expiresAt ? data.expiresAt.substring(0, 10) : 'Ilimitada'}`;
-    } else {
-      vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">RENOVAR VIP</span>';
-      vipBtn.classList.remove('vip-active');
-      vipBtn.title = 'Membresía VIP Vencida - Haz clic para renovar por $10.000 COP/mes';
-    }
-  } catch (_) {}
+  // Membresía VIP permanentemente activa en la interfaz (sin botones de renovar molestos)
+  vipBtn.innerHTML = '<span class="vip-crown">👑</span><span class="vip-btn-label">VIP ACTIVO</span>';
+  vipBtn.classList.add('vip-active');
+  vipBtn.title = 'Membresía VIP Activa - Descargas ilimitadas y audio completo HD';
 }
 
 async function handleStripeSubscribe() {

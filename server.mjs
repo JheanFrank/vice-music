@@ -1217,7 +1217,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.1', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.2', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT
@@ -1378,6 +1378,34 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
+    }
+
+    // 0.008 ACTIVACIÓN VIP POR TRANSFERENCIA BANCOLOMBIA / NEQUI ($10.000 COP)
+    if (pathname === '/api/vip/confirm-transfer' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { username, reference } = JSON.parse(body || '{}');
+          if (!username) {
+            res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({ error: 'Debes iniciar sesión para activar tu membresía' }));
+          }
+          const cleanRef = (reference || 'BANCOLOMBIA_' + Date.now()).trim();
+          const activated = setUserVip(username, 'active', null, 'Bancolombia_95962750444', cleanRef);
+          console.log(`👑 [VIP Transferencia]: Usuario ${username} activado por 30 días con ref ${cleanRef}`);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({
+            success: true,
+            message: '¡Membresía VIP Activada con éxito por 30 días! Descargas ilimitadas habilitadas.',
+            expiresAt: activated.subscription_expires_at
+          }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: e.message }));
         }
       });
       return;

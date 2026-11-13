@@ -87,7 +87,7 @@
       <div class="brand-text">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <h1 class="logo-title">VICE<span>MUSIC</span></h1>
-          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v8.3.1</span>
+          <span class="version-badge" id="versionBadge" title="Versión de Vice Music">v8.3.2</span>
         </div>
         <p class="tagline">LEONIDA STATE // FULL ALBUMS & LOSSLESS VAULT</p>
       </div>
@@ -923,12 +923,44 @@
         </div>
       </div>
 
-      <div class="vip-modal-actions">
-        <button type="button" id="btnStripeSubscribe" class="btn-stripe-pay">
-          <span class="stripe-icon">💳</span>
-          <span>SUSCRIBIRME CON STRIPE ($10.000 COP)</span>
-        </button>
-        <p class="vip-security-note">🔒 Pago 100% seguro y encriptado procesado por Stripe. Cancela cuando desees.</p>
+      <!-- Opciones de Pago Colombia (Bancolombia, Nequi, PSE & Wompi) -->
+      <div class="vip-colombia-payment">
+        <div class="vip-bank-info-box">
+          <div class="bank-header">
+            <span class="bank-tag">COLOMBIA 🇨🇴</span>
+            <span class="bank-name">BANCOLOMBIA / NEQUI</span>
+          </div>
+          <div class="bank-details">
+            <div class="bank-row">
+              <span class="bank-label">Tipo de Cuenta:</span>
+              <span class="bank-value">Ahorros</span>
+            </div>
+            <div class="bank-row">
+              <span class="bank-label">Número de Cuenta:</span>
+              <span class="bank-value bank-acc-num" id="bankAccNumber">95962750444</span>
+              <button type="button" class="btn-copy-acc" id="btnCopyAcc" title="Copiar número de cuenta">Copiar</button>
+            </div>
+            <div class="bank-row">
+              <span class="bank-label">Valor a Transferir:</span>
+              <span class="bank-value" style="color: #ffd700; font-weight: 800;">$10.000 COP / mes</span>
+            </div>
+          </div>
+
+          <div class="transfer-confirm-form">
+            <label for="transferReferenceInput" style="font-size: 0.75rem; color: #a29db8; display: block; margin-bottom: 4px;">NÚMERO DE COMPROBANTE / TRANSACCIÓN:</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="transferReferenceInput" class="vip-ref-input" placeholder="Ej: 12345678 o Ref Nequi" autocomplete="off">
+              <button type="button" id="btnConfirmTransfer" class="btn-banco-confirm">ACTIVAR</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="vip-modal-actions" style="margin-top: 1rem;">
+          <button type="button" id="btnWompiPay" class="btn-wompi-pay" title="Pagar por PSE, Nequi, Botón Bancolombia o Tarjeta">
+            <span>⚡ PAGAR CON PSE / NEQUI (WOMPI BANCOLOMBIA)</span>
+          </button>
+          <p class="vip-security-note">🔒 Pagos directos sin intermediarios extranjeros. Depósito inmediato a Bancolombia.</p>
+        </div>
       </div>
     </div>
   </div>
@@ -938,6 +970,6 @@
   <audio id="audioElementB" preload="auto" playsinline webkit-playsinline></audio>
   
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=831"></script>
+  <script src="app.js?v=832"></script>
 </body>
 </html>

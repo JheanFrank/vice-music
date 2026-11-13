@@ -6404,3 +6404,151 @@ body {
   text-align: center;
   margin: 0.8rem 0 0 0;
 }
+
+/* Estilos Pago Bancolombia / Nequi / Wompi (v8.3.2) */
+.vip-bank-info-box {
+  background: rgba(255, 215, 0, 0.06);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  border-radius: 14px;
+  padding: 1.1rem;
+  margin-bottom: 0.8rem;
+}
+
+.bank-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bank-tag {
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.bank-name {
+  color: #ffd700;
+  font-weight: 900;
+  font-size: 0.95rem;
+  letter-spacing: 0.8px;
+}
+
+.bank-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.bank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.86rem;
+}
+
+.bank-label {
+  color: var(--text-muted, #a29db8);
+}
+
+.bank-value {
+  color: #fff;
+  font-weight: 700;
+}
+
+.bank-acc-num {
+  font-family: var(--font-mono, monospace);
+  color: var(--vice-cyan, #00f0ff);
+  font-size: 1.05rem;
+  letter-spacing: 1px;
+}
+
+.btn-copy-acc {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--vice-cyan, #00f0ff);
+  color: var(--vice-cyan, #00f0ff);
+  border-radius: 6px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-copy-acc:hover {
+  background: var(--vice-cyan, #00f0ff);
+  color: #0b0816;
+}
+
+.transfer-confirm-form {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 10px;
+  padding: 0.8rem;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+
+.vip-ref-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.vip-ref-input:focus {
+  border-color: #ffd700;
+}
+
+.btn-banco-confirm {
+  background: linear-gradient(135deg, #ffd700, #ff8800);
+  border: none;
+  color: #0b0816;
+  font-weight: 900;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+.btn-banco-confirm:hover {
+  transform: scale(1.03);
+  filter: brightness(1.1);
+}
+
+.btn-wompi-pay {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0.95rem 1.4rem;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #004481 0%, #00f0ff 100%);
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(0, 68, 129, 0.4);
+  transition: all 0.25s ease;
+}
+
+.btn-wompi-pay:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow: 0 14px 32px rgba(0, 240, 255, 0.4);
+}

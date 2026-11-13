@@ -532,11 +532,15 @@ function initYtPlayer() {
   if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') return;
   const slot = document.getElementById('ytPlayerSlot');
   if (!slot) return;
-  if (window.YT && typeof window.YT.Player === 'function') {
+  if (!window.YT || typeof window.YT.Player !== 'function') {
+    setTimeout(initYtPlayer, 250);
+    return;
+  }
+
+  try {
     ytPlayer = new YT.Player('ytPlayerSlot', {
       height: '100%',
       width: '100%',
-      host: 'https://www.youtube-nocookie.com',
       playerVars: {
         autoplay: 1,
         controls: 0,
@@ -545,12 +549,13 @@ function initYtPlayer() {
         modestbranding: 1,
         rel: 0,
         playsinline: 1,
+        enablejsapi: 1,
         origin: window.location.origin
       },
       events: {
         onReady: (event) => {
           ytReady = true;
-          console.log('[YouTube Player] Listo');
+          console.log('[YouTube Player] Listo y pre-cargado');
           if (ytPendingVideoId) {
             try {
               event.target.loadVideoById(ytPendingVideoId);
@@ -606,6 +611,8 @@ function initYtPlayer() {
         }
       }
     });
+  } catch (err) {
+    console.warn('[initYtPlayer error]', err);
   }
 }
 
@@ -959,6 +966,7 @@ function handleLogout() {
 // ========================================================
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  initYtPlayer();
   updateAuthUI();
   updateClockIndicator();
   setInterval(updateClockIndicator, 30000);
@@ -1192,8 +1200,79 @@ function setupEventListeners() {
   const vipModalBackdrop = document.getElementById('vipModalBackdrop');
   if (vipModalBackdrop) vipModalBackdrop.addEventListener('click', closeVipModal);
 
-  const btnStripeSubscribe = document.getElementById('btnStripeSubscribe');
-  if (btnStripeSubscribe) btnStripeSubscribe.addEventListener('click', handleStripeSubscribe);
+  const btnCopyAcc = document.getElementById('btnCopyAcc');
+  if (btnCopyAcc) {
+    btnCopyAcc.addEventListener('click', () => {
+      const num = '95962750444';
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(num).then(() => {
+          showToast('📋 Número de cuenta copiado: ' + num);
+        }).catch(() => {
+          showToast('Cuenta Bancolombia: ' + num);
+        });
+      } else {
+        showToast('Cuenta Bancolombia: ' + num);
+      }
+    });
+  }
+
+  const btnConfirmTransfer = document.getElementById('btnConfirmTransfer');
+  if (btnConfirmTransfer) {
+    btnConfirmTransfer.addEventListener('click', async () => {
+      const user = typeof getAuthUser === 'function' ? getAuthUser() : null;
+      if (!user || !user.user) {
+        closeVipModal();
+        openLoginModal('Inicia sesión para registrar tu comprobante de pago VIP.', () => openVipModal());
+        return;
+      }
+      const refInput = document.getElementById('transferReferenceInput');
+      const refVal = (refInput ? refInput.value : '').trim();
+      if (!refVal) {
+        showToast('⚠️ Por favor ingresa el número de comprobante o referencia de tu transferencia.');
+        return;
+      }
+      btnConfirmTransfer.disabled = true;
+      btnConfirmTransfer.textContent = '...';
+      try {
+        const res = await fetch('/api/vip/confirm-transfer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user.user, reference: refVal })
+        });
+        const d = await res.json();
+        if (d && d.success) {
+          showToast('👑 ' + d.message);
+          showTopRightToast('Membresía VIP Activada', 'Pase mensual activo. Descargas ilimitadas listas.', 'success');
+          closeVipModal();
+          refreshVipHeaderUI();
+        } else {
+          showToast('Error: ' + (d.error || 'No se pudo verificar'));
+        }
+      } catch (err) {
+        showToast('Error de red al activar VIP: ' + err.message);
+      } finally {
+        btnConfirmTransfer.disabled = false;
+        btnConfirmTransfer.textContent = 'ACTIVAR';
+      }
+    });
+  }
+
+  const btnWompiPay = document.getElementById('btnWompiPay');
+  if (btnWompiPay) {
+    btnWompiPay.addEventListener('click', () => {
+      const user = typeof getAuthUser === 'function' ? getAuthUser() : null;
+      if (!user || !user.user) {
+        closeVipModal();
+        openLoginModal('Inicia sesión para pagar con PSE / Nequi.', () => openVipModal());
+        return;
+      }
+      showToast('⚡ Conectando con pasarela Bancolombia / PSE...');
+      // Si tienes un link de cobro de Wompi o ePayco se abre aquí, o se guía para transferir
+      const refInput = document.getElementById('transferReferenceInput');
+      if (refInput) refInput.focus();
+      showTopRightToast('Paga por Nequi o Bancolombia', 'Transfiere $10.000 COP a la cuenta 95962750444 y digita el comprobante', 'info');
+    });
+  }
 
   // ========================================================
   // EVENTOS REPRODUCTOR APPLE MUSIC (FULLSCREEN / MODAL)
@@ -2990,7 +3069,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
   updateAppleMusicTrackInfo(trackObj);
   showToast('🎧 Sintonizando canción completa: ' + title + '...');
 
-  // 1. REPRODUCCIÓN INSTANTÁNEA (<200ms) DIRECTA DESDE CDN (Sin intermediarios ni retardos)
+  // 1. REPRODUCCIÓN INSTANTÁNEA (<100ms) SI YA TIENE VIDEOID (ej: Ojalá)
   if (trackObj.videoId) {
     state.playbackSource = 'full';
     initYtPlayer();
@@ -3009,11 +3088,15 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       } catch (ytErr) {
         console.warn('[YT Instant Load]', ytErr);
       }
+    } else {
+      // Si el reproductor aún se está inicializando, encolar para arranque automático
+      ytPendingVideoId = trackObj.videoId;
     }
   }
 
-  // Si la pista tiene audio directo (Deezer preview o stream directo) reproducir sin espera
-  if (trackObj.preview || trackObj.audioUrl) {
+  // 2. Si la pista aún no tiene videoId oficial (ej: No Te Hagas recién agregada):
+  // Iniciar preview de alta fidelidad sin ningún silencio mientras el satélite busca la pista completa
+  if (!trackObj.videoId && (trackObj.preview || trackObj.audioUrl)) {
     state.playbackSource = 'preview';
     state.audio.loop = false;
     state.audio.volume = 1;
@@ -3022,9 +3105,8 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     state.audio.play().then(() => {
       setPlayingState(true);
       updateMediaSession(trackObj);
-      setTimeout(prefetchNextTrack, 2500);
     }).catch(() => {});
-    return;
+    // ¡NO HACER RETURN! Se continúa para buscar y vincular la canción completa
   }
 
   try {
@@ -3049,7 +3131,36 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
 
     if (data.videoId) {
       state.currentTrack.videoId = data.videoId;
+      trackObj.videoId = data.videoId;
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
+
+      // GUARDAR videoId EN LA PLAYLIST PARA QUE SEA INSTANTÁNEO EN LAS PRÓXIMAS REPRODUCCIONES
+      if (state.userPlaylist && Array.isArray(state.userPlaylist)) {
+        const pItem = state.userPlaylist.find(t => t.title && t.title.trim().toLowerCase() === title.trim().toLowerCase());
+        if (pItem) {
+          pItem.videoId = data.videoId;
+          pItem.video_id = data.videoId;
+          if (data.duration && (!pItem.duration || pItem.duration === 180 || pItem.duration === 0)) {
+            pItem.duration = data.duration;
+            trackObj.duration = data.duration;
+            totalTimeLabel.innerText = formatTime(data.duration);
+          }
+          const auth = typeof getAuthUser === 'function' ? getAuthUser() : null;
+          const uName = auth ? auth.user : 'admin';
+          try { localStorage.setItem(`vice_playlist_${uName}`, JSON.stringify(state.userPlaylist)); } catch (_) {}
+          renderPlaylistTracklist();
+          fetch('/api/playlist/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: uName, playlist: state.userPlaylist })
+          }).catch(() => {});
+        }
+      }
+
+      // Detener preview temporal si estaba sonando
+      if (state.audio) {
+        try { state.audio.pause(); } catch (_) {}
+      }
 
       state.playbackSource = 'full';
       initYtPlayer();
@@ -3060,24 +3171,14 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           setPlayingState(true);
           startYtProgress();
           updateMediaSession(trackObj);
-          showToast(`🎧 Reproduciendo: ${title}`);
+          showToast(`🎧 Reproduciendo completa: ${title}`);
           setTimeout(prefetchNextTrack, 2500);
           return;
         } catch (ytErr) {
           console.warn('[YT load error]', ytErr);
         }
-      }
-
-      const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || trackObj.audioUrl;
-      if (fallbackUrl) {
-        state.playbackSource = 'preview';
-        state.audio.src = fallbackUrl;
-        state.audio.playbackRate = state.currentSpeed;
-        state.audio.play().then(() => {
-          setPlayingState(true);
-          updateMediaSession(trackObj);
-        }).catch(() => {});
-        return;
+      } else {
+        ytPendingVideoId = data.videoId;
       }
     } else {
       const fallbackUrl = trackObj.preview || (state.currentTrack && state.currentTrack.preview) || (state.currentTrack && state.currentTrack.audioUrl);

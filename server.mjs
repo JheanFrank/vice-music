@@ -14,9 +14,24 @@ try {
   if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
 } catch (_) {}
 
-// Motor de descarga multi-cliente (Tv + WebEmbedded + VisionOS + Mweb) anti-bloqueo para Render
+// Motor de descarga multi-cliente (Mweb + Tv + WebEmbedded + VisionOS) con PO Token BotGuard automático
+let activePoTokenProvider = null;
 let ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS, Client.Mweb] });
-console.log('⚡ [YTDL] Motor multi-cliente nativo (Tv + WebEmbedded + VisionOS) activado con éxito.');
+const poTokenInitPromise = createPoTokenProvider()
+  .then(po => {
+    activePoTokenProvider = po;
+    ytdlInstance = new Ytdl({
+      getPoToken: po,
+      clients: [Client.Mweb, Client.Tv, Client.WebEmbedded, Client.VisionOS]
+    });
+    console.log('🛡️ [YTDL] BotGuard PO Token Provider activado con éxito para streaming directo.');
+    return po;
+  })
+  .catch(err => {
+    console.warn('⚠️ [YTDL] PO Token no pudo iniciar, usando clientes estándar:', err.message);
+    return null;
+  });
+console.log('⚡ [YTDL] Motor multi-cliente nativo (Mweb/Tv/WebEmbedded/VisionOS) iniciado.');
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -134,11 +149,15 @@ async function isVideoEmbeddable(videoId) {
   if (EMBED_CHECK_CACHE.has(videoId)) return EMBED_CHECK_CACHE.get(videoId);
   try {
     const html = await fetch(`https://www.youtube.com/embed/${videoId}`, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(1800)
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Referer': 'https://vice-music.onrender.com/'
+      },
+      signal: AbortSignal.timeout(2000)
     }).then(r => r.text());
-    const restricted = html.includes('Playback on other websites has been disabled') || html.includes('UNPLAYABLE');
-    const ok = !restricted;
+    const idx = html.indexOf('previewPlayabilityStatus');
+    const snip = idx > -1 ? html.slice(idx, idx + 150) : '';
+    const ok = snip.includes('playableInEmbed') && snip.includes('true') && !snip.includes('UNPLAYABLE') && !snip.includes('ERROR') && !snip.includes('LOGIN_REQUIRED');
     EMBED_CHECK_CACHE.set(videoId, ok);
     return ok;
   } catch (_) {
@@ -1253,7 +1272,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.10', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT
@@ -1457,10 +1476,54 @@ const server = http.createServer(async (req, res) => {
         ffmpegExists: fs.existsSync(ffmpegPath),
         ffmpegVersion: null,
         ffmpegError: null,
+        hasPoToken: !!activePoTokenProvider,
         ytdlInfoFormats: null,
+        ytdlDownloadBytes: 0,
         ytdlDownloadChunks: 0,
         ytdlError: null
       };
+
+      // Asegurar que PO Token termine de calentar (si acaba de arrancar el servidor)
+      try {
+        await Promise.race([poTokenInitPromise, new Promise(r => setTimeout(r, 12000))]);
+        report.hasPoToken = !!activePoTokenProvider;
+      } catch (_) {}
+
+      // Test real YTDL getInfo + descarga de primer chunk en Render
+      try {
+        const info = await ytdlInstance.getInfo(vid, { signal: AbortSignal.timeout(8000) });
+        const audioFormats = (info.formats || []).filter(f => f.hasAudio && !f.hasVideo);
+        report.ytdlTitle = info.videoDetails?.title || null;
+        report.ytdlInfoFormats = audioFormats.map(f => `${f.itag}:${f.audioBitrate || '?'}k:${f.client}`);
+        if (audioFormats.length > 0) {
+          await new Promise((resolve) => {
+            const st = ytdlInstance.download(info, {
+              filter: { hasAudio: true, hasVideo: false, container: 'mp4' },
+              quality: 'highestaudio'
+            });
+            const timer = setTimeout(() => {
+              try { st.destroy(); } catch (_) {}
+              resolve();
+            }, 6000);
+            st.on('data', (chunk) => {
+              report.ytdlDownloadChunks += 1;
+              report.ytdlDownloadBytes += chunk.length;
+              if (report.ytdlDownloadBytes >= 16384) {
+                clearTimeout(timer);
+                try { st.destroy(); } catch (_) {}
+                resolve();
+              }
+            });
+            st.on('error', (e) => {
+              report.ytdlDownloadErr = e.message;
+              clearTimeout(timer);
+              resolve();
+            });
+          });
+        }
+      } catch (ytErr) {
+        report.ytdlError = ytErr.message;
+      }
 
       // Test FFmpeg execution
       try {

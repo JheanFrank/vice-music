@@ -143,6 +143,168 @@ async function fetchYtCandidates(queryTerm, isIsrc = false) {
 
 const RESOLVED_AUDIO_CACHE = new Map();
 const EMBED_CHECK_CACHE = new Map();
+const SC_AUDIO_CACHE = new Map(); // cacheKey -> { data, ts }
+let scClientIdCache = { id: null, ts: 0 };
+
+async function getScClientId(forceRefresh = false) {
+  if (!forceRefresh && scClientIdCache.id && (Date.now() - scClientIdCache.ts < 30 * 60 * 1000)) {
+    return scClientIdCache.id;
+  }
+  try {
+    const html = await fetch('https://soundcloud.com', {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(4000)
+    }).then(r => r.text());
+    const scriptUrls = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js/g)].map(m => m[0]);
+    for (const url of scriptUrls.slice(-5)) {
+      const js = await fetch(url, { signal: AbortSignal.timeout(3000) }).then(r => r.text()).catch(() => '');
+      const m = js.match(/client_id\s*[:=]\s*["']([a-zA-Z0-9]{20,40})["']/);
+      if (m) {
+        scClientIdCache = { id: m[1], ts: Date.now() };
+        return m[1];
+      }
+    }
+  } catch (_) {}
+  return scClientIdCache.id;
+}
+
+/**
+ * Busca en SoundCloud ÚNICAMENTE un stream de estudio exacto (misma duración real, cero remixes/pitched/ediciones).
+ * Permite reproducción nativa HTML5 <audio> (background móvil, pantalla apagada, auto-next y crossfade 10s reales).
+ */
+async function resolveOfficialSoundCloud(artist, title, durationParam = 0) {
+  const cleanTitle = (title || '').replace(/\s*\(with .*?\)/gi, '').replace(/\s*\[.*?\]/g, '').trim();
+  const mainArtist = (artist || '').split(/\s*(?:&|&amp;|,|[xX]|ft\.?|feat\.?|con)\s*/i)[0].trim();
+  if (!cleanTitle || !mainArtist) return null;
+
+  let targetDur = Math.round(Number(durationParam) || 0);
+  const cacheKey = `${normalizeStr(mainArtist)}:::${normalizeStr(cleanTitle)}:::${targetDur}`;
+  const cached = SC_AUDIO_CACHE.get(cacheKey);
+  if (cached && (Date.now() - cached.ts < 25 * 60 * 1000)) {
+    return cached.data;
+  }
+
+  try {
+    // Si no tenemos duración real (>30 y !=180), consultar Deezer brevemente para exigir match al segundo
+    if (!targetDur || targetDur <= 30 || targetDur === 180) {
+      const dzQ = encodeURIComponent(`track:"${cleanTitle.replace(/\([^)]*\)/g, '').trim()}" artist:"${mainArtist}"`);
+      const dzRes = await fetch(`https://api.deezer.com/search?q=${dzQ}&limit=3`, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(2000)
+      }).then(r => r.json()).catch(() => null);
+      if (dzRes?.data?.[0]?.duration > 30) {
+        targetDur = dzRes.data[0].duration;
+      }
+    }
+    if (!targetDur || targetDur <= 30 || targetDur === 180) {
+      return null; // Jamás arriesgar audios sin duración oficial contrastada
+    }
+
+    let clientId = await getScClientId();
+    if (!clientId) return null;
+
+    const searchQ = `${cleanTitle.replace(/\([^)]*\)/g, '').trim()} ${mainArtist}`;
+    let scRes = await fetch(`https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(searchQ)}&client_id=${clientId}&limit=15`, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(3000)
+    });
+    if (scRes.status === 401 || scRes.status === 403) {
+      clientId = await getScClientId(true);
+      if (!clientId) return null;
+      scRes = await fetch(`https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(searchQ)}&client_id=${clientId}&limit=15`, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(3000)
+      });
+    }
+    if (!scRes.ok) return null;
+    const scData = await scRes.json();
+
+    const expLow = normalizeStr(cleanTitle);
+    const expWords = expLow.replace(/\([^)]*\)/g, '').trim().split(/\s+/).filter(w => w.length >= 2 && !['ft', 'feat', 'el', 'la', 'de'].includes(w));
+    const artistList = (artist || '').split(/\s*[x&,]\s*/i).map(normalizeStr).filter(Boolean);
+    const priWords = (artistList[0] || normalizeStr(mainArtist)).split(/\s+/).filter(w => w.length >= 3);
+    const badWords = ['slowed', 'reverb', 'mashup', 'megamix', 'mix', 'dj', 'drums', 'drum', 'cover', 'karaoke', 'instrumental', 'acapella', '8d', 'sped', 'nightcore', 'remake', 'beat', 'bootleg', 'flip', 'edit', 'extended', 'intro', 'outro', 'acustico', 'acoustic', 'snippet', 'preview', 'teaser', 'tutorial', 'parodia', 'parody', 'tribute', 'pitch', 'pitched', 'live', 'en vivo', 'mp3_128k', 'free download'];
+
+    let bestCandidate = null;
+    let bestScore = -1;
+
+    for (const c of (scData.collection || [])) {
+      if (!c || c.policy === 'SNIP' || c.snipped) continue;
+      const dur = Math.round((c.duration || 0) / 1000);
+      if (Math.abs(dur - targetDur) > 4) continue;
+
+      const tLow = normalizeStr(c.title || '');
+      // Rechazar etiquetas tipo "(NO KAROL G)" o "(sin Bad Bunny)" salvo cuando esa frase pertenece al título
+      let badExclusion = false;
+      for (const m of tLow.matchAll(/\b(no|sin|without)\s+([a-z]{3,})/g)) {
+        if (!expLow.includes(m[0])) { badExclusion = true; break; }
+      }
+      if (badExclusion) continue;
+
+      if (badWords.some(bw => new RegExp(`\\b${bw}\\b`).test(tLow) && !expLow.includes(bw))) continue;
+      if (!expLow.includes('remix') && /\bremix\b/.test(tLow)) continue;
+      if (!expWords.length || !expWords.every(w => tLow.includes(w))) continue;
+
+      const userLow = normalizeStr(c.user?.username || '');
+      const metaArtist = normalizeStr(c.publisher_metadata?.artist || '');
+      const combined = `${tLow} ${userLow} ${metaArtist}`;
+      if (priWords.length && !priWords.every(w => combined.includes(w))) continue;
+
+      const allowed = new Set([
+        ...expLow.split(/\s+/),
+        ...normalizeStr(artist || '').split(/\s+/),
+        ...userLow.split(/\s+/),
+        'ft', 'feat', 'x', 'y', 'con', 'the', 'la', 'el', 'de', 'del', 'official', 'audio', 'oficial', 'hd', 'hq', 'topic', 'remix', 'prod'
+      ]);
+      const extraWords = tLow.split(/\s+/).filter(w => w.length >= 3 && !allowed.has(w) && !/^\d+$/.test(w));
+      if (extraWords.length > 2) continue;
+
+      const artistOnMeta = artistList.some(a => userLow.includes(a) || metaArtist.includes(a));
+      if (!c.user?.verified && !artistOnMeta && (c.playback_count || 0) < 100000) continue;
+
+      const transcodings = c.media?.transcodings || [];
+      const hlsTc = transcodings.find(t => t.format?.protocol === 'hls' && (t.preset === 'aac_160k' || (t.format?.mime_type || '').includes('mp4'))) ||
+                    transcodings.find(t => t.format?.protocol === 'hls');
+      const progTc = transcodings.find(t => t.format?.protocol === 'progressive');
+      if (!hlsTc && !progTc) continue;
+
+      let scScore = 100 - Math.abs(dur - targetDur) * 20;
+      if (hlsTc?.preset === 'aac_160k') scScore += 80;
+      if (c.user?.verified) scScore += 100;
+      if (artistOnMeta) scScore += 60;
+      scScore += Math.min(50, Math.log10((c.playback_count || 1) + 1) * 7);
+
+      if (scScore > bestScore) {
+        bestScore = scScore;
+        bestCandidate = { c, hlsTc, progTc, dur };
+      }
+    }
+
+    if (!bestCandidate) {
+      SC_AUDIO_CACHE.set(cacheKey, { data: null, ts: Date.now() });
+      return null;
+    }
+
+    const [hlsJson, progJson] = await Promise.all([
+      bestCandidate.hlsTc ? fetch(`${bestCandidate.hlsTc.url}?client_id=${clientId}`, { signal: AbortSignal.timeout(2500) }).then(r => r.json()).catch(() => null) : Promise.resolve(null),
+      bestCandidate.progTc ? fetch(`${bestCandidate.progTc.url}?client_id=${clientId}`, { signal: AbortSignal.timeout(2500) }).then(r => r.json()).catch(() => null) : Promise.resolve(null)
+    ]);
+
+    const result = (hlsJson?.url || progJson?.url) ? {
+      hlsUrl: hlsJson?.url || null,
+      progUrl: progJson?.url || null,
+      duration: bestCandidate.dur,
+      uploader: bestCandidate.c.user?.username || mainArtist,
+      title: bestCandidate.c.title || cleanTitle,
+      verified: !!bestCandidate.c.user?.verified
+    } : null;
+
+    SC_AUDIO_CACHE.set(cacheKey, { data: result, ts: Date.now() });
+    return result;
+  } catch (_) {
+    return null;
+  }
+}
 
 async function isVideoEmbeddable(videoId) {
   if (!videoId) return false;
@@ -430,15 +592,21 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
 
     // 2. REQUISITO OBLIGATORIO DE TÍTULO (INQUEBRANTABLE)
-    // El video DEBE coincidir con las palabras del título sin importar tildes/acentos
-    if (effectiveTitleWords.length === 1) {
-      if (!t.includes(effectiveTitleWords[0])) {
+    // El video DEBE coincidir con las palabras clave reales del título (impide que "Si No Te Veo" entre por "No Te Hagas")
+    const coreTitleWords = effectiveTitleWords.filter(w => w.length >= 3);
+    if (coreTitleWords.length > 0 && coreTitleWords.length <= 2) {
+      if (!coreTitleWords.every(w => t.includes(w))) {
+        return -9999;
+      }
+    }
+    if (effectiveTitleWords.length <= 3) {
+      if (!effectiveTitleWords.every(w => t.includes(w))) {
         return -9999;
       }
       s += 160;
     } else {
       const matchedWords = effectiveTitleWords.filter(w => t.includes(w));
-      if (matchedWords.length < Math.ceil(effectiveTitleWords.length * 0.6)) {
+      if (matchedWords.length < Math.ceil(effectiveTitleWords.length * 0.75)) {
         return -9999;
       }
       s += Math.round((matchedWords.length / effectiveTitleWords.length) * 160);
@@ -1282,7 +1450,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.12', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.13', status: 'online', engine: 'Vice Music 3D Coverflow + Native HLS Hi-Fi Audio + YT Official Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT
@@ -2180,7 +2348,22 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ isAlbum: false, data: combinedTracks }));
     }
 
-    // 4. AUDIO COMPLETO VÍA YOUTUBE (Jerarquía Estricta: 1° Audio Oficial -> 2° Letra/Lyrics -> 3° Video Oficial)
+    // 4. AUDIO COMPLETO OFICIAL (Nativo HTML5 SoundCloud Hi-Fi exacto + Jerarquía YouTube)
+    if (pathname === '/api/sc-stream') {
+      const artistParam = (reqUrl.searchParams.get('artist') || '').trim();
+      const titleParam = (reqUrl.searchParams.get('title') || '').trim();
+      const rawDurParam = (reqUrl.searchParams.get('duration') || '').trim();
+      const durationParam = parseDurationSec(rawDurParam) || parseInt(rawDurParam, 10) || 0;
+
+      if (!titleParam && !artistParam) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Parámetro vacío' }));
+      }
+      const scAudio = await resolveOfficialSoundCloud(artistParam, titleParam, durationParam).catch(() => null);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ scAudio }));
+    }
+
     if (pathname === '/api/fullaudio') {
       const q = (reqUrl.searchParams.get('q') || '').trim();
       const artistParam = (reqUrl.searchParams.get('artist') || '').trim();
@@ -2194,17 +2377,27 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const { selected, alternatives, resolvedArtist } = await resolveFullAudio(artistParam, titleParam || q, durationParam);
+        const [{ selected, alternatives, resolvedArtist }, scAudio] = await Promise.all([
+          resolveFullAudio(artistParam, titleParam || q, durationParam),
+          resolveOfficialSoundCloud(artistParam, titleParam || q, durationParam).catch(() => null)
+        ]);
 
-        if (selected) {
-          console.log(`[FullAudio] Seleccionado [Score: ${selected.score}] [${selected.id}] "${selected.title}" (${selected.durStr || 'N/A'}) - Canal: ${selected.channel}`);
+        if (selected || scAudio) {
+          if (scAudio) {
+            console.log(`[FullAudio Hi-Fi SC] "${titleParam || q}" (${scAudio.duration}s) por ${scAudio.uploader}`);
+          }
+          if (selected) {
+            console.log(`[FullAudio] Seleccionado [Score: ${selected.score}] [${selected.id}] "${selected.title}" (${selected.durStr || 'N/A'}) - Canal: ${selected.channel}`);
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
-            videoId: selected.id,
-            videoTitle: selected.title,
-            tier: selected.score >= 200 ? 'audio_oficial' : (selected.score >= 100 ? 'letra_lyrics' : 'video_oficial'),
+            videoId: selected ? selected.id : null,
+            videoTitle: selected ? selected.title : (scAudio ? scAudio.title : titleParam),
+            duration: scAudio ? scAudio.duration : (selected && selected.durSec ? selected.durSec : durationParam),
+            tier: scAudio ? 'hifi_native_audio' : (selected && selected.score >= 200 ? 'audio_oficial' : (selected && selected.score >= 100 ? 'letra_lyrics' : 'video_oficial')),
             resolvedArtist: resolvedArtist || artistParam,
-            alternatives: alternatives.filter(id => id !== selected.id).slice(0, 4)
+            alternatives: selected ? alternatives.filter(id => id !== selected.id).slice(0, 4) : [],
+            scAudio: scAudio || null
           }));
         }
 

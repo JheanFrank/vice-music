@@ -126,6 +126,33 @@ try {
     } catch (err) {
       console.warn('Advertencia al restaurar JSON a SQLite:', err.message);
     }
+  } else if (fs.existsSync(JSON_FILE)) {
+    // Reparar carátulas rotas o duraciones genéricas (180s / 244s) existentes en SQLite sin tocar pistas del usuario
+    try {
+      const store = loadJsonStore();
+      for (const [u, plist] of Object.entries(store.playlists || {})) {
+        if (!Array.isArray(plist)) continue;
+        const cleanU = u.toLowerCase().trim();
+        for (const t of plist) {
+          if (!t || !t.title) continue;
+          const rows = db.prepare('SELECT id, cover, duration, video_id FROM playlists WHERE lower(username) = ? AND trim(lower(title)) = ?')
+            .all(cleanU, t.title.toLowerCase().trim());
+          for (const row of rows) {
+            const needCoverFix = t.cover && (!row.cover || row.cover.includes('b4bb0e181bbcaae7'));
+            const needDurFix = t.duration && t.duration > 30 && t.duration !== 180 && (!row.duration || row.duration === 180 || (t.title === 'No Te Hagas' && row.duration === 244));
+            const needVidFix = (t.videoId || t.video_id) && (!row.video_id || (t.title === 'No Te Hagas' && row.video_id === 'Fw9xFEf4DSc'));
+            if (needCoverFix || needDurFix || needVidFix) {
+              db.prepare('UPDATE playlists SET cover = ?, duration = ?, video_id = ? WHERE id = ?').run(
+                needCoverFix ? t.cover : row.cover,
+                needDurFix ? t.duration : row.duration,
+                needVidFix ? (t.videoId || t.video_id) : row.video_id,
+                row.id
+              );
+            }
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   console.log('📦 [Database] Motor SQL Relacional Estándar activado con éxito en data/vice_music.db');

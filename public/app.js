@@ -528,6 +528,7 @@ let ytReady = false;
 let ytInitializing = false;
 let ytProgressInterval = null;
 let ytPendingVideoId = null;
+const videoIdMemoryCache = new Map();
 
 function initYtPlayer() {
   if (ytPlayer || ytInitializing) return;
@@ -559,6 +560,8 @@ function initYtPlayer() {
             const pending = ytPendingVideoId;
             ytPendingVideoId = null;
             try {
+              if (typeof event.target.unMute === 'function') event.target.unMute();
+              if (typeof event.target.setVolume === 'function') event.target.setVolume(100);
               event.target.loadVideoById(pending);
               event.target.playVideo();
               setPlayingState(true);
@@ -578,6 +581,8 @@ function initYtPlayer() {
             state.currentTrack.videoId = nextVideoId;
             try {
               if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                if (typeof ytPlayer.unMute === 'function') ytPlayer.unMute();
+                if (typeof ytPlayer.setVolume === 'function') ytPlayer.setVolume(100);
                 ytPlayer.loadVideoById(nextVideoId);
                 ytPlayer.playVideo();
                 return;
@@ -586,13 +591,7 @@ function initYtPlayer() {
               console.warn('Error cambiando a stream alternativo:', fbErr);
             }
           }
-          // Si falla YouTube, mantener reproducción con audio nativo
-          if (state.currentTrack && state.audio) {
-            const fallbackUrl = state.currentTrack?.preview || state.currentTrack?.audioUrl || `/api/proxy-preview?artist=${encodeURIComponent(state.currentTrack.artist)}&title=${encodeURIComponent(state.currentTrack.title)}`;
-            state.playbackSource = 'preview';
-            state.audio.src = fallbackUrl;
-            state.audio.play().catch(() => {});
-          }
+          showToast('⚠️ Buscando fuente alternativa sin restricción para esta canción...');
         }
       }
     });
@@ -1998,6 +1997,7 @@ async function openAlbumDetail(albumId) {
 
     // Renderizar TODAS las canciones del álbum
     albumTracklist.innerHTML = '';
+    prewarmTrackVideoIds(album.tracks.map(t => ({ ...t, artist: t.artist || album.artist })));
 
     album.tracks.forEach((track, index) => {
       const trackRow = document.createElement('div');
@@ -2114,6 +2114,8 @@ function renderTracks(tracks) {
     resultsGrid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 4rem;">No se encontraron canciones.</div>`;
     return;
   }
+
+  prewarmTrackVideoIds(tracks);
 
   tracks.forEach(track => {
     const card = document.createElement('div');
@@ -2969,6 +2971,40 @@ function prefetchNextTrack() {
   } catch (_) {}
 }
 
+// Pre-cargar en segundo plano los videoId oficiales de pistas visibles para arranque <50ms al hacer clic
+async function prewarmTrackVideoIds(tracks) {
+  if (!Array.isArray(tracks) || tracks.length === 0) return;
+  const targets = tracks.slice(0, 8);
+  for (let i = 0; i < targets.length; i += 3) {
+    const batch = targets.slice(i, i + 3);
+    await Promise.all(batch.map(async (t) => {
+      try {
+        const title = t.title || '';
+        const artist = (t.artist && t.artist.name) ? t.artist.name : (t.artist || '');
+        if (!title) return;
+        const memKey = `${normalizeStr(artist)}:::${normalizeStr(title)}`;
+        if (t.videoId || videoIdMemoryCache.has(memKey)) {
+          if (!t.videoId && videoIdMemoryCache.has(memKey)) {
+            t.videoId = videoIdMemoryCache.get(memKey).videoId;
+          }
+          return;
+        }
+        const dur = parseDurationSec(t.duration || 0);
+        const res = await fetch(`/api/fullaudio?q=${encodeURIComponent(artist + ' ' + title)}&artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&duration=${encodeURIComponent(dur)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.videoId) {
+          t.videoId = data.videoId;
+          videoIdMemoryCache.set(memKey, {
+            videoId: data.videoId,
+            alternatives: Array.isArray(data.alternatives) ? data.alternatives : []
+          });
+        }
+      } catch (_) {}
+    }));
+  }
+}
+
 // REPRODUCIR CANCIÓN 100% COMPLETA (RESPUESTA INSTANTÁNEA + METADATOS LIMPIOS HD)
 async function playFullSong(artist, title, cover = null, album = null, duration = 0, preview = null, videoId = null) {
   const thisRequestId = ++currentPlayRequestId;
@@ -2996,11 +3032,23 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
     }
   }
 
-  // Si no se pasó videoId directamente, buscar si la pista ya lo tiene en la playlist guardada
+  // Si no se pasó videoId directamente, buscar en memoria caché o en la playlist guardada
   let resolvedVid = videoId;
+  let cachedAlts = [];
+  const memKey = `${normalizeStr(fullArtist)}:::${normalizeStr(title)}`;
+  const rawMemKey = `${normalizeStr(artist || '')}:::${normalizeStr(title)}`;
+  if (!resolvedVid && videoIdMemoryCache.has(memKey)) {
+    const cached = videoIdMemoryCache.get(memKey);
+    resolvedVid = cached.videoId;
+    cachedAlts = [...(cached.alternatives || [])];
+  } else if (!resolvedVid && videoIdMemoryCache.has(rawMemKey)) {
+    const cached = videoIdMemoryCache.get(rawMemKey);
+    resolvedVid = cached.videoId;
+    cachedAlts = [...(cached.alternatives || [])];
+  }
   if (!resolvedVid && state.userPlaylist && Array.isArray(state.userPlaylist)) {
-    const normTitle = (title || '').trim().toLowerCase();
-    const plMatch = state.userPlaylist.find(t => t.title && t.title.trim().toLowerCase() === normTitle);
+    const normTitle = (title || '').trim().toLowerCase().replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
+    const plMatch = state.userPlaylist.find(t => t.title && t.title.trim().toLowerCase().replace(/\s*[\(\[].*?[\)\]]/gi, '').trim() === normTitle);
     if (plMatch && (plMatch.videoId || plMatch.video_id)) {
       resolvedVid = plMatch.videoId || plMatch.video_id;
     }
@@ -3060,11 +3108,14 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
 
   // 1. REPRODUCCIÓN INMEDIATA DE LA CANCIÓN COMPLETA OFICIAL (100% Pista Completa HD)
   if (trackObj.videoId) {
+    trackObj.alternativeVideoIds = cachedAlts;
     state.playbackSource = 'full';
 
     initYtPlayer();
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
       try {
+        if (typeof ytPlayer.unMute === 'function') ytPlayer.unMute();
+        if (typeof ytPlayer.setVolume === 'function') ytPlayer.setVolume(100);
         ytPlayer.loadVideoById(trackObj.videoId);
         ytPlayer.playVideo();
         if (typeof ytPlayer.setPlaybackRate === 'function') {
@@ -3083,21 +3134,6 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       setPlayingState(true);
       return;
     }
-  }
-
-  // 2. Si la pista aún no tiene videoId oficial (ej: No Te Hagas recién agregada):
-  // Iniciar preview de alta fidelidad sin ningún silencio mientras el satélite busca la pista completa
-  if (!trackObj.videoId && (trackObj.preview || trackObj.audioUrl)) {
-    state.playbackSource = 'preview';
-    state.audio.loop = false;
-    state.audio.volume = 1;
-    state.audio.src = trackObj.preview || trackObj.audioUrl;
-    state.audio.playbackRate = state.currentSpeed;
-    state.audio.play().then(() => {
-      setPlayingState(true);
-      updateMediaSession(trackObj);
-    }).catch(() => {});
-    // ¡NO HACER RETURN! Se continúa para buscar y vincular la canción completa
   }
 
   try {
@@ -3124,6 +3160,10 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       state.currentTrack.videoId = data.videoId;
       trackObj.videoId = data.videoId;
       state.currentTrack.alternativeVideoIds = Array.isArray(data.alternatives) ? [...data.alternatives] : [];
+      videoIdMemoryCache.set(memKey, {
+        videoId: data.videoId,
+        alternatives: state.currentTrack.alternativeVideoIds
+      });
 
       // GUARDAR videoId EN LA PLAYLIST PARA QUE SEA INSTANTÁNEO EN LAS PRÓXIMAS REPRODUCCIONES
       if (state.userPlaylist && Array.isArray(state.userPlaylist)) {
@@ -3140,7 +3180,7 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
           const uName = auth ? auth.user : 'admin';
           try { localStorage.setItem(`vice_playlist_${uName}`, JSON.stringify(state.userPlaylist)); } catch (_) {}
           renderPlaylistTracklist();
-          fetch('/api/playlist/sync', {
+          fetch('/api/playlist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user: uName, playlist: state.userPlaylist })
@@ -3157,8 +3197,13 @@ async function playFullSong(artist, title, cover = null, album = null, duration 
       initYtPlayer();
       if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
         try {
+          if (typeof ytPlayer.unMute === 'function') ytPlayer.unMute();
+          if (typeof ytPlayer.setVolume === 'function') ytPlayer.setVolume(100);
           ytPlayer.loadVideoById(data.videoId);
           ytPlayer.playVideo();
+          if (typeof ytPlayer.setPlaybackRate === 'function') {
+            ytPlayer.setPlaybackRate(state.currentSpeed);
+          }
           setPlayingState(true);
           startYtProgress();
           updateMediaSession(trackObj);
@@ -4573,6 +4618,7 @@ async function loadHomeContent() {
 
     // Guardar tracks en state para navegación siguiente/anterior
     state.rankingTracks = tracks;
+    prewarmTrackVideoIds(tracks);
 
     // Renderizar Ranking Top 10
     topRankingList.innerHTML = '';

@@ -127,6 +127,24 @@ async function fetchYtCandidates(queryTerm, isIsrc = false) {
 }
 
 const RESOLVED_AUDIO_CACHE = new Map();
+const EMBED_CHECK_CACHE = new Map();
+
+async function isVideoEmbeddable(videoId) {
+  if (!videoId) return false;
+  if (EMBED_CHECK_CACHE.has(videoId)) return EMBED_CHECK_CACHE.get(videoId);
+  try {
+    const html = await fetch(`https://www.youtube.com/embed/${videoId}`, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(1800)
+    }).then(r => r.text());
+    const restricted = html.includes('Playback on other websites has been disabled') || html.includes('UNPLAYABLE');
+    const ok = !restricted;
+    EMBED_CHECK_CACHE.set(videoId, ok);
+    return ok;
+  } catch (_) {
+    return true;
+  }
+}
 
 async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = '') {
   const cleanArtist = (artist || '').replace(/\s*[\(\[].*?[\)\]]/gi, '').trim();
@@ -182,10 +200,10 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   const titleKeywords = rawTitleWords.filter(w => !stopWords.has(w));
   const effectiveTitleWords = titleKeywords.length > 0 ? titleKeywords : rawTitleWords;
 
-  // Buscar ISRC y Colaboradores Oficiales en Deezer
+  // Buscar ISRC y Colaboradores Oficiales en Deezer solo si no tenemos duración real
   let isrc = isrcParam;
   let resolvedArtist = cleanArtist;
-  if (!isrc) {
+  if (!isrc && (!durationParam || durationParam < 30 || durationParam === 180)) {
     try {
       const dzQueries = [];
       if (extractedFromFeat.length > 0) {
@@ -271,8 +289,8 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     } catch (_) {}
   }
 
-  // Si aún no detectamos colaboradores, consultar iTunes brevemente con validación estricta
-  if (!resolvedArtist.includes('&') && !resolvedArtist.includes('x') && !resolvedArtist.includes('X') && !resolvedArtist.includes('feat') && !resolvedArtist.includes(',')) {
+  // Si aún no detectamos colaboradores y no tenemos duración real, consultar iTunes brevemente
+  if ((!durationParam || durationParam < 30 || durationParam === 180) && !resolvedArtist.includes('&') && !resolvedArtist.includes('x') && !resolvedArtist.includes('X') && !resolvedArtist.includes('feat') && !resolvedArtist.includes(',')) {
     try {
       const itRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanArtist + ' ' + cleanTitle)}&entity=song&limit=5`, {
         headers: { 'User-Agent': USER_AGENT },
@@ -596,6 +614,24 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       alternatives = fallbackScored.slice(1, 6).map(c => c.id);
       console.log(`[FullAudio Rescue] Rescatada pista auténtica para "${title}": [${selected.id}] "${selected.title}"`);
     }
+  }
+
+  // Filtrar en paralelo los mejores candidatos para garantizar que NO tengan bloqueo Error 150 de incrustación
+  const poolToCheck = (scored.length > 0 ? scored : (uniqueCandidates.slice(0, 8))).slice(0, 8);
+  if (selected && !poolToCheck.some(c => c.id === selected.id)) {
+    poolToCheck.unshift(selected);
+  }
+  if (poolToCheck.length > 0) {
+    try {
+      const embedResults = await Promise.all(
+        poolToCheck.map(async (c) => ({ c, ok: await isVideoEmbeddable(c.id) }))
+      );
+      const playable = embedResults.filter(r => r.ok).map(r => r.c);
+      if (playable.length > 0) {
+        selected = playable[0];
+        alternatives = playable.slice(1, 6).map(c => c.id);
+      }
+    } catch (_) {}
   }
 
   const resolutionResult = { selected, alternatives, scored, resolvedArtist };
@@ -1217,7 +1253,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.8', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.9', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT

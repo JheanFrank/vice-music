@@ -315,15 +315,15 @@ async function isVideoEmbeddable(videoId) {
         'User-Agent': USER_AGENT,
         'Referer': 'https://vice-music.onrender.com/'
       },
-      signal: AbortSignal.timeout(2000)
+      signal: AbortSignal.timeout(4000)
     }).then(r => r.text());
     const idx = html.indexOf('previewPlayabilityStatus');
-    const snip = idx > -1 ? html.slice(idx, idx + 150) : '';
-    const ok = snip.includes('playableInEmbed') && snip.includes('true') && !snip.includes('UNPLAYABLE') && !snip.includes('ERROR') && !snip.includes('LOGIN_REQUIRED');
+    const snip = idx > -1 ? html.slice(idx, idx + 220) : '';
+    const ok = snip.includes('"playableInEmbed":true') && !snip.includes('UNPLAYABLE') && !snip.includes('ERROR') && !snip.includes('LOGIN_REQUIRED');
     EMBED_CHECK_CACHE.set(videoId, ok);
     return ok;
   } catch (_) {
-    return true;
+    return null; // Error de red temporal: no asumir playable=true sobre videos ya confirmados
   }
 }
 
@@ -813,20 +813,35 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
   }
 
-  // Filtrar en paralelo hasta 14 mejores candidatos para garantizar que NO tengan bloqueo Error 150 de incrustación
-  const poolToCheck = (scored.length > 0 ? scored : fallbackScored).slice(0, 14);
-  if (selected && !poolToCheck.some(c => c.id === selected.id)) {
-    poolToCheck.unshift(selected);
+  // Filtrar en paralelo hasta 26 mejores candidatos para garantizar que NO tengan bloqueo Error 150 de incrustación
+  const rankedList = (scored.length > 0 ? scored : fallbackScored).slice(0, 26);
+  if (selected && !rankedList.some(c => c.id === selected.id)) {
+    rankedList.unshift(selected);
   }
-  if (poolToCheck.length > 0) {
+  if (rankedList.length > 0) {
     try {
-      const embedResults = await Promise.all(
-        poolToCheck.map(async (c) => ({ c, ok: await isVideoEmbeddable(c.id) }))
+      const batch1 = rankedList.slice(0, 14);
+      let embedResults = await Promise.all(
+        batch1.map(async (c) => ({ c, ok: await isVideoEmbeddable(c.id) }))
       );
-      const playable = embedResults.filter(r => r.ok).map(r => r.c);
-      if (playable.length > 0) {
-        selected = playable[0];
-        alternatives = playable.slice(1, 6).map(c => c.id);
+      let confirmedPlayable = embedResults.filter(r => r.ok === true).map(r => r.c);
+      if (confirmedPlayable.length === 0 && rankedList.length > 14) {
+        const batch2 = rankedList.slice(14, 26);
+        const res2 = await Promise.all(
+          batch2.map(async (c) => ({ c, ok: await isVideoEmbeddable(c.id) }))
+        );
+        embedResults = embedResults.concat(res2);
+        confirmedPlayable = embedResults.filter(r => r.ok === true).map(r => r.c);
+      }
+      if (confirmedPlayable.length > 0) {
+        selected = confirmedPlayable[0];
+        alternatives = confirmedPlayable.slice(1, 6).map(c => c.id);
+      } else {
+        const unknownPlayable = embedResults.filter(r => r.ok !== false).map(r => r.c);
+        if (unknownPlayable.length > 0) {
+          selected = unknownPlayable[0];
+          alternatives = unknownPlayable.slice(1, 6).map(c => c.id);
+        }
       }
     } catch (_) {}
   }
@@ -1450,7 +1465,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.13', status: 'online', engine: 'Vice Music 3D Coverflow + Native HLS Hi-Fi Audio + YT Official Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.14', status: 'online', engine: 'Vice Music 3D Coverflow + Native HLS Hi-Fi Audio + YT Official Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT

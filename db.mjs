@@ -140,7 +140,7 @@ try {
           for (const row of rows) {
             const needCoverFix = t.cover && (!row.cover || row.cover.includes('b4bb0e181bbcaae7'));
             const needDurFix = t.duration && t.duration > 30 && t.duration !== 180 && (!row.duration || row.duration === 180 || (t.title === 'No Te Hagas' && row.duration === 244));
-            const needVidFix = (t.videoId || t.video_id) && (!row.video_id || (t.title === 'No Te Hagas' && row.video_id === 'Fw9xFEf4DSc'));
+            const needVidFix = (t.videoId || t.video_id) && (!row.video_id || (t.title === 'No Te Hagas' && row.video_id === 'v6ymqJGcAtI'));
             if (needCoverFix || needDurFix || needVidFix) {
               db.prepare('UPDATE playlists SET cover = ?, duration = ?, video_id = ? WHERE id = ?').run(
                 needCoverFix ? t.cover : row.cover,

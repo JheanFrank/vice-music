@@ -5799,8 +5799,8 @@ async function loadUserPlaylist() {
         ...existing,
         ...t,
         cover: (t.cover && !t.cover.includes('b4bb0e181bbcaae7')) ? t.cover : existing.cover,
-        videoId: (t.title === 'No Te Hagas' && existing.videoId === 'Fw9xFEf4DSc' && t.videoId) ? t.videoId : (t.videoId || t.video_id || existing.videoId || existing.video_id),
-        video_id: (t.title === 'No Te Hagas' && existing.video_id === 'Fw9xFEf4DSc' && (t.videoId || t.video_id)) ? (t.videoId || t.video_id) : (t.videoId || t.video_id || existing.videoId || existing.video_id),
+        videoId: (t.title === 'No Te Hagas' && existing.videoId === 'v6ymqJGcAtI' && t.videoId) ? t.videoId : (t.videoId || t.video_id || existing.videoId || existing.video_id),
+        video_id: (t.title === 'No Te Hagas' && existing.video_id === 'v6ymqJGcAtI' && (t.videoId || t.video_id)) ? (t.videoId || t.video_id) : (t.videoId || t.video_id || existing.videoId || existing.video_id),
         duration: (t.duration && t.duration > 30 && t.duration !== 180 && (!existing.duration || existing.duration === 180 || (t.title === 'No Te Hagas' && existing.duration === 244))) ? t.duration : ((existing.duration && existing.duration > 0) ? existing.duration : (t.duration || 0))
       });
     } else {

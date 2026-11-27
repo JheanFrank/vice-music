@@ -569,10 +569,15 @@ function initYtPlayer() {
             } catch (err) {
               console.warn('[YouTube onReady] Error iniciando pista:', err);
             }
+          } else if (!state.currentTrack && state.userPlaylist && state.userPlaylist[0]) {
+            const firstVid = state.userPlaylist[0].videoId || state.userPlaylist[0].video_id;
+            if (firstVid && typeof event.target.cueVideoById === 'function') {
+              try { event.target.cueVideoById(firstVid); } catch (_) {}
+            }
           }
         },
         onStateChange: onYtStateChange,
-        onError: (err) => {
+        onError: async (err) => {
           console.warn('[YouTube Error Code]', err.data);
           // Si el video tiene restricción de incrustación (código 101/150) o error, probar video alternativo
           if (state.currentTrack && Array.isArray(state.currentTrack.alternativeVideoIds) && state.currentTrack.alternativeVideoIds.length > 0) {
@@ -591,7 +596,28 @@ function initYtPlayer() {
               console.warn('Error cambiando a stream alternativo:', fbErr);
             }
           }
-          showToast('⚠️ Buscando fuente alternativa sin restricción para esta canción...');
+          // Rescate automático en el backend buscando otra fuente nítida sin Error 150
+          if (state.currentTrack && !state.currentTrack._triedReResolve) {
+            state.currentTrack._triedReResolve = true;
+            const trk = state.currentTrack;
+            try {
+              showToast('🔄 Buscando fuente oficial nítida sin restricción...');
+              const r = await fetch(`/api/fullaudio?q=${encodeURIComponent((trk.artist || '') + ' ' + (trk.title || ''))}&artist=${encodeURIComponent(trk.artist || '')}&title=${encodeURIComponent(trk.title || '')}&duration=${encodeURIComponent(trk.duration || 0)}`);
+              const d = await r.json();
+              if (d && d.videoId && d.videoId !== trk.videoId) {
+                trk.videoId = d.videoId;
+                trk.alternativeVideoIds = Array.isArray(d.alternatives) ? d.alternatives : [];
+                if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                  if (typeof ytPlayer.unMute === 'function') ytPlayer.unMute();
+                  if (typeof ytPlayer.setVolume === 'function') ytPlayer.setVolume(100);
+                  ytPlayer.loadVideoById(d.videoId);
+                  ytPlayer.playVideo();
+                  return;
+                }
+              }
+            } catch (_) {}
+          }
+          showToast('⚠️ No se encontró stream sin restricción para esta pista.');
         }
       }
     });
@@ -956,6 +982,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   initYtPlayer();
   updateAuthUI();
+  loadUserPlaylist();
   updateClockIndicator();
   setInterval(updateClockIndicator, 30000);
   startVisualizer();
@@ -2032,11 +2059,8 @@ async function openAlbumDetail(albumId) {
         </div>
         <div class="track-duration">${durationMin}</div>
         <div class="track-actions">
-          <button class="btn-rank-action btn-album-preview" title="Escuchar preview">
-            ▶ <span>PREVIEW</span>
-          </button>
-          <button class="btn-rank-action btn-album-full" title="Escuchar Canción Completa">
-            🎧 <span>COMPLETA</span>
+          <button class="btn-rank-action btn-album-full" title="Reproducir canción completa HD">
+            ▶ <span>REPRODUCIR</span>
           </button>
           <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
             <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -2048,24 +2072,12 @@ async function openAlbumDetail(albumId) {
         </div>
       `;
 
-      // Escuchar muestra de 30s
-      trackRow.querySelector('.btn-album-preview').addEventListener('click', () => {
-        if (!track.preview) {
-          showToast('⚠️ Muestra de 30s no disponible. Reproduciendo canción completa oficial...');
-          playFullSong(fullRowArtist, track.title, album.coverXl, album.title, track.duration, track.preview);
-          return;
-        }
-        loadTrack({
-          title: track.title,
-          artist: fullRowArtist,
-          cover: album.coverXl,
-          album: album.title,
-          audioUrl: track.preview
-        });
-      });
+      // Pre-cargar ID al pasar el cursor / tocar fila
+      trackRow.addEventListener('pointerenter', () => prewarmTrackVideoIds([trackObj]), { once: true });
 
-      // Escuchar Canción Completa (Audio Oficial en segundo plano)
-      trackRow.querySelector('.btn-album-full').addEventListener('click', () => {
+      // Escuchar Canción Completa (Audio Oficial)
+      trackRow.querySelector('.btn-album-full').addEventListener('click', (e) => {
+        e.stopPropagation();
         playFullSong(fullRowArtist, track.title, album.coverXl, album.title, track.duration, track.preview);
       });
 
@@ -2150,11 +2162,8 @@ function renderTracks(tracks) {
         <p class="album-artist">${formatArtistPills(track.artist)}</p>
         
         <div class="track-card-actions-single">
-          <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview (30s)">
-            ▶ <span>PREVIEW</span>
-          </button>
-          <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar canción completa">
-            🎧 <span>COMPLETA</span>
+          <button class="btn-card-action btn-card-full btn-single-full" title="Reproducir canción completa HD">
+            ▶ <span>REPRODUCIR</span>
           </button>
           <button class="btn-track-more btn-single-more" title="Más opciones (Descargar MP3 320, FLAC, Cola, Álbum)">
             <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -2202,17 +2211,7 @@ function renderTracks(tracks) {
       playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
     });
 
-    card.querySelector('.btn-single-play').addEventListener('click', (e) => {
-      e.stopPropagation();
-      loadTrack({
-        title: track.title,
-        artist: track.artist,
-        cover: track.coverXl,
-        audioUrl: track.preview,
-        duration: track.duration,
-        album: track.album
-      });
-    });
+    card.addEventListener('pointerenter', () => prewarmTrackVideoIds([track]), { once: true });
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2493,8 +2492,7 @@ async function switchArtistTab(mode, artistName, artistId) {
           </div>
           <div class="ranking-time-cell">${durationFormatted}</div>
           <div class="ranking-actions-cell">
-            <button class="btn-rank-action btn-rank-play" title="Escuchar preview">▶ <span>PREVIEW</span></button>
-            <button class="btn-rank-action btn-rank-full" title="Escuchar completa">🎧 <span>COMPLETA</span></button>
+            <button class="btn-rank-action btn-rank-full" title="Reproducir canción completa HD">▶ <span>REPRODUCIR</span></button>
             <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
               <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                 <circle cx="5" cy="12" r="2.2"></circle>
@@ -2505,21 +2503,15 @@ async function switchArtistTab(mode, artistName, artistId) {
           </div>
         `;
 
-        const playPrev = () => {
-          loadTrack({
-            title: track.title,
-            artist: track.artist ? track.artist.name : artistName,
-            cover: cover,
-            audioUrl: track.preview,
-            album: albumTitle
-          });
+        const playArtistFull = () => {
+          playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle, track.duration, track.preview);
         };
 
-        row.querySelector('.ranking-thumb-wrap').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
-        row.querySelector('.btn-rank-play').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
+        row.addEventListener('pointerenter', () => prewarmTrackVideoIds([track]), { once: true });
+        row.querySelector('.ranking-thumb-wrap').addEventListener('click', (e) => { e.stopPropagation(); playArtistFull(); });
         row.querySelector('.btn-rank-full').addEventListener('click', (e) => {
           e.stopPropagation();
-          playFullSong(track.artist ? track.artist.name : artistName, track.title, cover, albumTitle, track.duration, track.preview);
+          playArtistFull();
         });
         row.querySelector('.btn-track-more').addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2648,11 +2640,8 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
         <h3 class="album-title" title="${track.title}">${track.title}</h3>
         <p class="album-artist">${formatArtistPills(fullTrackArtist)}</p>
         <div class="track-card-actions-single">
-          <button class="btn-card-action btn-card-preview btn-single-play" title="Escuchar preview">
-            ▶ <span>PREVIEW</span>
-          </button>
-          <button class="btn-card-action btn-card-full btn-single-full" title="Escuchar completa">
-            🎧 <span>COMPLETA</span>
+          <button class="btn-card-action btn-card-full btn-single-full" title="Reproducir canción completa HD">
+            ▶ <span>REPRODUCIR</span>
           </button>
           <button class="btn-track-more btn-single-more" title="Más opciones (Descargar MP3 320, FLAC, Cola, Álbum)">
             <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -2665,15 +2654,12 @@ function renderArtistTrackCards(tracks, artistName, titlePrefix, container) {
       </div>
     `;
 
+    card.addEventListener('pointerenter', () => prewarmTrackVideoIds([{ ...track, artist: fullTrackArtist }]), { once: true });
+
     card.querySelector('.album-cover-wrapper').addEventListener('click', (e) => {
       e.stopPropagation();
       if (albumId) openAlbumDetail(albumId);
-      else loadTrack({ id: track.id ? `deezer_${track.id}` : null, deezerId: track.id, title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
-    });
-
-    card.querySelector('.btn-single-play').addEventListener('click', (e) => {
-      e.stopPropagation();
-      loadTrack({ id: track.id ? `deezer_${track.id}` : null, deezerId: track.id, title: track.title, artist: fullTrackArtist, cover, audioUrl: track.preview, album: albumTitle });
+      else playFullSong(fullTrackArtist, track.title, cover, albumTitle, track.duration, track.preview);
     });
 
     card.querySelector('.btn-single-full').addEventListener('click', (e) => {
@@ -2805,122 +2791,21 @@ function updateMediaSessionPosition(position, duration) {
 }
 
 // ========================================================
-// REPRODUCTOR UNIFICADO (PREVIEW 30S + CANCIÓN COMPLETA)
+// REPRODUCTOR UNIFICADO (100% CANCIÓN COMPLETA HD)
 // ========================================================
 let currentPlayRequestId = 0;
 
 function loadTrack(track) {
   if (!track) return;
-
-  currentPlayRequestId++;
-
-  // Detener YouTube si estaba sonando para evitar duplicidad de audio
-  if (ytPlayer && typeof ytPlayer.stopVideo === 'function') {
-    try { ytPlayer.stopVideo(); } catch (_) {}
-    stopYtProgress();
-  }
-
-  let fullArtist = getFullArtistCredits(track.artist, track.title);
-  if (state.currentAlbum && state.currentAlbum.artist) {
-    const albArt = state.currentAlbum.artist;
-    if ((albArt.includes('x') || albArt.includes('&') || albArt.includes('feat') || albArt.includes(',')) && 
-        !fullArtist.includes('x') && !fullArtist.includes('&') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
-      fullArtist = albArt;
-    }
-  }
-  track.artist = fullArtist;
-
-  // Si la pista solo tiene 1 artista y proviene de Deezer, verificar colaboradores de la canción en segundo plano
-  if (!fullArtist.includes('&') && !fullArtist.includes('x') && !fullArtist.includes('X') && !fullArtist.includes('feat') && !fullArtist.includes(',')) {
-    const trkId = (track.id && track.id.startsWith('deezer_'))
-      ? track.id.replace('deezer_', '')
-      : (track.deezerId || null);
-
-    if (trkId) {
-      fetchDeezerJsonp(`/track/${trkId}`).then(dzTrk => {
-        if (dzTrk && dzTrk.contributors && Array.isArray(dzTrk.contributors) && dzTrk.contributors.length > 1) {
-          const names = dzTrk.contributors.map(c => c.name).filter(Boolean);
-          if (names.length > 1) {
-            const enriched = names.join(' x ');
-            if (state.currentTrack && state.currentTrack.title === track.title) {
-              state.currentTrack.artist = enriched;
-              playerArtist.innerHTML = formatArtistPills(enriched);
-              if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(enriched);
-              updateMediaSession(state.currentTrack);
-              document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
-                const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
-                if (titleEl && titleEl.innerText.trim().toLowerCase() === track.title.trim().toLowerCase()) {
-                  const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
-                  if (artEl) artEl.innerHTML = formatArtistPills(enriched);
-                }
-              });
-            }
-          }
-        }
-      }).catch(() => {});
-    } else {
-      const albId = track.albumId || (state.currentAlbum && state.currentAlbum.id);
-      if (albId && albId.startsWith('deezer_')) {
-        const dzId = albId.replace('deezer_', '');
-        fetchDeezerJsonp(`/album/${dzId}`).then(dzAlb => {
-          if (dzAlb && dzAlb.contributors && dzAlb.contributors.length > 1) {
-            const names = dzAlb.contributors.map(c => c.name).filter(Boolean);
-            if (names.length > 1) {
-              const enriched = names.join(' x ');
-              if (state.currentTrack && state.currentTrack.title === track.title) {
-                state.currentTrack.artist = enriched;
-                playerArtist.innerHTML = formatArtistPills(enriched);
-                if (amTrackArtist) amTrackArtist.innerHTML = formatArtistPills(enriched);
-                updateMediaSession(state.currentTrack);
-                document.querySelectorAll('.album-card, .album-track-item, .ranking-row').forEach(card => {
-                  const titleEl = card.querySelector('.album-title, h4, .ranking-track-title');
-                  if (titleEl && titleEl.innerText.trim().toLowerCase() === track.title.trim().toLowerCase()) {
-                    const artEl = card.querySelector('.album-artist, .track-main-info p, .ranking-track-artist');
-                    if (artEl) artEl.innerHTML = formatArtistPills(enriched);
-                  }
-                });
-              }
-            }
-          }
-        }).catch(() => {});
-      }
-    }
-  }
-
-  state.playbackSource = 'preview';
-  state.currentTrack = track;
-  playerTitle.innerText = track.title;
-  playerArtist.innerHTML = formatArtistPills(track.artist || 'Artista');
-  playerCover.src = track.cover || 'https://via.placeholder.com/80/1a0933/ff2a85?text=VI';
-
-  if (playerModeBadge) {
-    playerModeBadge.innerText = 'PREVIEW 30S';
-    playerModeBadge.className = 'spec-pill';
-  }
-
-  const labelText = (state.currentAlbum && state.currentAlbum.label) || (track && track.label) || '';
-  if (playerLabel) {
-    if (labelText) {
-      playerLabel.innerText = '🏷️ ' + labelText;
-      playerLabel.style.display = 'inline-block';
-    } else {
-      playerLabel.style.display = 'none';
-    }
-  }
-
-  updateMediaSession(track);
-  updateAppleMusicTrackInfo(track);
-
-  if (track.audioUrl) {
-    state.audio.loop = false;
-    state.audio.volume = 1;
-    state.audio.src = track.audioUrl;
-    state.audio.playbackRate = state.currentSpeed;
-    state.audio.play().then(() => {
-      setPlayingState(true);
-      updateMediaSession(track);
-    }).catch(() => setPlayingState(false));
-  }
+  playFullSong(
+    track.artist || 'Artista',
+    track.title || 'Pista',
+    track.cover || null,
+    track.album || null,
+    track.duration || 0,
+    track.audioUrl || track.preview || null,
+    track.videoId || track.video_id || null
+  );
 }
 
 function primeAudioPlayback() {
@@ -2974,9 +2859,9 @@ function prefetchNextTrack() {
 // Pre-cargar en segundo plano los videoId oficiales de pistas visibles para arranque <50ms al hacer clic
 async function prewarmTrackVideoIds(tracks) {
   if (!Array.isArray(tracks) || tracks.length === 0) return;
-  const targets = tracks.slice(0, 8);
-  for (let i = 0; i < targets.length; i += 3) {
-    const batch = targets.slice(i, i + 3);
+  const targets = tracks.slice(0, 10);
+  for (let i = 0; i < targets.length; i += 5) {
+    const batch = targets.slice(i, i + 5);
     await Promise.all(batch.map(async (t) => {
       try {
         const title = t.title || '';
@@ -4674,11 +4559,8 @@ async function loadHomeContent() {
           </div>
 
           <div class="ranking-actions-cell">
-            <button class="btn-rank-action btn-rank-play" title="Escuchar preview">
-              ▶ <span>PREVIEW</span>
-            </button>
-            <button class="btn-rank-action btn-rank-full" title="Escuchar canción completa">
-              🎧 <span>COMPLETA</span>
+            <button class="btn-rank-action btn-rank-full" title="Reproducir canción completa HD">
+              ▶ <span>REPRODUCIR</span>
             </button>
             <button class="btn-track-more" title="Más opciones (Descargar MP3, FLAC, Cola)">
               <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -4690,31 +4572,20 @@ async function loadHomeContent() {
           </div>
         `;
 
-        const playPreview = () => {
-          loadTrack({
-            title: track.title,
-            artist: track.artist,
-            cover: track.coverXl,
-            audioUrl: track.preview,
-            album: track.album,
-            duration: track.duration,
-            label: 'Top Colombia Official'
-          });
+        const playTopFull = () => {
+          playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
         };
+
+        row.addEventListener('pointerenter', () => prewarmTrackVideoIds([track]), { once: true });
 
         row.querySelector('.ranking-thumb-wrap').addEventListener('click', (e) => {
           e.stopPropagation();
-          playPreview();
-        });
-
-        row.querySelector('.btn-rank-play').addEventListener('click', (e) => {
-          e.stopPropagation();
-          playPreview();
+          playTopFull();
         });
 
         row.querySelector('.btn-rank-full').addEventListener('click', (e) => {
           e.stopPropagation();
-          playFullSong(track.artist, track.title, track.coverXl, track.album, track.duration, track.preview);
+          playTopFull();
         });
 
         row.querySelector('.btn-track-more').addEventListener('click', (e) => {
@@ -5702,6 +5573,21 @@ async function loadUserPlaylist() {
 
   if (state.activeCoverflowIndex >= state.userPlaylist.length) {
     state.activeCoverflowIndex = Math.max(0, state.userPlaylist.length - 1);
+  }
+
+  // Registrar todos los videoId de la playlist en caché en memoria para reproducción <50ms en toda la web
+  (state.userPlaylist || []).forEach(t => {
+    const vid = t.videoId || t.video_id;
+    if (vid && t.title) {
+      const mk = `${normalizeStr(t.artist || '')}:::${normalizeStr(t.title)}`;
+      videoIdMemoryCache.set(mk, { videoId: vid, alternatives: [] });
+    }
+  });
+  if (ytReady && ytPlayer && typeof ytPlayer.cueVideoById === 'function' && !state.currentTrack && !state.isPlaying && state.userPlaylist[0]) {
+    const firstVid = state.userPlaylist[0].videoId || state.userPlaylist[0].video_id;
+    if (firstVid) {
+      try { ytPlayer.cueVideoById(firstVid); } catch (_) {}
+    }
   }
 
   renderCoverflow();

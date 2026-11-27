@@ -555,11 +555,13 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
       s -= 250; // Penalización severa a video oficial con skits de diálogo, disparos y compresión
     }
     
-    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic)
+    // Bonificación MASIVA para canales oficiales de entrega discográfica (Topic / VEVO / Artista)
     if (c.isTopic || ch.endsWith(' - topic') || ch.includes('topic')) {
       s += 850; // Topic es 100% el master de estudio idéntico al preview de Deezer/Spotify
+    } else if (ch.includes('vevo')) {
+      s += 320; // Canal oficial VEVO discográfico con audio nítido garantizado
     } else if (isOfficialArtistChannel) {
-      s += 200; // Canal oficial del artista
+      s += 240; // Canal oficial del artista
     }
 
     if (c.hasAudioBadge || /provided to youtube/i.test(combined)) {
@@ -580,14 +582,21 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
   let alternatives = scored.slice(1, 6).map(c => c.id);
 
   // Rescate inteligente si ningún candidato cumplió el 100% de los colaboradores solicitados (ej: Bad Bunny x Noriel - No Te Hagas)
+  let fallbackScored = [];
   if (!selected) {
-    const fallbackScored = uniqueCandidates
+    fallbackScored = uniqueCandidates
       .filter(c => c.durSec === 0 || (c.durSec >= 60 && c.durSec <= 700))
       .map(c => {
         let s = 0;
         const t = normalizeStr(c.title);
         const ch = normalizeStr(c.channel);
         const combined = `${t} ${ch}`;
+
+        if (BAD_CHANNELS.some(b => ch.includes(normalizeStr(b)))) return { ...c, score: -9999 };
+        if (/cover|homenaje|karaoke|parodia|slowed|1 hour|1 hora|reaction/i.test(t)) return { ...c, score: -9999 };
+        if (durationParam > 30 && durationParam !== 180 && c.durSec > 0 && Math.abs(c.durSec - durationParam) > 25) {
+          return { ...c, score: -9999 };
+        }
         
         // El título DEBE coincidir con las palabras clave solicitadas
         if (effectiveTitleWords.length > 0 && !effectiveTitleWords.every(w => t.includes(w))) {
@@ -621,6 +630,7 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
         );
         if (extraForeignWords.length >= 2) s -= 400;
 
+        if (ch.includes('vevo')) s += 300;
         if (/audio oficial|audio/i.test(t)) s += 200;
         if (/video oficial|official video/i.test(t)) s += 100;
         return { ...c, score: s };
@@ -635,8 +645,8 @@ async function resolveFullAudio(artist, title, durationParam = 0, isrcParam = ''
     }
   }
 
-  // Filtrar en paralelo los mejores candidatos para garantizar que NO tengan bloqueo Error 150 de incrustación
-  const poolToCheck = (scored.length > 0 ? scored : (uniqueCandidates.slice(0, 8))).slice(0, 8);
+  // Filtrar en paralelo hasta 14 mejores candidatos para garantizar que NO tengan bloqueo Error 150 de incrustación
+  const poolToCheck = (scored.length > 0 ? scored : fallbackScored).slice(0, 14);
   if (selected && !poolToCheck.some(c => c.id === selected.id)) {
     poolToCheck.unshift(selected);
   }
@@ -1272,7 +1282,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.10', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.11', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT

@@ -14,24 +14,24 @@ try {
   if (ffmpegPath) fs.chmodSync(ffmpegPath, 0o755);
 } catch (_) {}
 
-// Motor de descarga multi-cliente (Mweb + Tv + WebEmbedded + VisionOS) con PO Token BotGuard automático
+// Motor de descarga multi-cliente (VisionOS primero: no requiere base.js) con PO Token BotGuard automático
 let activePoTokenProvider = null;
-let ytdlInstance = new Ytdl({ clients: [Client.Tv, Client.WebEmbedded, Client.VisionOS, Client.Mweb] });
+let ytdlInstance = new Ytdl({ clients: [Client.VisionOS, Client.Tv, Client.WebEmbedded, Client.Mweb] });
 const poTokenInitPromise = createPoTokenProvider()
   .then(po => {
     activePoTokenProvider = po;
     ytdlInstance = new Ytdl({
       getPoToken: po,
-      clients: [Client.Mweb, Client.Tv, Client.WebEmbedded, Client.VisionOS]
+      clients: [Client.VisionOS, Client.Mweb, Client.Tv, Client.WebEmbedded]
     });
-    console.log('🛡️ [YTDL] BotGuard PO Token Provider activado con éxito para streaming directo.');
+    console.log('🛡️ [YTDL] BotGuard PO Token Provider activado con éxito (VisionOS + Mweb).');
     return po;
   })
   .catch(err => {
     console.warn('⚠️ [YTDL] PO Token no pudo iniciar, usando clientes estándar:', err.message);
     return null;
   });
-console.log('⚡ [YTDL] Motor multi-cliente nativo (Mweb/Tv/WebEmbedded/VisionOS) iniciado.');
+console.log('⚡ [YTDL] Motor multi-cliente nativo (VisionOS/Tv/WebEmbedded/Mweb) iniciado.');
 
 const audioUrlCache = new Map();
 const motionArtworkCache = new Map();
@@ -1282,7 +1282,7 @@ const server = http.createServer(async (req, res) => {
     // 0. VERIFICADOR DE VERSIÓN
     if (pathname === '/api/version') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ version: '8.3.11', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
+      return res.end(JSON.stringify({ version: '8.3.12', status: 'online', engine: 'Vice Music 3D Coverflow + Dual Invidious/VisionOS Native MP3 320 Engine' }));
     }
 
     // 0.001 SEO: ROBOTS.TXT
@@ -1499,9 +1499,11 @@ const server = http.createServer(async (req, res) => {
         report.hasPoToken = !!activePoTokenProvider;
       } catch (_) {}
 
-      // Test real YTDL getInfo + descarga de primer chunk en Render
+      // Test real YTDL (VisionOS prioritario) getInfo + descarga de primer chunk en Render
+      const tYtdlStart = Date.now();
       try {
-        const info = await ytdlInstance.getInfo(vid, { signal: AbortSignal.timeout(8000) });
+        const info = await ytdlInstance.getInfo(vid, { signal: AbortSignal.timeout(15000) });
+        report.ytdlInfoTimeMs = Date.now() - tYtdlStart;
         const audioFormats = (info.formats || []).filter(f => f.hasAudio && !f.hasVideo);
         report.ytdlTitle = info.videoDetails?.title || null;
         report.ytdlInfoFormats = audioFormats.map(f => `${f.itag}:${f.audioBitrate || '?'}k:${f.client}`);

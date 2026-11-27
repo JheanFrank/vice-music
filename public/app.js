@@ -3828,11 +3828,8 @@ function getUpcomingTrack() {
 
 async function resolveTrackStreamUrl(track) {
   if (!track) return null;
-  if (track.preview || track.audioUrl) {
-    return track.preview || track.audioUrl;
-  }
-  if (track.videoId) {
-    return `/api/stream-live?v=${track.videoId}`;
+  if (track.videoId || track.video_id) {
+    return `/api/stream-live?v=${track.videoId || track.video_id}`;
   }
   try {
     const durParam = track.duration || 0;
@@ -3844,7 +3841,7 @@ async function resolveTrackStreamUrl(track) {
       return `/api/stream-live?v=${data.videoId}`;
     }
   } catch (_) {}
-  return track.preview || track.audioUrl || null;
+  return null;
 }
 
 function checkAndTriggerCrossfade() {
@@ -3864,28 +3861,43 @@ function checkAndTriggerCrossfade() {
   if (!dur || dur <= 16) return; // Temas muy cortos se reproducen directo
   const remaining = dur - cur;
 
-  // 1. Pre-carga en el segundo reproductor a los 15 segundos restantes
+  // 1. Pre-carga en el segundo reproductor a los 15 segundos restantes (NUNCA preview de 30s)
   if (remaining <= 15 && !state.isPreloadingNext && !state.nextQueuedTrack) {
     const upcoming = getUpcomingTrack();
     if (upcoming) {
       state.isPreloadingNext = true;
       resolveTrackStreamUrl(upcoming).then(src => {
-        if (src && state.fadeAudio) {
-          state.fadeAudio.src = src;
-          state.fadeAudio.volume = 0;
-          state.fadeAudio.playbackRate = state.currentSpeed;
-          state.fadeAudio.load();
-          state.nextQueuedTrack = upcoming;
-          console.log('[Dual Audio Engine] Pista preparada para crossfade 10s:', upcoming.title);
+        if (!src || !state.fadeAudio) {
+          state.isPreloadingNext = false;
+          return;
         }
+        const onReady = () => {
+          state.fadeAudio.removeEventListener('canplay', onReady);
+          state.fadeAudio.removeEventListener('error', onErr);
+          state.nextQueuedTrack = upcoming;
+          console.log('[Dual Audio Engine] Stream completo listo para crossfade 10s:', upcoming.title);
+        };
+        const onErr = () => {
+          state.fadeAudio.removeEventListener('canplay', onReady);
+          state.fadeAudio.removeEventListener('error', onErr);
+          state.fadeAudio.removeAttribute('src');
+          state.nextQueuedTrack = null;
+          state.isPreloadingNext = false;
+        };
+        state.fadeAudio.addEventListener('canplay', onReady, { once: true });
+        state.fadeAudio.addEventListener('error', onErr, { once: true });
+        state.fadeAudio.src = src;
+        state.fadeAudio.volume = 0;
+        state.fadeAudio.playbackRate = state.currentSpeed;
+        state.fadeAudio.load();
       }).catch(() => {
         state.isPreloadingNext = false;
       });
     }
   }
 
-  // 2. Disparar Crossfade de 10 segundos continuos a los 10 segundos restantes
-  if (remaining <= 10 && remaining > 0.6 && !state.isCrossfading && state.nextQueuedTrack && state.fadeAudio && state.fadeAudio.src) {
+  // 2. Disparar Crossfade de 10 segundos continuos solo si fadeAudio confirmó reproducción lista
+  if (remaining <= 10 && remaining > 0.6 && !state.isCrossfading && state.nextQueuedTrack && state.fadeAudio && state.fadeAudio.src && state.fadeAudio.readyState >= 2) {
     start10sCrossfade();
   }
 }
@@ -5545,6 +5557,7 @@ async function loadUserPlaylist() {
       mergedMap.set(k, {
         ...existing,
         ...t,
+        cover: (t.cover && !t.cover.includes('b4bb0e181bbcaae7')) ? t.cover : existing.cover,
         videoId: t.videoId || t.video_id || existing.videoId || existing.video_id,
         video_id: t.videoId || t.video_id || existing.videoId || existing.video_id,
         duration: (t.duration && t.duration > 0) ? t.duration : (existing.duration || 0)
